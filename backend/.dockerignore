@@ -1,0 +1,15 @@
+# Không đưa vào build context: file môi trường, Git, cache, môi trường ảo.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+__pycache__
+*.py[cod]
+.venv
+venv
+.pytest_cache
+.ruff_cache
+*.egg-info
+Dockerfile
+.dockerignore
