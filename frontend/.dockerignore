@@ -1,0 +1,13 @@
+# Không đưa vào build context: thư viện cài ở máy host, kết quả build, file môi trường, Git.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.log
+npm-debug.log*
+Dockerfile
+.dockerignore
+README.md

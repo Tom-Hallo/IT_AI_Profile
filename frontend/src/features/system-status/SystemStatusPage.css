@@ -1,0 +1,136 @@
+.status-page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+.status-page h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.subtitle {
+  margin: 0.25rem 0 1.5rem;
+  color: var(--color-muted);
+}
+
+.card {
+  padding: 1.25rem 1.25rem 1.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+}
+
+.card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+}
+
+.rows {
+  margin: 0 0 1rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.row dt {
+  font-weight: 600;
+}
+
+.row dd {
+  margin: 0;
+  text-align: right;
+}
+
+.row--sub dt {
+  padding-left: 1rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.badge--ok {
+  color: var(--color-ok-text);
+  background: var(--color-ok-bg);
+}
+
+.badge--warn {
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
+}
+
+.badge--fail {
+  color: var(--color-fail-text);
+  background: var(--color-fail-bg);
+}
+
+.badge--pending {
+  color: var(--color-muted);
+  background: var(--color-pending-bg);
+}
+
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.notice p {
+  margin: 0.25rem 0 0;
+}
+
+.notice--warn {
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
+}
+
+.notice--fail {
+  color: var(--color-fail-text);
+  background: var(--color-fail-bg);
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-button-text);
+  cursor: pointer;
+  background: var(--color-button-bg);
+  border: 0;
+  border-radius: 0.5rem;
+}
+
+.button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 30rem) {
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .row dd {
+    text-align: left;
+  }
+}

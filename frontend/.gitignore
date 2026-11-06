@@ -1,0 +1,21 @@
+# Lưới an toàn cho thư mục frontend/ (file .gitignore ở thư mục gốc do DevOps phụ trách).
+node_modules
+dist
+*.log
+npm-debug.log*
+
+# File môi trường thật không được commit; chỉ commit .env.example
+.env
+.env.*
+!.env.example
+
+# Cache của TypeScript / Vite / ESLint
+*.tsbuildinfo
+.vite
+.eslintcache
+
+# IDE / hệ điều hành
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
