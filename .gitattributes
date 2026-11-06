@@ -1,0 +1,21 @@
+# Chuẩn hóa kết thúc dòng để script/Dockerfile không hỏng khi clone trên Windows (Blueprint R8).
+* text=auto
+
+# Chạy trong Linux/container: BẮT BUỘC LF (CRLF làm lỗi "bad interpreter" / "\r: command not found").
+*.sh      text eol=lf
+Dockerfile text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+.env.example text eol=lf
+*.py      text eol=lf
+
+# Script PowerShell: giữ CRLF cho Windows.
+*.ps1     text eol=crlf
+
+# Tệp nhị phân: không đụng tới.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff2 binary

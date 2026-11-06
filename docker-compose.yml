@@ -1,0 +1,163 @@
+# IT Talent AI Profile - Docker Compose cho môi trường PHÁT TRIỂN (Technical Blueprint, mục 3, 5, 6).
+#
+# CHỈ DÙNG CHO DEV. Không dùng cho staging/production: mật khẩu mẫu, bind mount mã nguồn,
+# hot-reload, Swagger bật, Redis không mật khẩu. Production thuộc PBI khác.
+#
+# Cách dùng nhanh (xem scripts/README.md):
+#   ./scripts/setup.sh                       (Linux/macOS)
+#   .\scripts\setup.ps1                      (Windows PowerShell)
+#   docker compose up -d --build --wait      (khi đã có file .env)
+#
+# Quy tắc:
+# - KHÔNG viết mật khẩu/secret vào file này. Chỉ tham chiếu ${BIEN} lấy từ file .env
+#   (sao chép từ .env.example, .env không được commit).
+# - Biến bắt buộc dùng cú pháp ${BIEN:?...}: thiếu thì Compose dừng ngay và chỉ nêu TÊN biến.
+# - Trong Docker các service gọi nhau bằng TÊN SERVICE (postgres, redis, backend), không phải
+#   127.0.0.1 / localhost. Port ở máy host (127.0.0.1:...) chỉ dành cho bạn truy cập từ máy mình.
+
+name: it_ai_profile
+
+# Backend và worker dùng CHUNG một image (Blueprint 1.1, D02): khai báo build một lần, hai service
+# cùng tag `it-ai-profile-backend:dev`. Hai service chỉ khác lệnh khởi động.
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+# Biến môi trường dùng chung cho backend và worker (Blueprint mục 5).
+# DATABASE_URL và REDIS_URL do Compose tự ghép, KHÔNG đặt trong .env.
+# DATABASE_URL bắt buộc bắt đầu bằng postgresql+psycopg:// (driver psycopg v3).
+x-backend-environment: &backend-environment
+  APP_ENV: ${APP_ENV:?APP_ENV chưa được đặt, hãy tạo .env từ .env.example}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  WORKER_QUEUES: ${WORKER_QUEUES:-default}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?POSTGRES_USER chưa được đặt}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD chưa được đặt}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB chưa được đặt}
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      # Chỉ có tác dụng ở LẦN ĐẦU khởi tạo volume. Đổi sau đó phải `docker compose down -v` (xóa dữ liệu).
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER chưa được đặt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD chưa được đặt}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB chưa được đặt}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 17: thư mục dữ liệu là /var/lib/postgresql/data (bản 18 đổi cách mount).
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # `-h 127.0.0.1` (qua TCP): trong lúc khởi tạo lần đầu image chạy một server tạm chỉ nghe socket,
+      # nếu kiểm tra qua socket có thể báo healthy quá sớm. `$$` để shell trong container thay biến.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    # Không dùng volume: hàng đợi dev mất khi reset là chấp nhận được (Blueprint mục 3).
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: *backend-build
+    image: it-ai-profile-backend:dev
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment: *backend-environment
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Hot-reload. Dependency nằm trong image: đổi pyproject.toml thì `docker compose build backend`.
+      - ./backend:/app
+    depends_on:
+      # Database và Redis phải sẵn sàng trước khi Backend chạy.
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Dùng python có sẵn (không cài curl). Mã thoát khác 0 cả khi HTTP 503 (phản ánh đúng trạng thái).
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).status == 200 else 1)"
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    # Dùng lại cùng image với backend (cache build nên không tốn thêm thời gian đáng kể).
+    build: *backend-build
+    image: it-ai-profile-backend:dev
+    command: ["python", "-m", "app.workers.worker"]
+    environment: *backend-environment
+    # Không mở port, không có HTTP. Không hot-reload: sửa code worker thì `docker compose restart worker`.
+    volumes:
+      - ./backend:/app
+    depends_on:
+      # Worker chỉ chạy khi Redis đã sẵn sàng (và Postgres, vì job sau này dùng DB).
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    init: true
+    # Job tối đa 60 giây (JOB_TIMEOUT_SECONDS). Docker mặc định chỉ chờ 10 giây rồi SIGKILL,
+    # làm job đang chạy bị cắt giữa chừng.
+    stop_grace_period: 70s
+    healthcheck:
+      # Blueprint ghi `python -m app.workers.healthcheck` nhưng module này CHƯA có trong repo
+      # (xem scripts/README.md, mục "Vấn đề còn tồn tại"). Tạm dùng lệnh sau, khỏe khi:
+      #   (1) kết nối Redis được (lỗi kết nối là exception, mã thoát khác 0), VÀ
+      #   (2) có một worker RQ đăng ký với CHÍNH hostname của container này VÀ tiến trình của nó còn sống.
+      # Không chỉ đếm worker đăng ký, vì bản ghi của worker bị kill -9 còn tồn tại trong Redis
+      # khoảng 8 phút (đã đo), và worker chạy trên máy host cũng đăng ký vào cùng Redis.
+      # Khi Worker thêm module healthcheck, đổi dòng này.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import os, socket, sys; from rq import Worker; from app.core.redis import get_redis_connection; host = socket.gethostname(); sys.exit(0 if any(w.hostname == host and os.path.exists('/proc/%d' % w.pid) for w in Worker.all(connection=get_redis_connection())) else 1)"
+      interval: 15s
+      timeout: 6s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    environment:
+      # Truyền bằng environment (KHÔNG dùng build arg). Chỉ VITE_* lộ ra trình duyệt: không đặt secret ở đây.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL chưa được đặt}
+      # Vite proxy (phía Node, không lộ ra bundle) gọi Backend bằng TÊN SERVICE.
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:?BACKEND_INTERNAL_URL chưa được đặt}
+      FRONTEND_WATCH_POLLING: ${FRONTEND_WATCH_POLLING:-false}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      # Volume ẩn: giữ node_modules cài trong image, không bị bind mount ghi đè (R10).
+      # Đổi package.json/package-lock.json thì: docker compose build frontend && docker compose up -d --renew-anon-volumes frontend
+      - /app/node_modules
+    # Không phụ thuộc cứng vào backend (Blueprint mục 3): trang trạng thái tự báo lỗi nếu backend chưa lên.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5173/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  # Dữ liệu PostgreSQL. `docker compose down` GIỮ volume này; chỉ `down -v` mới xóa.
+  postgres_data:
