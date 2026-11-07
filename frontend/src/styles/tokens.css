@@ -1,0 +1,30 @@
+/* PBI-004 — semantic design tokens; original interpretation of supplied Figma screenshots. */
+:root {
+  color-scheme: light;
+  --color-primary:#1555dc; --color-primary-hover:#0b46c2; --color-primary-active:#073994;
+  --color-secondary:#edf0ff; --color-danger:#c52231; --color-danger-soft:#fff0f1;
+  --color-success:#007a55; --color-success-soft:#def9ed; --color-warning:#8a5a06;
+  --color-bg:#f8f7fd; --color-surface:#fff; --color-surface-muted:#f1f2fc;
+  --color-glass:rgba(255,255,255,.82); --color-text:#182137; --color-text-muted:#697188;
+  --color-border:#e5e8f3; --color-ring:#2465e9; --color-track:#e1e7ff;
+  --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+  --text-xs:.72rem; --text-sm:.82rem; --text-md:.94rem; --text-lg:1.12rem; --text-xl:1.5rem; --text-2xl:1.9rem;
+  --weight-normal:400; --weight-medium:500; --weight-semibold:600; --weight-bold:700;
+  --leading-tight:1.2; --leading-normal:1.5;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px;
+  --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:24px; --radius-pill:999px;
+  --shadow-card:0 1px 2px rgba(28,37,69,.045),0 9px 24px rgba(28,37,69,.025);
+  --shadow-float:0 16px 48px rgba(17,29,66,.16); --blur-glass:blur(16px);
+  --sidebar-width:236px; --header-height:60px; --transition-fast:150ms ease;
+}
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --color-primary:#75a1ff; --color-primary-hover:#9dbbff; --color-primary-active:#c2d4ff;
+  --color-secondary:#253456; --color-danger:#ff7b88; --color-danger-soft:#44242c;
+  --color-success:#69e2b2; --color-success-soft:#173e35; --color-warning:#ffd17d;
+  --color-bg:#111522; --color-surface:#1b2232; --color-surface-muted:#252e43;
+  --color-glass:rgba(27,34,50,.85); --color-text:#f1f4ff; --color-text-muted:#b4bed1;
+  --color-border:#354057; --color-ring:#94b6ff; --color-track:#394664;
+  --shadow-card:0 1px 3px rgba(0,0,0,.25); --shadow-float:0 18px 55px rgba(0,0,0,.5);
+}
