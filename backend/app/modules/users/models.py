@@ -34,7 +34,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
+#acsgghfhfhfhfhfhfhfh
     # Relationships
     repositories: Mapped[list[Repository]] = relationship(
         "Repository",
