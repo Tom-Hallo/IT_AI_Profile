@@ -253,7 +253,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         schema=SCHEMA,
-        comment="Pivot table: users ↔ repositories (many-to-many)",
+        comment="Pivot table: users <-> repositories (many-to-many)",
     )
     op.create_index(
         "ix_user_repository_user_id",
@@ -264,7 +264,7 @@ def upgrade() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Downgrade  — drops in reverse dependency order
+# Downgrade - drops in reverse dependency order
 # ---------------------------------------------------------------------------
 def downgrade() -> None:
     op.drop_index("ix_user_repository_user_id", table_name="user_repository", schema=SCHEMA)
