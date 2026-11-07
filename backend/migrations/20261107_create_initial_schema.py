@@ -1,18 +1,15 @@
-"""Initial schema migration"""
-
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
-revision = "20231107_1300_create_initial_schema"
-down_revision = None
+revision = "pbi002_initial_schema"
+down_revision = "fe534ebbefc6"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # -----------------------------------------------------------------
+# -----------------------------------------------------------------
     # users
     # -----------------------------------------------------------------
     op.create_table(
@@ -36,7 +33,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("email", name="uq_users_email"),
         comment="Application users",
     )
-
     # -----------------------------------------------------------------
     # repositories
     # -----------------------------------------------------------------
@@ -71,7 +67,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("external_id", name="uq_repositories_external_id"),
         comment="Git repositories monitored by the platform",
     )
-
     # -----------------------------------------------------------------
     # assessments
     # -----------------------------------------------------------------
@@ -95,7 +90,6 @@ def upgrade() -> None:
         comment="Assessment results for a user",
     )
     op.create_index("ix_assessments_user_id", "assessments", ["user_id"])
-
     # -----------------------------------------------------------------
     # cvs (versioned CV data stored as JSONB)
     # -----------------------------------------------------------------
@@ -118,7 +112,6 @@ def upgrade() -> None:
         comment="Versioned CV data",
     )
     op.create_index("ix_cvs_user_id", "cvs", ["user_id"])
-
     # -----------------------------------------------------------------
     # roadmaps (career roadmaps stored as JSONB)
     # -----------------------------------------------------------------
@@ -143,7 +136,6 @@ def upgrade() -> None:
         comment="Career roadmap JSON structure",
     )
     op.create_index("ix_roadmaps_user_id", "roadmaps", ["user_id"])
-
     # -----------------------------------------------------------------
     # many‑to‑many: users ↔ repositories (e.g. “followed” repos)
     # -----------------------------------------------------------------
