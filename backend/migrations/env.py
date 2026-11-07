@@ -1,13 +1,8 @@
-"""Môi trường chạy Alembic (Database Engineer, D1).
+"""Moi truong chay Alembic (Database Engineer, D1).
 
-- URL kết nối KHÔNG đọc từ alembic.ini hay `os.environ`: lấy từ `app.core.config.settings`
-  thông qua `app.db.session.engine`, cùng engine mà Backend và Worker dùng
-  (Blueprint 1.4 và 9.3). Nhờ vậy ba bên không thể cấu hình kết nối mâu thuẫn nhau.
-- Không in URL/mật khẩu ra màn hình hay log.
-
-Khi bắt đầu có model nghiệp vụ (PBI sau): model phải được import trước khi Alembic đọc
-`Base.metadata`, nếu không `--autogenerate` sẽ không thấy bảng nào. Cách làm gợi ý: tạo một
-file import tất cả `app/modules/*/models.py` rồi import file đó ở vị trí đánh dấu bên dưới.
+- URL ket noi KHONG doc tu alembic.ini hay os.environ: lay tu app.core.config.settings
+  thong qua app.db.session.engine, cung engine ma Backend va Worker dung.
+- Khong in URL/mat khau ra man hinh hay log.
 """
 
 from logging.config import fileConfig
@@ -21,11 +16,19 @@ from app.db.session import engine
 config = context.config
 
 if config.config_file_name is not None:
-    # disable_existing_loggers=False: không tắt logger của ứng dụng nếu env.py bị nạp
-    # trong cùng tiến trình.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-# --- Vị trí import model nghiệp vụ trong tương lai (hiện CHƯA có model nào, PBI-001) ---
+# ---------------------------------------------------------------------------
+# Import tat ca models nghiep vu de Alembic phat hien cac bang
+# (PBI-002: them models tu day tro di)
+# ---------------------------------------------------------------------------
+import app.modules.assessments.models  # noqa: F401, E402
+import app.modules.cvs.models  # noqa: F401, E402
+import app.modules.github.models  # noqa: F401, E402
+import app.modules.roadmaps.models  # noqa: F401, E402
+import app.modules.users.models  # noqa: F401, E402
+
+# ---------------------------------------------------------------------------
 
 target_metadata = Base.metadata
 
@@ -54,3 +57,9 @@ def run_migrations_online() -> None:
                 context.run_migrations()
     finally:
         engine.dispose()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
