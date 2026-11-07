@@ -1,1 +1,7 @@
-IS this good or bad
+name: CI - IT Talent AI Profile
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
