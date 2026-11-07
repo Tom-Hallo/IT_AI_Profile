@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 
 class Roadmap(Base):
     __tablename__ = "roadmaps"
-    __table_args__ = {"schema": "ita"}
+    __table_args__ = {
+        "schema": "ita",
+        "comment": "Career roadmap stored as JSONB",
+    }
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(

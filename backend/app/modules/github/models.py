@@ -49,13 +49,18 @@ user_repository = Table(
         server_default=func.now(),
         nullable=False,
     ),
+    sa.Index("ix_user_repository_user_id", "user_id"),
     schema="ita",
+    comment="Pivot table: users <-> repositories (many-to-many)",
 )
 
 
 class Repository(Base):
     __tablename__ = "repositories"
-    __table_args__ = {"schema": "ita"}
+    __table_args__ = {
+        "schema": "ita",
+        "comment": "GitHub repositories linked to a user",
+    }
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[int] = mapped_column(
