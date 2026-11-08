@@ -73,9 +73,7 @@ class Repository(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     html_url: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    private: Mapped[bool] = mapped_column(
-        Boolean, server_default=sa.text("false"), nullable=False
-    )
+    private: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

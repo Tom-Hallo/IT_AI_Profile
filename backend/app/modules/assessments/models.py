@@ -21,8 +21,8 @@ class Assessment(Base):
     __tablename__ = "assessments"
     __table_args__ = (
         CheckConstraint(
-        "score >= 0 AND score <= 100",
-        name="ck_assessments_score_range",
+            "score >= 0 AND score <= 100",
+            name="ck_assessments_score_range",
         ),
         {
             "schema": "ita",
