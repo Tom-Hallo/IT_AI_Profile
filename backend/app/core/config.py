@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     frontend_url: str = "http://localhost:5173"
 
+    @field_validator("github_client_id", "github_client_secret", mode="before")
+    @classmethod
+    def _empty_github_credentials_as_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     worker_queues: Annotated[list[str], NoDecode] = ["default"]
