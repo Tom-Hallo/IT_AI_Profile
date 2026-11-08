@@ -8,11 +8,6 @@ import '@/styles/base.css'
 import '@/styles/components.css'
 import '@/styles/layout.css'
 
-import './styles/tokens.css'
-import './styles/base.css'
-import './styles/components.css'
-import './styles/layout.css'
-
 const container = document.getElementById('root')
 if (!container) {
   throw new Error('Không tìm thấy phần tử #root trong index.html')

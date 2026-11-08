@@ -1,5 +1,6 @@
 import { Button } from '@/shared/ui/Button'
 import { env } from '@/shared/config/env'
+import { AuthPanel } from '@/features/auth/AuthPanel'
 import { describeError } from './describeError'
 import { type HealthState, useHealthStatus } from './useHealthStatus'
 import './SystemStatusPage.css'
@@ -37,6 +38,8 @@ export function SystemStatusPage() {
         <h1>IT Talent AI Profile</h1>
         <p className="subtitle">Trang kiểm tra hệ thống</p>
       </header>
+      
+      <AuthPanel /> 
 
       <section className="card" aria-labelledby="status-heading">
         <h2 id="status-heading">Trạng thái hệ thống</h2>

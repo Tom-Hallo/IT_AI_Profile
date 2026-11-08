@@ -63,12 +63,13 @@ def test_naming_convention_is_set_before_any_table_exists():
     assert set(NAMING_CONVENTION) == {"ix", "uq", "ck", "fk", "pk"}
 
 
-def test_business_tables_defined_in_pbi_002():
-    """Import all modules and verify Base.metadata has the 6 PBI-002 tables."""
+def test_business_tables_defined_in_pbi_002_and_pbi_005():
+    """Import all modules and verify the 7 PBI-002/PBI-005 tables."""
     import app
 
     for module in pkgutil.walk_packages(app.__path__, prefix="app."):
         importlib.import_module(module.name)
+
     expected_tables = {
         "ita.users",
         "ita.repositories",
@@ -76,7 +77,9 @@ def test_business_tables_defined_in_pbi_002():
         "ita.cvs",
         "ita.roadmaps",
         "ita.user_repository",
+        "ita.user_oauth_accounts",
     }
+
     assert set(Base.metadata.tables.keys()) == expected_tables
 
 

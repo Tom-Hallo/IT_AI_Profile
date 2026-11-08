@@ -13,7 +13,17 @@ SECRET_PASSWORD = "S3cr3t-Pa55word"
 
 
 # Các biến mà app đọc. Xóa khỏi môi trường tiến trình con để test không phụ thuộc máy chạy.
-APP_VARS = ("APP_ENV", "DATABASE_URL", "REDIS_URL", "LOG_LEVEL", "CORS_ORIGINS", "WORKER_QUEUES")
+APP_VARS = (
+    "APP_ENV",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "LOG_LEVEL",
+    "CORS_ORIGINS",
+    "WORKER_QUEUES",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GITHUB_REDIRECT_URI",
+)
 
 
 def _import_app_in_clean_env(env: dict[str, str]) -> subprocess.CompletedProcess:
@@ -29,7 +39,8 @@ def _import_app_in_clean_env(env: dict[str, str]) -> subprocess.CompletedProcess
     return subprocess.run(
         [sys.executable, "-c", "import app.core.config"],
         env={**base, **env},
-        cwd=Path(__file__).parent,  # thư mục không có .env để không đọc nhầm file
+        # thư mục không có .env để không đọc nhầm file
+        cwd=Path(__file__).parent,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -111,3 +122,31 @@ def test_defaults():
 
 def test_secret_is_hidden_in_repr():
     assert "p@h" not in repr(_make())
+
+
+def test_github_oauth_disabled_without_credentials():
+    s = _make()
+
+    assert s.github_client_id is None
+    assert s.github_client_secret is None
+    assert s.github_oauth_enabled is False
+
+
+def test_github_oauth_enabled_with_credentials():
+    s = _make(
+        github_client_id="test-client-id",
+        github_client_secret="test-client-secret",
+    )
+
+    assert s.github_oauth_enabled is True
+    assert s.github_client_id == "test-client-id"
+
+
+def test_github_client_secret_is_hidden_in_repr():
+    secret = "github-super-secret"
+    s = _make(
+        github_client_id="test-client-id",
+        github_client_secret=secret,
+    )
+
+    assert secret not in repr(s)
