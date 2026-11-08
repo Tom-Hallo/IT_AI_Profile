@@ -1,18 +1,18 @@
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from '@/app/App'
 import { AppProviders } from '@/app/providers'
+import { AuthPanel } from '@/features/auth/AuthPanel'
 import '@/styles/global.css'
 
-const container = document.getElementById('root')
-if (!container) {
-  throw new Error('Không tìm thấy phần tử #root trong index.html')
-}
+const container = document.getElementById('auth-root')
 
-createRoot(container).render(
-  <StrictMode>
-    <AppProviders>
-      <App />
-    </AppProviders>
-  </StrictMode>,
-)
+if (container) {
+  createRoot(container).render(
+    <StrictMode>
+      <AppProviders>
+        <AuthPanel />
+      </AppProviders>
+    </StrictMode>,
+  )
+}

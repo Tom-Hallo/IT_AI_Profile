@@ -15,6 +15,7 @@ import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
 import app.modules.users.models  # noqa: F401, E402
+import app.modules.auth.models  # noqa: F401, E402
 
 
 config = context.config

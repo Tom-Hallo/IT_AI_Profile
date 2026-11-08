@@ -42,7 +42,16 @@ class Settings(BaseSettings):
     redis_url: SecretStr
 
     # --- Tùy chọn ---
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_level: Literal["DEBUG", "INFO","WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    # GitHub OAuth: để trống khi chưa cấu hình OAuth App.
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    github_redirect_uri: str = (
+        "http://localhost:8000/api/v1/auth/github/callback"
+    )
+    frontend_url: str = "http://localhost:5173"
+
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     worker_queues: Annotated[list[str], NoDecode] = ["default"]
@@ -82,6 +91,15 @@ class Settings(BaseSettings):
         return value
 
     @property
+    def github_oauth_enabled(self) -> bool:
+        """Chỉ bật GitHub OAuth khi đã có đủ Client ID và Client Secret."""
+        return bool(
+            self.github_client_id
+            and self.github_client_secret
+            and self.github_client_secret.get_secret_value()
+        )
+
+    @property
     def docs_enabled(self) -> bool:
         """Swagger/OpenAPI chỉ bật ở development (Blueprint mục 7.2, S4)."""
         return self.app_env == "development"
@@ -90,7 +108,8 @@ class Settings(BaseSettings):
 def load_settings() -> Settings:
     """Đọc cấu hình; nếu sai thì ném ConfigurationError chỉ nêu TÊN biến."""
     try:
-        return Settings()  # type: ignore[call-arg]  # giá trị lấy từ môi trường
+        # type: ignore[call-arg]  # giá trị lấy từ môi trường
+        return Settings()
     except ValidationError as exc:
         problems: list[str] = []
         for err in exc.errors(include_input=False, include_url=False):

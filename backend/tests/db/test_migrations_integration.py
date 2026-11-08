@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "cvs",
     "roadmaps",
     "user_repository",
+    "user_oauth_accounts",
 }
 
 
@@ -153,6 +154,36 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                 _text("SELECT id FROM ita.users WHERE email = 'alice@example.com'")
             ).scalar_one()
 
+            # Insert an OAuth-only user (no internal password).
+            conn.execute(
+                _text(
+                    "INSERT INTO ita.users (email, full_name, hashed_password) "
+                    "VALUES (:e, :n, NULL)"
+                ),
+                {"e": "github@example.com", "n": "GitHub User"},
+            )
+
+            oauth_user_id = conn.execute(
+                _text(
+                    "SELECT id FROM ita.users "
+                    "WHERE email = 'github@example.com'"
+                )
+            ).scalar_one()
+
+            # Insert a linked GitHub account.
+            conn.execute(
+                _text(
+                    "INSERT INTO ita.user_oauth_accounts "
+                    "(user_id, provider, provider_user_id) "
+                    "VALUES (:uid, :provider, :provider_id)"
+                ),
+                {
+                    "uid": oauth_user_id,
+                    "provider": "github",
+                    "provider_id": "github-12345",
+                },
+            )
+
             # Insert a repository
             conn.execute(
                 _text(
@@ -235,6 +266,58 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                         ),
                         {"uid": 999999, "t": "java", "s": 50},
                     )
+                    
+                                # Duplicate GitHub identity must fail.
+            with _pytest.raises(
+                Exception,
+                match="uq_user_oauth_accounts_provider_provider_user_id|unique",
+            ):
+                with engine2.begin() as conn:
+                    conn.execute(
+                        _text(
+                            "INSERT INTO ita.user_oauth_accounts "
+                            "(user_id, provider, provider_user_id) "
+                            "VALUES (:uid, :provider, :provider_id)"
+                        ),
+                        {
+                            "uid": user_id,
+                            "provider": "github",
+                            "provider_id": "github-12345",
+                        },
+                    )
+
+            # OAuth account with nonexistent user must fail.
+            with _pytest.raises(Exception, match="fk_|foreign key"):
+                with engine2.begin() as conn:
+                    conn.execute(
+                        _text(
+                            "INSERT INTO ita.user_oauth_accounts "
+                            "(user_id, provider, provider_user_id) "
+                            "VALUES (:uid, :provider, :provider_id)"
+                        ),
+                        {
+                            "uid": 999999,
+                            "provider": "github",
+                            "provider_id": "github-invalid",
+                        },
+                    )
+
+            # Deleting a user must cascade-delete linked OAuth accounts.
+            with engine2.begin() as conn:
+                conn.execute(
+                    _text("DELETE FROM ita.users WHERE id = :uid"),
+                    {"uid": oauth_user_id},
+                )
+
+                remaining = conn.execute(
+                    _text(
+                        "SELECT COUNT(*) FROM ita.user_oauth_accounts "
+                        "WHERE provider_user_id = 'github-12345'"
+                    )
+                ).scalar_one()
+
+                assert remaining == 0
+                    
         finally:
             engine2.dispose()
     finally:

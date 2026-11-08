@@ -1,0 +1,26 @@
+.auth-panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+}
+
+.auth-panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+}
+
+.auth-user p {
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.auth-panel .button {
+  margin-top: 0.5rem;
+}
+
+.auth-error {
+  margin: 0.75rem 0 0;
+  color: var(--color-fail-text);
+}
