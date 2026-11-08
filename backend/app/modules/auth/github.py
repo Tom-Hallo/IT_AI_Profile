@@ -24,6 +24,8 @@ class GitHubIdentity:
     provider_user_id: str
     email: str
     full_name: str
+    access_token: str | None = None
+    scope: str | None = None
 
 
 async def get_github_identity(code: str) -> GitHubIdentity:
@@ -130,6 +132,8 @@ async def get_github_identity(code: str) -> GitHubIdentity:
                 provider_user_id=str(github_id),
                 email=email,
                 full_name=full_name,
+                access_token=access_token,
+                scope=token_data.get("scope") if isinstance(token_data, dict) else None,
             )
 
     except GitHubOAuthError:

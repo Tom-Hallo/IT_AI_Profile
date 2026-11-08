@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -37,6 +37,15 @@ class OAuthAccount(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
 
     provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    encrypted_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    scope: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    token_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

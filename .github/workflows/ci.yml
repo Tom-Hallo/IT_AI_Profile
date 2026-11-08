@@ -40,6 +40,7 @@ jobs:
           APP_ENV: test
           DATABASE_URL: postgresql+psycopg://ita:test-password@localhost:5432/it_ai_profile
           REDIS_URL: redis://localhost:6379/0
+          GITHUB_TOKEN_ENCRYPTION_KEY: aXRfdGFsZW50X2FpX3Byb2ZpbGVfZmVybmV0X2tleV8=
         run: pytest -m "not integration"
 
   frontend:

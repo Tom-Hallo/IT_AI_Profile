@@ -15,3 +15,7 @@ if os.environ.get("RUN_INTEGRATION") != "1":
     )
 
 os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6379/0")
+os.environ.setdefault(
+    "GITHUB_TOKEN_ENCRYPTION_KEY",
+    "aXRfdGFsZW50X2FpX3Byb2ZpbGVfZmVybmV0X2tleV8=",
+)

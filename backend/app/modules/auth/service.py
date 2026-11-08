@@ -3,11 +3,12 @@
 import secrets
 
 from redis import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.redis import get_redis_connection
+from app.core.security import decrypt_token, encrypt_token
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
 from app.modules.users.models import User
@@ -130,6 +131,14 @@ def get_or_create_github_user(
     oauth_account = oauth_result.scalar_one_or_none()
 
     if oauth_account is not None:
+        if identity.access_token:
+            try:
+                oauth_account.encrypted_access_token = encrypt_token(identity.access_token)
+                oauth_account.scope = identity.scope
+                oauth_account.token_updated_at = func.now()
+                db.commit()
+            except Exception:
+                db.rollback()
         return oauth_account.user
 
     # 2. Không tự động liên kết nếu email đã thuộc User khác.
@@ -151,10 +160,20 @@ def get_or_create_github_user(
         db.add(user)
         db.flush()
 
+        encrypted_token = None
+        if identity.access_token:
+            try:
+                encrypted_token = encrypt_token(identity.access_token)
+            except Exception:
+                pass
+
         oauth_account = OAuthAccount(
             user_id=user.id,
             provider=provider,
             provider_user_id=identity.provider_user_id,
+            encrypted_access_token=encrypted_token,
+            scope=identity.scope,
+            token_updated_at=func.now() if encrypted_token else None,
         )
 
         db.add(oauth_account)
@@ -176,6 +195,14 @@ def get_or_create_github_user(
         oauth_account = oauth_result.scalar_one_or_none()
 
         if oauth_account is not None:
+            if identity.access_token:
+                try:
+                    oauth_account.encrypted_access_token = encrypt_token(identity.access_token)
+                    oauth_account.scope = identity.scope
+                    oauth_account.token_updated_at = func.now()
+                    db.commit()
+                except Exception:
+                    db.rollback()
             return oauth_account.user
 
         raise GitHubAccountConflictError(
@@ -185,3 +212,41 @@ def get_or_create_github_user(
     except Exception:
         db.rollback()
         raise
+
+
+def get_user_github_token(
+    db: Session,
+    user_id: int,
+) -> tuple[str | None, str | None]:
+    """Lấy và giải mã GitHub access token cùng scope đã cấp của user."""
+    stmt = select(OAuthAccount).where(
+        OAuthAccount.user_id == user_id,
+        OAuthAccount.provider == "github",
+    )
+    account = db.scalar(stmt)
+    encrypted = getattr(account, "encrypted_access_token", None)
+    if not account or not encrypted:
+        return None, None
+
+    try:
+        token = decrypt_token(encrypted)
+        return token, getattr(account, "scope", None)
+    except Exception:
+        return None, None
+
+
+def disconnect_github(db: Session, user_id: int) -> bool:
+    """Xóa token và hủy liên kết GitHub của người dùng."""
+    stmt = select(OAuthAccount).where(
+        OAuthAccount.user_id == user_id,
+        OAuthAccount.provider == "github",
+    )
+    account = db.scalar(stmt)
+    if not account:
+        return False
+
+    account.encrypted_access_token = None
+    account.scope = None
+    account.token_updated_at = None
+    db.commit()
+    return True
