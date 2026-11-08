@@ -33,6 +33,14 @@ export default defineConfig(({ mode }) => {
       // Bật khi hot-reload không hoạt động (bind mount từ ổ Windows vào Docker).
       watch: watchPolling ? { usePolling: true, interval: 300 } : undefined,
     },
+    build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(import.meta.dirname, 'index.html'),
+          designDemo: path.resolve(import.meta.dirname, 'design-demo/index.html'),
+        },
+      },
+    },
     preview: {
       host: true,
       port: FRONTEND_PORT,
