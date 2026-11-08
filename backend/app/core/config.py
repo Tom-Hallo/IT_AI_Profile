@@ -42,14 +42,12 @@ class Settings(BaseSettings):
     redis_url: SecretStr
 
     # --- Tùy chọn ---
-    log_level: Literal["DEBUG", "INFO","WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     # GitHub OAuth: để trống khi chưa cấu hình OAuth App.
     github_client_id: str | None = None
     github_client_secret: SecretStr | None = None
-    github_redirect_uri: str = (
-        "http://localhost:8000/api/v1/auth/github/callback"
-    )
+    github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     frontend_url: str = "http://localhost:5173"
 
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.

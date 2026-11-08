@@ -1,3 +1,4 @@
+import { Button } from '@/shared/ui/Button'
 import { env } from '@/shared/config/env'
 import { AuthPanel } from '@/features/auth/AuthPanel'
 import { describeError } from './describeError'
@@ -106,9 +107,9 @@ export function SystemStatusPage() {
           </div>
         )}
 
-        <button type="button" className="button" onClick={refresh} disabled={isLoading}>
+        <Button variant="primary" onClick={refresh} disabled={isLoading}>
           {isLoading ? 'Đang kiểm tra…' : 'Kiểm tra lại'}
-        </button>
+        </Button>
       </section>
     </main>
   )

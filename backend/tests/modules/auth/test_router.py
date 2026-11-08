@@ -1,4 +1,3 @@
-
 """Tests for GitHub OAuth authentication routes."""
 
 from types import SimpleNamespace
@@ -7,24 +6,23 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api import dependencies as api_dependencies
 from app.db.session import get_session
 from app.modules.auth import router as auth_router
-from app.api import dependencies as api_dependencies
+
 
 @pytest.fixture
 def client(monkeypatch):
     """Tạo test app riêng cho Auth router."""
 
     fake_settings = SimpleNamespace(
-    app_env="test",
-    frontend_url="http://localhost:5173",
-    cors_origins=["http://localhost:5173"],
-    github_oauth_enabled=True,
-    github_client_id="test-client-id",
-    github_redirect_uri=(
-        "http://localhost:8000/api/v1/auth/github/callback"
-    ),
-)
+        app_env="test",
+        frontend_url="http://localhost:5173",
+        cors_origins=["http://localhost:5173"],
+        github_oauth_enabled=True,
+        github_client_id="test-client-id",
+        github_redirect_uri=("http://localhost:8000/api/v1/auth/github/callback"),
+    )
 
     monkeypatch.setattr(auth_router, "settings", fake_settings)
 
@@ -65,9 +63,7 @@ def test_github_login_redirects_to_github(client, monkeypatch):
     )
 
     assert response.status_code == 302
-    assert response.headers["location"].startswith(
-        "https://github.com/login/oauth/authorize?"
-    )
+    assert response.headers["location"].startswith("https://github.com/login/oauth/authorize?")
     assert "state=generated-state" in response.headers["location"]
     assert auth_router.OAUTH_STATE_COOKIE in response.headers["set-cookie"]
     assert auth_router.OAUTH_BROWSER_COOKIE in response.headers["set-cookie"]
@@ -316,6 +312,7 @@ def test_auth_me_success_does_not_expose_password(client, monkeypatch):
     }
     assert "hashed_password" not in response.json()
 
+
 def test_auth_logout_success(client, monkeypatch):
     """Đăng xuất thành công và xóa session cookie."""
 
@@ -389,4 +386,3 @@ def test_auth_logout_redis_error_returns_503(client, monkeypatch):
     )
 
     assert response.status_code == 503
-        

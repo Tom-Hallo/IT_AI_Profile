@@ -1,4 +1,3 @@
-
 """Unit tests for GitHub OAuth state and application sessions."""
 
 from unittest.mock import Mock
@@ -44,9 +43,7 @@ def test_consume_oauth_state_success(fake_redis):
     )
 
     assert result is True
-    fake_redis.getdel.assert_called_once_with(
-        f"{service.OAUTH_STATE_PREFIX}valid-state"
-    )
+    fake_redis.getdel.assert_called_once_with(f"{service.OAUTH_STATE_PREFIX}valid-state")
 
 
 def test_consume_oauth_state_wrong_browser(fake_redis):
@@ -142,9 +139,7 @@ def test_revoke_session_success(fake_redis):
     result = service.revoke_session("valid-session")
 
     assert result is True
-    fake_redis.delete.assert_called_once_with(
-        f"{service.SESSION_PREFIX}valid-session"
-    )
+    fake_redis.delete.assert_called_once_with(f"{service.SESSION_PREFIX}valid-session")
 
 
 def test_revoke_session_missing(fake_redis):

@@ -2,21 +2,19 @@
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import event
-
-from app.core.config import settings
-from app.db.base import Base
-from app.db.session import engine
 
 # Register business models
 import app.modules.assessments.models  # noqa: F401, E402
+import app.modules.auth.models  # noqa: F401, E402
 import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
 import app.modules.users.models  # noqa: F401, E402
-import app.modules.auth.models  # noqa: F401, E402
-
+from alembic import context
+from app.core.config import settings
+from app.db.base import Base
+from app.db.session import engine
 
 config = context.config
 
@@ -45,9 +43,7 @@ def include_name(name, type_, parent_names):
         return name in (None, "ita")
 
     if type_ == "table":
-        qualified_name = parent_names.get(
-            "schema_qualified_table_name"
-        )
+        qualified_name = parent_names.get("schema_qualified_table_name")
         return qualified_name in target_metadata.tables
 
     return True

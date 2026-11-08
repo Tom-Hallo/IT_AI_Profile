@@ -145,8 +145,7 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a user
             conn.execute(
                 _text(
-                    "INSERT INTO ita.users (email, full_name, hashed_password) "
-                    "VALUES (:e, :n, :p)"
+                    "INSERT INTO ita.users (email, full_name, hashed_password) VALUES (:e, :n, :p)"
                 ),
                 {"e": "alice@example.com", "n": "Alice", "p": "hash_placeholder"},
             )
@@ -164,10 +163,7 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             )
 
             oauth_user_id = conn.execute(
-                _text(
-                    "SELECT id FROM ita.users "
-                    "WHERE email = 'github@example.com'"
-                )
+                _text("SELECT id FROM ita.users WHERE email = 'github@example.com'")
             ).scalar_one()
 
             # Insert a linked GitHub account.
@@ -190,7 +186,12 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                     "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
-                {"oid": user_id, "eid": "gh:12345", "n": "my-repo", "url": "https://github.com/alice/my-repo"},
+                {
+                    "oid": user_id,
+                    "eid": "gh:12345",
+                    "n": "my-repo",
+                    "url": "https://github.com/alice/my-repo",
+                },
             )
             repo_id = conn.execute(
                 _text("SELECT id FROM ita.repositories WHERE external_id = 'gh:12345'")
@@ -198,35 +199,26 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert an assessment with valid score
             conn.execute(
-                _text(
-                    "INSERT INTO ita.assessments (user_id, type, score) "
-                    "VALUES (:uid, :t, :s)"
-                ),
+                _text("INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"),
                 {"uid": user_id, "t": "python", "s": 85.5},
             )
 
             # Insert a CV
             conn.execute(
-                _text(
-                    "INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"
-                ),
+                _text("INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"),
                 {"uid": user_id, "c": '{"skills": ["Python"]}'},
             )
 
             # Insert a roadmap
             conn.execute(
-                _text(
-                    "INSERT INTO ita.roadmaps (user_id, title, data) "
-                    "VALUES (:uid, :t, :d)"
-                ),
+                _text("INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"),
                 {"uid": user_id, "t": "My Roadmap", "d": '{"steps": []}'},
             )
 
             # Pivot
             conn.execute(
                 _text(
-                    "INSERT INTO ita.user_repository (user_id, repository_id) "
-                    "VALUES (:uid, :rid)"
+                    "INSERT INTO ita.user_repository (user_id, repository_id) VALUES (:uid, :rid)"
                 ),
                 {"uid": user_id, "rid": repo_id},
             )
@@ -266,8 +258,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                         ),
                         {"uid": 999999, "t": "java", "s": 50},
                     )
-                    
-                                # Duplicate GitHub identity must fail.
+
+                    # Duplicate GitHub identity must fail.
             with _pytest.raises(
                 Exception,
                 match="uq_user_oauth_accounts_provider_provider_user_id|unique",
@@ -317,7 +309,7 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                 ).scalar_one()
 
                 assert remaining == 0
-                    
+
         finally:
             engine2.dispose()
     finally:

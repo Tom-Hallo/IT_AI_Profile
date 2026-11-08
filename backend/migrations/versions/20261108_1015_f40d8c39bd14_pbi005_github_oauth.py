@@ -1,4 +1,3 @@
-
 """pbi005_github_oauth
 
 Revision ID: f40d8c39bd14
@@ -10,6 +9,7 @@ Create Date: 2026-11-08 10:15:49.144328
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.

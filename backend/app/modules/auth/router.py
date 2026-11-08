@@ -1,4 +1,5 @@
 """GitHub OAuth authentication routes."""
+
 import logging
 import secrets
 from urllib.parse import urlencode
