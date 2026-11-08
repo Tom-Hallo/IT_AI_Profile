@@ -11,9 +11,8 @@ Naming convention follows app.db.base.NAMING_CONVENTION:
 """
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # ---------------------------------------------------------------------------
 # Alembic revision identifiers

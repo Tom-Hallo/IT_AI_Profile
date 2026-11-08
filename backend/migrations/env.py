@@ -2,6 +2,7 @@
 
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import event
 
 # Register business models
@@ -11,7 +12,6 @@ import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
 import app.modules.users.models  # noqa: F401, E402
-from alembic import context
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
