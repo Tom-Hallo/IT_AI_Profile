@@ -1,6 +1,6 @@
 """PBI-010 live GitHub activity: never fabricate historical code snapshots."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 from fastapi import HTTPException
@@ -19,7 +19,22 @@ from app.modules.github.client import (
 from app.modules.github.models import Repository, user_repository
 
 
-async def _collect(client, endpoint, params, max_pages=10):
+def _timestamp(value: str) -> datetime:
+    """Safe ISO 8601 parser supporting trailing Z and preserving timezone awareness."""
+    if not value:
+        raise ValueError("Empty timestamp string")
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+async def _collect(
+    client: GitHubApiClient, endpoint: str, params: dict, max_pages: int = 10
+) -> list:
+    """Collect paginated items up to max_pages."""
     records = []
     for page in range(1, max_pages + 1):
         response = await client._request(
@@ -34,11 +49,55 @@ async def _collect(client, endpoint, params, max_pages=10):
     raise HTTPException(413, "Too many records; choose a shorter time window")
 
 
-def _timestamp(value):
-    return datetime.fromisoformat(value)
+async def _collect_pull_requests_in_range(
+    client: GitHubApiClient,
+    path: str,
+    start: datetime,
+    end: datetime,
+    max_pages: int = 10,
+) -> int:
+    """Collect PRs created in [start, end) range, terminating pagination when created_at < start."""
+    count = 0
+    for page in range(1, max_pages + 1):
+        response = await client._request(
+            "GET",
+            f"{path}/pulls",
+            {
+                "state": "all",
+                "sort": "created",
+                "direction": "desc",
+                "page": page,
+                "per_page": 100,
+            },
+        )
+        batch = response.json()
+        if not isinstance(batch, list):
+            raise HTTPException(502, "Unexpected GitHub response")
+        if not batch:
+            return count
+
+        reached_earlier_history = False
+        for pr in batch:
+            created_str = pr.get("created_at")
+            if not created_str:
+                continue
+            created_dt = _timestamp(created_str)
+            if created_dt >= end:
+                continue
+            if created_dt < start:
+                reached_earlier_history = True
+                break
+            count += 1
+
+        if reached_earlier_history or len(batch) < 100:
+            return count
+
+    raise HTTPException(413, "Too many records; choose a shorter time window")
 
 
-async def analyze(db: Session, repository_id: int, user_id: int, start, end):
+async def analyze(
+    db: Session, repository_id: int, user_id: int, start: datetime, end: datetime
+):
     repo = db.scalar(
         select(Repository)
         .join(user_repository, Repository.id == user_repository.c.repository_id)
@@ -51,9 +110,21 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
         raise HTTPException(404, "Repository not found or access denied")
     if repo.last_synced_at is None or repo.sync_status != "synced":
         raise HTTPException(409, "Repository sync is incomplete")
-    token, _ = get_user_github_token(db, user_id)
+
+    token, scopes = get_user_github_token(db, user_id)
     if not token:
         raise HTTPException(401, "Connect your GitHub account")
+
+    if repo.private:
+        has_repo_scope = bool(
+            scopes and "repo" in set((scopes or "").replace(",", " ").split())
+        )
+        if not has_repo_scope:
+            raise HTTPException(
+                403,
+                "Private repository analysis requires 'repo' OAuth scope consent",
+            )
+
     if not repo.full_name or len(repo.full_name.split("/")) != 2:
         raise HTTPException(422, "Invalid repository full name")
 
@@ -66,16 +137,22 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
             f"{path}/commits",
             {"since": start.isoformat(), "until": end.isoformat()},
         )
-        commits = [
-            c
-            for c in commits
-            if (c.get("commit") or {}).get("committer", {}).get("date")
-            and start <= _timestamp(c["commit"]["committer"]["date"]) < end
-        ]
-        if len(commits) > 100:
+        filtered_commits = []
+        for c in commits:
+            commit_meta = c.get("commit") or {}
+            committer_date = (commit_meta.get("committer") or {}).get("date")
+            author_date = (commit_meta.get("author") or {}).get("date")
+            target_date_str = committer_date or author_date
+            if target_date_str:
+                commit_dt = _timestamp(target_date_str)
+                if start <= commit_dt < end:
+                    filtered_commits.append(c)
+
+        if len(filtered_commits) > 100:
             raise HTTPException(413, "Over 100 commits; use a shorter window")
+
         additions = deletions = 0
-        for commit in commits:
+        for commit in filtered_commits:
             sha = commit.get("sha", "")
             if len(sha) != 40 or any(
                 ch not in "0123456789abcdef" for ch in sha.lower()
@@ -85,16 +162,9 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
             stats = details.get("stats") or {}
             additions += int(stats.get("additions", 0))
             deletions += int(stats.get("deletions", 0))
-        prs = await _collect(
-            client,
-            f"{path}/pulls",
-            {"state": "all", "sort": "created", "direction": "desc"},
-        )
-        pr_count = sum(
-            start <= _timestamp(p["created_at"]) < end
-            for p in prs
-            if p.get("created_at")
-        )
+
+        pr_count = await _collect_pull_requests_in_range(client, path, start, end)
+
     except GitHubTokenRevokedError as exc:
         raise HTTPException(401, str(exc)) from None
     except GitHubPermissionError as exc:
@@ -113,7 +183,7 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
             "end_exclusive_utc": end.isoformat(),
         },
         "activity": {
-            "commits": len(commits),
+            "commits": len(filtered_commits),
             "pull_requests_created": pr_count,
             "additions": additions,
             "deletions": deletions,
