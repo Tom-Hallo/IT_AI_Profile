@@ -1,0 +1,2 @@
+import {toast} from './common.js';
+const prefs=JSON.parse(localStorage.getItem('craft-privacy')||'{}');document.querySelectorAll('.privacy-check').forEach(c=>{if(c.dataset.pref in prefs)c.checked=!!prefs[c.dataset.pref]});document.getElementById('save-privacy').onclick=()=>{const data={};document.querySelectorAll('.privacy-check').forEach(c=>data[c.dataset.pref]=c.checked);localStorage.setItem('craft-privacy',JSON.stringify(data));toast('Demo preferences saved in this browser')};
