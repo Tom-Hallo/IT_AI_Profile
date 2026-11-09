@@ -267,7 +267,9 @@ def upgrade() -> None:
 # Downgrade  — drops in reverse dependency order
 # ---------------------------------------------------------------------------
 def downgrade() -> None:
-    op.drop_index("ix_user_repository_user_id", table_name="user_repository", schema=SCHEMA)
+    op.drop_index(
+        "ix_user_repository_user_id", table_name="user_repository", schema=SCHEMA
+    )
     op.drop_table("user_repository", schema=SCHEMA)
 
     op.drop_index("ix_roadmaps_user_id", table_name="roadmaps", schema=SCHEMA)

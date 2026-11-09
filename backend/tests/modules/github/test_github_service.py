@@ -92,7 +92,9 @@ def fake_sync_redis(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_sync_user_with_zero_repositories(in_memory_db: Session, sample_user: User):
+async def test_sync_user_with_zero_repositories(
+    in_memory_db: Session, sample_user: User
+):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[])
 
@@ -109,7 +111,9 @@ async def test_sync_user_with_zero_repositories(in_memory_db: Session, sample_us
 
 
 @pytest.mark.anyio
-async def test_sync_user_with_repositories_and_languages(in_memory_db: Session, sample_user: User):
+async def test_sync_user_with_repositories_and_languages(
+    in_memory_db: Session, sample_user: User
+):
     fake_repos = [
         {
             "id": 1001,
@@ -173,7 +177,9 @@ async def test_sync_user_with_repositories_and_languages(in_memory_db: Session, 
     assert result["synced_count"] == 2
 
     # Kiểm tra bảng repositories
-    repos = in_memory_db.scalars(select(Repository).order_by(Repository.external_id)).all()
+    repos = in_memory_db.scalars(
+        select(Repository).order_by(Repository.external_id)
+    ).all()
     assert len(repos) == 2
 
     repo1 = repos[0]

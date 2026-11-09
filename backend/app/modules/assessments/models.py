@@ -68,7 +68,4 @@ class Assessment(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"<Assessment id={self.id} "
-            f"type={self.type!r} score={self.score}>"
-        )
+        return f"<Assessment id={self.id} type={self.type!r} score={self.score}>"

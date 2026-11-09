@@ -28,4 +28,5 @@ def test_purge_does_not_follow_symlink(tmp_path, monkeypatch):
         assert (outside / "keep.txt").read_text() == "keep"
     finally:
         import shutil
+
         shutil.rmtree(outside)

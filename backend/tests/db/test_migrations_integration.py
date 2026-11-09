@@ -107,7 +107,9 @@ def test_upgrade_is_idempotent(alembic_cli, temp_database_url):
 # TC05 - downgrade base clears all business tables, re-upgrade succeeds
 # ---------------------------------------------------------------------------
 def test_downgrade_base_then_upgrade_again(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
 
     down = alembic_cli("downgrade", "base", database_url=temp_database_url)
     assert down.returncode == 0, down.stderr
@@ -127,7 +129,9 @@ def test_downgrade_base_then_upgrade_again(alembic_cli, temp_database_url):
 # TC06 - alembic check reports no pending model changes
 # ---------------------------------------------------------------------------
 def test_check_reports_no_pending_model_changes(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
     result = alembic_cli("check", database_url=temp_database_url)
     assert result.returncode == 0, result.stderr + result.stdout
 
@@ -140,7 +144,9 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
     import pytest as _pytest
     from sqlalchemy import text as _text
 
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
 
     engine = create_engine(temp_database_url)
     try:
@@ -190,7 +196,12 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                     "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
-                {"oid": user_id, "eid": "gh:12345", "n": "my-repo", "url": "https://github.com/alice/my-repo"},
+                {
+                    "oid": user_id,
+                    "eid": "gh:12345",
+                    "n": "my-repo",
+                    "url": "https://github.com/alice/my-repo",
+                },
                 {
                     "oid": user_id,
                     "eid": "gh:12345",
@@ -213,9 +224,7 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert a CV
             conn.execute(
-                _text(
-                    "INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"
-                ),
+                _text("INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"),
                 {"uid": user_id, "c": '{"skills": ["Python"]}'},
             )
 

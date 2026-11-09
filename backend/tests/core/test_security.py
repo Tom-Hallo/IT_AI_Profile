@@ -36,7 +36,9 @@ def test_encrypt_without_key_raises_configuration_error(monkeypatch):
     )
     monkeypatch.setattr(security, "settings", fake_settings)
 
-    with pytest.raises(ConfigurationError, match="Chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY"):
+    with pytest.raises(
+        ConfigurationError, match="Chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY"
+    ):
         encrypt_token("gho_secret_token")
 
 

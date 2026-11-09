@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-
 from app.core.security import decrypt_token, encrypt_token
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount

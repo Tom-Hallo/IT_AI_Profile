@@ -12,11 +12,13 @@ from app.modules.consent.cleanup import cleanup_terminal_jobs
 def run_cleanup(user_id: int, repo_id: int) -> int:
     with session_scope() as db:
         active = db.scalar(
-            select(AnalysisJob.id).where(
+            select(AnalysisJob.id)
+            .where(
                 AnalysisJob.user_id == user_id,
                 AnalysisJob.repo_id == repo_id,
                 AnalysisJob.status.in_(ACTIVE),
-            ).limit(1)
+            )
+            .limit(1)
         )
         if active is not None:
             # Retry later, after worker cancellation checkpoint.

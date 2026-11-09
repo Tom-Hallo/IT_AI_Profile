@@ -1,4 +1,5 @@
 from uuid import uuid4
+
 from app.modules.consent.cleanup import cleanup_job_directory
 
 

@@ -20,7 +20,9 @@ def _get_fernet() -> Fernet:
     Ném ConfigurationError nếu chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY.
     """
     if not settings.github_token_encryption_key:
-        raise ConfigurationError("Chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY để mã hóa token.")
+        raise ConfigurationError(
+            "Chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY để mã hóa token."
+        )
     try:
         key_bytes = settings.github_token_encryption_key.get_secret_value().encode(
             "utf-8"
@@ -48,8 +50,9 @@ def decrypt_token(encrypted_token: str) -> str:
         decrypted_bytes = fernet.decrypt(encrypted_token.encode("utf-8"))
         return decrypted_bytes.decode("utf-8")
     except InvalidToken:
-        raise ValueError("Không thể giải mã token (token bị hỏng hoặc sai khóa).") from None
-
+        raise ValueError(
+            "Không thể giải mã token (token bị hỏng hoặc sai khóa)."
+        ) from None
 
 
 def mask_token(token: str | None) -> str:
