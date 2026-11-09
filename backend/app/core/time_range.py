@@ -10,11 +10,13 @@ def resolve_range(mode: str, preset: str | None = None, month: str | None = None
                   timezone_name: str = 'UTC', now: datetime | None = None):
     try:
         tz = ZoneInfo(timezone_name)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise HTTPException(422, 'Invalid IANA timezone')
+    except (ZoneInfoNotFoundError, ValueError) as err:
+        raise HTTPException(422, 'Invalid IANA timezone') from err
     now = (now or datetime.now(UTC)).astimezone(tz)
     if mode == 'preset':
-        if preset not in ('1m', '3m', '6m', '1y') or any(v is not None for v in (month, start_date, end_date)):
+        if preset not in ('1m', '3m', '6m', '1y') or any(
+            v is not None for v in (month, start_date, end_date)
+        ):
             raise HTTPException(422, 'Invalid preset parameters')
         # Rolling calendar months, anchored to the current local date/time.
         months = {'1m': 1, '3m': 3, '6m': 6, '1y': 12}[preset]

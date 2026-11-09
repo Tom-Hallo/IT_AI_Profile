@@ -11,7 +11,12 @@ def test_month_utc_boundary():
     assert not (start <= end < end)
 
 def test_timezone_ho_chi_minh():
-    start, end = resolve_range('custom', start_date=date(2026,11,1), end_date=date(2026,11,1), timezone_name='Asia/Ho_Chi_Minh')
+    start, end = resolve_range(
+        'custom',
+        start_date=date(2026, 11, 1),
+        end_date=date(2026, 11, 1),
+        timezone_name='Asia/Ho_Chi_Minh',
+    )
     assert start.isoformat() == '2026-10-31T17:00:00+00:00'
     assert end.isoformat() == '2026-11-01T17:00:00+00:00'
 
@@ -24,5 +29,7 @@ def test_invalid_month():
         resolve_range('month', month='2026-13')
 
 def test_preset_leap_year():
-    start, end = resolve_range('preset', preset='1y', now=datetime(2024,2,29,12,tzinfo=timezone.utc))
+    start, end = resolve_range(
+        'preset', preset='1y', now=datetime(2024, 2, 29, 12, tzinfo=timezone.utc)
+    )
     assert start.date() == date(2023,2,28)

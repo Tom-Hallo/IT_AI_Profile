@@ -32,7 +32,8 @@ async def analyze(db: AsyncSession, repository_id: int, user_id: int, start, end
         'activity': {'commits': commits[0], 'pull_requests_created': prs,
                      'additions': commits[1], 'deletions': commits[2]},
         'base_code': {'status': 'available' if baseline is not None else 'unavailable',
-                      'lines': baseline, 'as_of_utc': start.isoformat() if baseline is not None else None},
+                      'lines': baseline,
+                      'as_of_utc': start.isoformat() if baseline is not None else None},
         'sync': {'last_synced_at': repo.synced_at.isoformat(),
                  'complete_through_end': repo.synced_at >= end}
     }
