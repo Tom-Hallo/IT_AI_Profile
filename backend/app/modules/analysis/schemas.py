@@ -84,4 +84,3 @@ class EvidenceListResponse(BaseModel):
     commit_sha: str
     total: int
     items: list[EvidenceRecord]
-

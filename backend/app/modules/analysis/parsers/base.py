@@ -39,4 +39,3 @@ class ManifestParserResult:
             if dep.name.lower() == target:
                 return dep
         return None
-

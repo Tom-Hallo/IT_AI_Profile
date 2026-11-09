@@ -1,21 +1,25 @@
-"""Service layer for repository analysis, authorization, and evidence preservation (PBI-012)."""
+"""Service layer for repository analysis, authorization, evidence preservation, and background job state (PBI-011 & PBI-012)."""
 
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.time_range import resolve_range
-from app.modules.analysis.evidence import EvidenceRecord
+from app.modules.analysis.evidence import UTC, EvidenceRecord
 from app.modules.analysis.inspector import (
     RepositoryContentSource,
     RepositoryInspector,
 )
 from app.modules.analysis.limits import AnalysisLimits
+from app.modules.analysis.models import ACTIVE, AnalysisJob, AnalysisJobEvent
 from app.modules.analysis.schemas import RepositoryAnalysisRequest
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
@@ -32,6 +36,157 @@ logger = logging.getLogger(__name__)
 
 # Lưu trữ tạm trong bộ nhớ cho phiên làm việc / PBI-015 contract
 _ANALYSIS_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+
+
+def now() -> datetime:
+    """Return current UTC timestamp."""
+    return datetime.now(UTC)
+
+
+# -----------------------------------------------------------------------------
+# PBI-011: Background Analysis Job Transactional State Operations
+# -----------------------------------------------------------------------------
+
+
+def require_access(db: Session, user_id: int, repo_id: int) -> None:
+    """Verify user ownership/access of repository and active GitHub token."""
+    owned = db.scalar(
+        select(user_repository.c.repository_id).where(
+            user_repository.c.user_id == user_id,
+            user_repository.c.repository_id == repo_id,
+        )
+    )
+    if owned is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found")
+    token, _ = get_user_github_token(db, user_id)
+    if not token:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "GitHub access not connected")
+
+
+def event(db: Session, job: AnalysisJob, code: str) -> None:
+    """Record a persistent job event in ita.analysis_job_events."""
+    db.add(
+        AnalysisJobEvent(
+            job_id=job.id,
+            status=job.status,
+            progress=job.progress,
+            step=job.step,
+            code=code,
+        )
+    )
+
+
+def owned_job(
+    db: Session, user_id: int, job_id: uuid.UUID, lock: bool = False
+) -> AnalysisJob:
+    """Fetch job by ID ensuring caller is the job owner."""
+    stmt = select(AnalysisJob).where(
+        AnalysisJob.id == job_id, AnalysisJob.user_id == user_id
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    job = db.scalar(stmt)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+    return job
+
+
+def active_job(
+    db: Session, user_id: int, repo_id: int, scope: str
+) -> AnalysisJob | None:
+    """Check for an existing in-progress job for the given resource and scope."""
+    return db.scalar(
+        select(AnalysisJob).where(
+            AnalysisJob.user_id == user_id,
+            AnalysisJob.repo_id == repo_id,
+            AnalysisJob.scope == scope,
+            AnalysisJob.status.in_(ACTIVE),
+        )
+    )
+
+
+def create(
+    db: Session,
+    user_id: int,
+    repo_id: int,
+    scope: str,
+    retry_of: uuid.UUID | None = None,
+) -> tuple[AnalysisJob, bool]:
+    """Create a new analysis job if one is not already active."""
+    require_access(db, user_id, repo_id)
+    existing = active_job(db, user_id, repo_id, scope)
+    if existing:
+        return existing, False
+    job = AnalysisJob(user_id=user_id, repo_id=repo_id, scope=scope, retry_of=retry_of)
+    db.add(job)
+    event(db, job, "created")
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = active_job(db, user_id, repo_id, scope)
+        if existing:
+            return existing, False
+        raise
+    db.refresh(job)
+    return job, True
+
+
+def cancel(db: Session, user_id: int, job_id: uuid.UUID) -> AnalysisJob:
+    """Request cancellation of an active analysis job."""
+    job = owned_job(db, user_id, job_id, lock=True)
+    if job.status not in ACTIVE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Job is already terminal")
+    if job.status != "cancel_requested":
+        job.status = "cancel_requested"
+        event(db, job, "cancel_requested")
+        db.commit()
+    return job
+
+
+def retry(db: Session, user_id: int, job_id: uuid.UUID) -> tuple[AnalysisJob, bool]:
+    """Retry a failed or cancelled analysis job."""
+    old = owned_job(db, user_id, job_id, lock=True)
+    if old.status not in ("failed", "cancelled"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Only failed/cancelled jobs can be retried"
+        )
+    require_access(db, user_id, old.repo_id)
+    repo_id, scope, old_id = old.repo_id, old.scope, old.id
+    db.rollback()  # release lock before create()
+    return create(db, user_id, repo_id, scope, retry_of=old_id)
+
+
+def serialize(job: AnalysisJob) -> dict[str, Any]:
+    """Serialize AnalysisJob model to JSON-safe dictionary."""
+    return {
+        "id": str(job.id),
+        "repo_id": job.repo_id,
+        "scope": job.scope,
+        "status": job.status,
+        "progress": job.progress,
+        "step": job.step,
+        "error_code": job.error_code,
+        "retry_of": str(job.retry_of) if job.retry_of else None,
+    }
+
+
+def fail_dispatch(db: Session, job_id: uuid.UUID) -> None:
+    """Persist queue failure without exposing Redis connection details."""
+    job = db.scalar(
+        select(AnalysisJob).where(AnalysisJob.id == job_id).with_for_update()
+    )
+    if job is not None and job.status == "queued":
+        job.status = "failed"
+        job.error_code = "QUEUE_UNAVAILABLE"
+        job.finished_at = now()
+        event(db, job, "dispatch_failed")
+        db.commit()
+
+
+# -----------------------------------------------------------------------------
+# PBI-012: Static Code, Language, Framework & Architecture Analysis Service
+# -----------------------------------------------------------------------------
 
 
 class GitHubRepositoryContentSource(RepositoryContentSource):
@@ -160,43 +315,32 @@ async def analyze_repository(
     content_source = custom_source
 
     if content_source is None:
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Tài khoản chưa kết nối GitHub hoặc token đã hết hạn.",
-            )
-        gh_client = client or GitHubApiClient(token)
+        owner = repo.full_name.split("/")[0] if "/" in repo.full_name else repo.name
+        repo_name = repo.full_name.split("/")[1] if "/" in repo.full_name else repo.name
 
-        owner = (
-            repo.full_name.split("/")[0]
-            if repo.full_name and "/" in repo.full_name
-            else repo.name
-        )
-        repo_name = (
-            repo.full_name.split("/")[1]
-            if repo.full_name and "/" in repo.full_name
-            else repo.name
-        )
-
+        api_client = client or GitHubApiClient(access_token=token)
         try:
-            fetched_sha = await gh_client.get_latest_commit_sha(
+            latest_sha = await api_client.get_latest_commit_sha(
                 owner=owner,
                 repo=repo_name,
-                branch_or_ref=repo.default_branch or "main",
+                branch=repo.default_branch or "main",
                 until=target_until,
             )
-            if fetched_sha:
-                commit_sha = fetched_sha
+            if latest_sha:
+                commit_sha = latest_sha
         except (
-            GitHubApiError,
             GitHubPermissionError,
-            GitHubRateLimitError,
             GitHubTokenRevokedError,
+            GitHubRateLimitError,
+            GitHubApiError,
         ) as exc:
-            logger.warning(f"Không thể lấy commit SHA từ GitHub: {exc}")
+            logger.warning(
+                "Không thể lấy commit SHA mới nhất qua GitHub API: %s. Dùng fallback SHA.",
+                exc,
+            )
 
         content_source = GitHubRepositoryContentSource(
-            client=gh_client,
+            client=api_client,
             owner=owner,
             repo=repo_name,
             commit_sha=commit_sha,

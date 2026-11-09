@@ -200,4 +200,3 @@ async def test_commit_and_path_evidence_correctness():
         assert ev["detection_method"] is not None
         assert ev["confidence"] in ["high", "medium", "low", "uncertain"]
         assert len(ev["rationale"]) > 0
-
