@@ -2,14 +2,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.orm import configure_mappers
 
-import app.modules.assessments.models  # noqa: F401
-import app.modules.auth.models  # noqa: F401
-import app.modules.cvs.models  # noqa: F401
-import app.modules.github.models  # noqa: F401
-import app.modules.roadmaps.models  # noqa: F401
-import app.modules.users.models  # noqa: F401
+import app.db.models  # noqa: F401
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
 from app.modules.auth.service import (
@@ -17,8 +11,6 @@ from app.modules.auth.service import (
     get_or_create_github_user,
 )
 from app.modules.users.models import User
-
-configure_mappers()
 
 
 @pytest.fixture
