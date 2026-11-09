@@ -1,5 +1,7 @@
 """PBI-010 live GitHub activity: never fabricate historical code snapshots."""
 
+import asyncio
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from urllib.parse import quote
 
@@ -11,12 +13,16 @@ from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
+    GitHubEmptyRepositoryError,
     GitHubNotFoundError,
     GitHubPermissionError,
     GitHubRateLimitError,
     GitHubTokenRevokedError,
 )
 from app.modules.github.models import Repository, user_repository
+
+MAX_COMMITS_FOR_ANALYSIS = 1000
+DEFAULT_CONCURRENCY = 10
 
 
 def _timestamp(value: str) -> datetime:
@@ -32,21 +38,29 @@ def _timestamp(value: str) -> datetime:
 
 
 async def _collect(
-    client: GitHubApiClient, endpoint: str, params: dict, max_pages: int = 10
+    client: GitHubApiClient, endpoint: str, params: dict, max_pages: int = 50
 ) -> list:
     """Collect paginated items up to max_pages."""
     records = []
     for page in range(1, max_pages + 1):
-        response = await client._request(
-            "GET", endpoint, {**params, "page": page, "per_page": 100}
-        )
+        try:
+            response = await client._request(
+                "GET", endpoint, {**params, "page": page, "per_page": 100}
+            )
+        except GitHubEmptyRepositoryError:
+            return []
         batch = response.json()
         if not isinstance(batch, list):
             raise HTTPException(502, "Unexpected GitHub response")
         records.extend(batch)
         if len(batch) < 100:
             return records
-    raise HTTPException(413, "Too many records; choose a shorter time window")
+    raise HTTPException(
+        413,
+        f"Khoảng thời gian chứa quá nhiều dữ liệu "
+        f"(>{MAX_COMMITS_FOR_ANALYSIS} commits). "
+        "Vui lòng chọn khoảng thời gian ngắn hơn.",
+    )
 
 
 async def _collect_pull_requests_in_range(
@@ -54,24 +68,27 @@ async def _collect_pull_requests_in_range(
     path: str,
     start: datetime,
     end: datetime,
-    max_pages: int = 10,
+    max_pages: int = 50,
 ) -> int:
     """Collect PRs created in [start, end) range, terminating pagination when created_at
     < start.
     """
     count = 0
     for page in range(1, max_pages + 1):
-        response = await client._request(
-            "GET",
-            f"{path}/pulls",
-            {
-                "state": "all",
-                "sort": "created",
-                "direction": "desc",
-                "page": page,
-                "per_page": 100,
-            },
-        )
+        try:
+            response = await client._request(
+                "GET",
+                f"{path}/pulls",
+                {
+                    "state": "all",
+                    "sort": "created",
+                    "direction": "desc",
+                    "page": page,
+                    "per_page": 100,
+                },
+            )
+        except GitHubEmptyRepositoryError:
+            return 0
         batch = response.json()
         if not isinstance(batch, list):
             raise HTTPException(502, "Unexpected GitHub response")
@@ -94,7 +111,11 @@ async def _collect_pull_requests_in_range(
         if reached_earlier_history or len(batch) < 100:
             return count
 
-    raise HTTPException(413, "Too many records; choose a shorter time window")
+    raise HTTPException(
+        413,
+        "Khoảng thời gian chứa quá nhiều dữ liệu (>1000 pull requests). "
+        "Vui lòng chọn khoảng thời gian ngắn hơn.",
+    )
 
 
 async def analyze(
@@ -133,39 +154,61 @@ async def analyze(
     owner, name = repo.full_name.split("/")
     path = f"/repos/{quote(owner, safe='')}/{quote(name, safe='')}"
     client = GitHubApiClient(token)
+    client_ctx = client if hasattr(client, "__aenter__") else nullcontext(client)
     try:
-        commits = await _collect(
-            client,
-            f"{path}/commits",
-            {"since": start.isoformat(), "until": end.isoformat()},
-        )
-        filtered_commits = []
-        for c in commits:
-            commit_meta = c.get("commit") or {}
-            committer_date = (commit_meta.get("committer") or {}).get("date")
-            author_date = (commit_meta.get("author") or {}).get("date")
-            target_date_str = committer_date or author_date
-            if target_date_str:
-                commit_dt = _timestamp(target_date_str)
-                if start <= commit_dt < end:
-                    filtered_commits.append(c)
+        async with client_ctx:
+            commits = await _collect(
+                client,
+                f"{path}/commits",
+                {"since": start.isoformat(), "until": end.isoformat()},
+            )
+            filtered_commits = []
+            for c in commits:
+                commit_meta = c.get("commit") or {}
+                committer_date = (commit_meta.get("committer") or {}).get("date")
+                author_date = (commit_meta.get("author") or {}).get("date")
+                target_date_str = committer_date or author_date
+                if target_date_str:
+                    commit_dt = _timestamp(target_date_str)
+                    if start <= commit_dt < end:
+                        filtered_commits.append(c)
 
-        if len(filtered_commits) > 100:
-            raise HTTPException(413, "Over 100 commits; use a shorter window")
+            if len(filtered_commits) > MAX_COMMITS_FOR_ANALYSIS:
+                raise HTTPException(
+                    413,
+                    f"Khoảng thời gian chứa quá nhiều dữ liệu "
+                    f"(>{MAX_COMMITS_FOR_ANALYSIS} commits). "
+                    "Vui lòng chọn khoảng thời gian ngắn hơn.",
+                )
 
-        additions = deletions = 0
-        for commit in filtered_commits:
-            sha = commit.get("sha", "")
-            if len(sha) != 40 or any(
-                ch not in "0123456789abcdef" for ch in sha.lower()
-            ):
-                raise HTTPException(502, "Invalid GitHub commit SHA")
-            details = (await client._request("GET", f"{path}/commits/{sha}")).json()
-            stats = details.get("stats") or {}
-            additions += int(stats.get("additions", 0))
-            deletions += int(stats.get("deletions", 0))
+            sem = asyncio.Semaphore(DEFAULT_CONCURRENCY)
 
-        pr_count = await _collect_pull_requests_in_range(client, path, start, end)
+            async def _fetch_commit_stats(commit_item: dict) -> tuple[int, int]:
+                sha = commit_item.get("sha", "")
+                if len(sha) != 40 or any(
+                    ch not in "0123456789abcdef" for ch in sha.lower()
+                ):
+                    raise HTTPException(502, "Invalid GitHub commit SHA")
+                async with sem:
+                    details = (
+                        await client._request("GET", f"{path}/commits/{sha}")
+                    ).json()
+                    stats = details.get("stats") or {}
+                    return (
+                        int(stats.get("additions", 0)),
+                        int(stats.get("deletions", 0)),
+                    )
+
+            if filtered_commits:
+                commit_stats = await asyncio.gather(
+                    *[_fetch_commit_stats(c) for c in filtered_commits]
+                )
+                additions = sum(s[0] for s in commit_stats)
+                deletions = sum(s[1] for s in commit_stats)
+            else:
+                additions = deletions = 0
+
+            pr_count = await _collect_pull_requests_in_range(client, path, start, end)
 
     except GitHubTokenRevokedError as exc:
         raise HTTPException(401, str(exc)) from None
@@ -175,6 +218,10 @@ async def analyze(
         raise HTTPException(404, str(exc)) from None
     except GitHubRateLimitError as exc:
         raise HTTPException(429, str(exc)) from None
+    except GitHubEmptyRepositoryError:
+        filtered_commits = []
+        additions = deletions = 0
+        pr_count = 0
     except GitHubApiError as exc:
         raise HTTPException(502, str(exc)) from None
 

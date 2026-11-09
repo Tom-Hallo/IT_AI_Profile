@@ -62,6 +62,10 @@ class GitHubNotFoundError(GitHubApiError):
     """Không tìm thấy tài nguyên trên GitHub (HTTP 404)."""
 
 
+class GitHubEmptyRepositoryError(GitHubApiError):
+    """Repository rỗng, chưa có commit nào (HTTP 409 Git Repository is empty)."""
+
+
 class GitHubServerError(GitHubApiError):
     """Lỗi máy chủ từ phía GitHub (HTTP 5xx)."""
 
@@ -225,7 +229,25 @@ class GitHubApiClient:
                             "Không tìm thấy tài nguyên trên GitHub."
                         )
 
-                    # 6. 5xx Server Error (Lỗi tạm thời, có thể retry)
+                    # 6. 409 Conflict (Empty Repository hoặc conflict)
+                    if response.status_code == 409:
+                        msg = ""
+                        try:
+                            data = response.json()
+                            msg = (
+                                data.get("message", "")
+                                if isinstance(data, dict)
+                                else str(data)
+                            )
+                        except Exception:
+                            msg = response.text
+                        if "empty" in msg.lower() or "commits" in url:
+                            raise GitHubEmptyRepositoryError("Git repository is empty.")
+                        raise GitHubApiError(
+                            f"GitHub API trả về mã lỗi HTTP 409: {msg}"
+                        )
+
+                    # 7. 5xx Server Error (Lỗi tạm thời, có thể retry)
                     if response.status_code >= 500:
                         if attempt < self.max_retries:
                             delay = self.base_delay * (2**attempt) + random.uniform(

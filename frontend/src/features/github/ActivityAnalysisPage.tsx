@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { env } from '@/shared/config/env'
-import { ApiError, apiFetch } from '@/shared/api/client'
+import { ApiError, apiFetch, isAbortError } from '@/shared/api/client'
 import { useAuth } from '@/features/auth/useAuth'
 import { fetchRepositories } from './api'
 import type { Repository } from './types'
@@ -60,6 +60,14 @@ export function ActivityAnalysisPage() {
   const [error, setError] = useState('')
   const [errorCode, setErrorCode] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Abort ongoing request on component unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   // Load available repositories when authenticated
   useEffect(() => {
@@ -141,30 +149,59 @@ export function ActivityAnalysisPage() {
       query.set('end_date', end)
     }
 
+    // Cancel previous request if still running
+    abortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     setLoading(true)
     try {
       const result = await apiFetch<Analysis>(
-        `/repositories/${repoId}/activity/analysis?${query.toString()}`
+        `/repositories/${repoId}/activity/analysis?${query.toString()}`,
+        {
+          signal: abortController.signal,
+          timeoutMs: 60000,
+        }
       )
       setData(result)
     } catch (err) {
+      if (isAbortError(err)) {
+        return
+      }
+
+      if (err instanceof ApiError && err.kind === 'timeout') {
+        setError(
+          'Quá thời gian chờ phản hồi từ máy chủ (timeout). Vui lòng thử lại hoặc chọn khoảng thời gian ngắn hơn.'
+        )
+        setErrorCode(504)
+        return
+      }
+
       const status = err instanceof ApiError ? err.status : undefined
       setErrorCode(status ?? null)
+
+      const backendDetail =
+        err instanceof ApiError &&
+        typeof (err.body as { detail?: string })?.detail === 'string'
+          ? (err.body as { detail: string }).detail
+          : undefined
 
       const messages: Record<number, string> = {
         401: 'Phiên đăng nhập đã hết hạn hoặc bạn chưa liên kết GitHub.',
         403: "Repository riêng tư yêu cầu quyền OAuth 'repo'. Vui lòng cấp quyền Private.",
         404: 'Không tìm thấy repository hoặc bạn không có quyền truy cập.',
         409: "Repository chưa hoàn tất đồng bộ. Hãy nhấn 'Đồng bộ ngay' trên Dashboard trước khi phân tích.",
-        413: 'Khoảng thời gian chứa quá nhiều dữ liệu (>100 commits). Vui lòng chọn khoảng thời gian ngắn hơn.',
+        413: 'Khoảng thời gian chứa quá nhiều dữ liệu (>1000 commits). Vui lòng chọn khoảng thời gian ngắn hơn.',
         422: 'Tham số thời gian hoặc múi giờ không hợp lệ.',
         429: 'GitHub API đang giới hạn tần suất truy vấn (Rate limit). Vui lòng thử lại sau vài phút.',
         500: 'Backend gặp lỗi nội bộ trong quá trình phân tích.',
         502: 'Không thể kết nối hoặc nhận phản hồi từ GitHub API.',
       }
-      setError(messages[status ?? 0] ?? 'Không thể tải dữ liệu phân tích hoạt động.')
+      setError(backendDetail || messages[status ?? 0] || 'Không thể tải dữ liệu phân tích hoạt động.')
     } finally {
-      setLoading(false)
+      if (abortControllerRef.current === abortController) {
+        setLoading(false)
+      }
     }
   }
 
