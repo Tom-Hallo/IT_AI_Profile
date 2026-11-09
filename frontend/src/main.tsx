@@ -7,14 +7,6 @@ import '@/styles/tokens.css'
 import '@/styles/base.css'
 import '@/styles/components.css'
 import '@/styles/layout.css'
-<<<<<<< HEAD
-=======
-
-import './styles/tokens.css'
-import './styles/base.css'
-import './styles/components.css'
-import './styles/layout.css'
->>>>>>> 7782749 (T065DDA: fix trang demo)
 
 const container = document.getElementById('root')
 if (!container) {

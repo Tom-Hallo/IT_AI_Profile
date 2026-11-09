@@ -52,38 +52,18 @@ user_repository = Table(
         server_default=func.now(),
         nullable=False,
     ),
-<<<<<<< HEAD
     sa.Index("ix_user_repository_user_id", "user_id"),
     schema="ita",
     comment="Pivot table: users <-> repositories (many-to-many)",
-=======
-<<<<<<< HEAD
-    schema="ita",
-=======
-    sa.Index("ix_user_repository_user_id", "user_id"),
-    schema="ita",
-    comment="Pivot table: users <-> repositories (many-to-many)",
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
->>>>>>> 7782749 (T065DDA: fix trang demo)
 )
 
 
 class Repository(Base):
     __tablename__ = "repositories"
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-    __table_args__ = {"schema": "ita"}
-=======
->>>>>>> 7782749 (T065DDA: fix trang demo)
     __table_args__ = {
         "schema": "ita",
         "comment": "GitHub repositories linked to a user",
     }
-<<<<<<< HEAD
-=======
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
->>>>>>> 7782749 (T065DDA: fix trang demo)
 
     id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
@@ -101,7 +81,6 @@ class Repository(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     html_url: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-<<<<<<< HEAD
     private: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
     default_branch: Mapped[str] = mapped_column(String(100), server_default="main", nullable=False)
     is_fork: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
@@ -129,15 +108,6 @@ class Repository(Base):
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_status: Mapped[str] = mapped_column(String(50), server_default="synced", nullable=False)
-=======
-<<<<<<< HEAD
-    private: Mapped[bool] = mapped_column(
-        Boolean, server_default=sa.text("false"), nullable=False
-    )
-=======
-    private: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
->>>>>>> 7782749 (T065DDA: fix trang demo)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
