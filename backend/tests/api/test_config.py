@@ -24,6 +24,8 @@ APP_VARS = (
     "GITHUB_CLIENT_ID",
     "GITHUB_CLIENT_SECRET",
     "GITHUB_REDIRECT_URI",
+    "GITHUB_SYNC_TIMEOUT_SECONDS",
+    "GITHUB_API_CONCURRENCY",
 )
 
 
@@ -123,6 +125,8 @@ def test_defaults():
     assert s.cors_origins == ["http://localhost:5173"]
     assert s.worker_queues == ["default"]
     assert s.log_level == "INFO"
+    assert s.github_sync_timeout_seconds == 300
+    assert s.github_api_concurrency == 8
 
 
 def test_secret_is_hidden_in_repr():

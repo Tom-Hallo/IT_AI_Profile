@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.db.session import get_session
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
@@ -76,8 +77,13 @@ async def trigger_repository_sync(
             job = enqueue_task(
                 "app.workers.tasks.sync_repositories.sync_user_repositories_task",
                 current_user.id,
+                job_timeout=settings.github_sync_timeout_seconds,
             )
-            set_sync_status_cache(current_user.id, status="running")
+            set_sync_status_cache(
+                current_user.id,
+                status="running",
+                job_id=job.id,
+            )
             return SyncTriggerResponse(
                 status="running",
                 message="Tiến trình đồng bộ đã được đưa vào hàng đợi xử lý.",

@@ -5,10 +5,13 @@ Quy tắc:
 - Định danh duy nhất theo external_id (GitHub repo ID), không dựa theo tên repo.
 - Bảo toàn quan hệ nhiều-nhiều qua bảng user_repository.
 - Không xóa nhầm dữ liệu lịch sử khi sync bị gián đoạn hoặc API lỗi giữa chừng.
+- Tối ưu hóa API: Bounded concurrency, HTTP keep-alive, bỏ qua repo rỗng
+  hoặc không có commit mới.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -19,6 +22,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.redis import get_redis_connection
 from app.modules.analysis.evidence import UTC
 from app.modules.auth.service import get_user_github_token
@@ -26,6 +30,7 @@ from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
     GitHubNotFoundError,
+    GitHubPermissionError,
     GitHubRateLimitError,
     GitHubTokenRevokedError,
 )
@@ -50,6 +55,14 @@ def _parse_iso(val: str | None) -> datetime | None:
         return None
 
 
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def get_sync_status_cache(user_id: int) -> dict[str, Any] | None:
     """Đọc trạng thái đồng bộ gần nhất từ Redis."""
     try:
@@ -72,6 +85,7 @@ def set_sync_status_cache(
     total_synced: int = 0,
     last_synced_at: str | None = None,
     error_message: str | None = None,
+    job_id: str | None = None,
 ) -> None:
     """Lưu trạng thái đồng bộ vào Redis."""
     try:
@@ -81,6 +95,7 @@ def set_sync_status_cache(
             "total_synced": total_synced,
             "last_synced_at": last_synced_at,
             "error_message": error_message,
+            "job_id": job_id,
             "updated_at": datetime.now(UTC).isoformat(),
         }
         redis.set(
@@ -136,6 +151,49 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
         if cached.get("last_synced_at"):
             last_synced_at = cached.get("last_synced_at")
 
+        # Nếu trạng thái cache là "running", kiểm tra xem RQ job thực tế còn chạy không
+        if status == "running":
+            cached_job_id = cached.get("job_id")
+            if cached_job_id:
+                try:
+                    from app.workers.enqueue import fetch_job
+
+                    job = fetch_job(cached_job_id)
+                    job_status = job.get_status(refresh=True).value
+                    if job_status in ("failed", "stopped", "canceled"):
+                        status = "failed"
+                        error_message = (
+                            "Tác vụ đồng bộ đã thất bại hoặc quá thời gian xử lý."
+                        )
+                        set_sync_status_cache(
+                            user_id,
+                            status="failed",
+                            error_message=error_message,
+                            last_synced_at=last_synced_at,
+                        )
+                except (RedisError, OSError, TypeError) as exc:
+                    logger.debug(
+                        "Không thể kiểm tra trạng thái RQ job %s: %s",
+                        cached_job_id,
+                        exc,
+                    )
+
+            # Kiểm tra thời gian trôi qua để tránh kẹt trạng thái "running" vô hạn
+            updated_at_str = cached.get("updated_at")
+            if updated_at_str and status == "running":
+                updated_at_dt = _parse_iso(updated_at_str)
+                if updated_at_dt:
+                    elapsed = (datetime.now(UTC) - updated_at_dt).total_seconds()
+                    if elapsed > (settings.github_sync_timeout_seconds + 60):
+                        status = "failed"
+                        error_message = "Quá thời gian thực thi tác vụ đồng bộ."
+                        set_sync_status_cache(
+                            user_id,
+                            status="failed",
+                            error_message=error_message,
+                            last_synced_at=last_synced_at,
+                        )
+
     return {
         "status": status,
         "is_connected": is_connected,
@@ -161,13 +219,166 @@ async def sync_repositories_for_user(
             raise GitHubTokenRevokedError("Chưa kết nối GitHub hoặc token đã hết hạn.")
         client = GitHubApiClient(token)
 
+    if hasattr(client, "__aenter__") and hasattr(client, "__aexit__"):
+        async with client:
+            return await _sync_repositories_for_user_impl(db, user, client)
+    return await _sync_repositories_for_user_impl(db, user, client)
+
+
+async def _sync_repositories_for_user_impl(
+    db: Session,
+    user: User,
+    client: GitHubApiClient,
+) -> dict[str, Any]:
     set_sync_status_cache(user.id, status="running")
 
     try:
         repos_data = await client.list_repositories()
         sync_timestamp = datetime.now(UTC)
 
-        for repo in repos_data:
+        # 1. Deduplicate theo external_id
+        unique_repos_data: list[dict[str, Any]] = []
+        seen_ext_ids: set[str] = set()
+        for r in repos_data:
+            ext_id = str(r["id"]) if isinstance(r, dict) and "id" in r else None
+            if ext_id and ext_id not in seen_ext_ids:
+                seen_ext_ids.add(ext_id)
+                unique_repos_data.append(r)
+
+        external_ids = list(seen_ext_ids)
+
+        # 2. Batch load existing Repository records từ database
+        existing_repos: dict[str, Repository] = {}
+        if external_ids:
+            batch_size = 500
+            for i in range(0, len(external_ids), batch_size):
+                chunk = external_ids[i : i + batch_size]
+                stmt = select(Repository).where(Repository.external_id.in_(chunk))
+                for repo_obj in db.scalars(stmt):
+                    existing_repos[repo_obj.external_id] = repo_obj
+
+        # 3. Batch load existing user_repository pivot records
+        existing_pivot_repo_ids: set[int] = set()
+        if existing_repos:
+            repo_ids = [r.id for r in existing_repos.values()]
+            batch_size = 500
+            for i in range(0, len(repo_ids), batch_size):
+                chunk = repo_ids[i : i + batch_size]
+                pivot_stmt = select(user_repository.c.repository_id).where(
+                    user_repository.c.user_id == user.id,
+                    user_repository.c.repository_id.in_(chunk),
+                )
+                existing_pivot_repo_ids.update(db.scalars(pivot_stmt).all())
+
+        # 4. Chuẩn bị concurrent fetches cho languages và fork details
+        semaphore = asyncio.Semaphore(settings.github_api_concurrency)
+
+        async def _fetch_languages(owner: str, name: str) -> dict[str, int]:
+            async with semaphore:
+                try:
+                    return await client.get_repository_languages(owner, name)
+                except (GitHubNotFoundError, GitHubPermissionError):
+                    return {}
+
+        async def _fetch_fork_details(owner: str, name: str) -> dict[str, Any] | None:
+            async with semaphore:
+                try:
+                    return await client.get_repository_details(owner, name)
+                except (GitHubNotFoundError, GitHubPermissionError):
+                    return None
+
+        lang_tasks: dict[int, Any] = {}
+        fork_tasks: dict[int, Any] = {}
+        repo_languages_map: dict[int, dict[str, int]] = {}
+        repo_fork_source_map: dict[int, str | None] = {}
+
+        for idx, repo in enumerate(unique_repos_data):
+            external_id = str(repo["id"])
+            name = repo.get("name") or "unknown"
+            full_name = repo.get("full_name") or name
+            existing = existing_repos.get(external_id)
+            pushed_at = _parse_iso(repo.get("pushed_at"))
+            size_kb = int(repo.get("size", 0))
+            is_fork = bool(repo.get("fork", False))
+
+            owner_info = repo.get("owner")
+            owner_login = (
+                owner_info.get("login") if isinstance(owner_info, dict) else None
+            )
+            if not owner_login and "/" in full_name:
+                owner_login = full_name.split("/")[0]
+
+            # Fork source determination
+            if is_fork:
+                if "parent" in repo and isinstance(repo["parent"], dict):
+                    repo_fork_source_map[idx] = repo["parent"].get("full_name")
+                elif existing and existing.fork_source:
+                    repo_fork_source_map[idx] = existing.fork_source
+                elif owner_login and name:
+                    fork_tasks[idx] = _fetch_fork_details(owner_login, name)
+                else:
+                    repo_fork_source_map[idx] = None
+            else:
+                repo_fork_source_map[idx] = None
+
+            # Language determination
+            existing_pushed_at = _ensure_utc(existing.pushed_at) if existing else None
+            current_pushed_at = _ensure_utc(pushed_at)
+
+            if repo.get("size") == 0 and not repo.get("language"):
+                # Repo truly empty (size == 0 and no primary language)
+                repo_languages_map[idx] = {}
+            elif (
+                existing
+                and existing.languages
+                and existing_pushed_at is not None
+                and current_pushed_at is not None
+                and existing_pushed_at == current_pushed_at
+            ):
+                # Repo không thay đổi commit (pushed_at trùng khớp):
+                # tái sử dụng languages đã lưu
+                repo_languages_map[idx] = existing.languages
+            elif owner_login and name:
+                lang_tasks[idx] = _fetch_languages(owner_login, name)
+            else:
+                repo_languages_map[idx] = {}
+
+        # Chạy đồng thời các tác vụ API cần thiết với Bounded Concurrency
+        if lang_tasks or fork_tasks:
+            lang_indices = list(lang_tasks.keys())
+            fork_indices = list(fork_tasks.keys())
+            all_coros = [lang_tasks[i] for i in lang_indices] + [
+                fork_tasks[i] for i in fork_indices
+            ]
+            results = await asyncio.gather(*all_coros, return_exceptions=True)
+
+            num_lang = len(lang_indices)
+            lang_results = results[:num_lang]
+            fork_results = results[num_lang:]
+
+            for i, res in zip(lang_indices, lang_results, strict=True):
+                if isinstance(res, (GitHubRateLimitError, GitHubTokenRevokedError)):
+                    raise res
+                if isinstance(res, Exception):
+                    logger.warning("Lỗi khi tải languages cho repo %s: %s", i, res)
+                    repo_languages_map[i] = {}
+                else:
+                    repo_languages_map[i] = res
+
+            for i, res in zip(fork_indices, fork_results, strict=True):
+                if isinstance(res, (GitHubRateLimitError, GitHubTokenRevokedError)):
+                    raise res
+                if (
+                    isinstance(res, dict)
+                    and "parent" in res
+                    and isinstance(res["parent"], dict)
+                ):
+                    repo_fork_source_map[i] = res["parent"].get("full_name")
+                else:
+                    repo_fork_source_map[i] = None
+
+        # 5. Lưu trữ dữ liệu vào database
+        for idx, repo in enumerate(unique_repos_data):
             external_id = str(repo["id"])
             name = repo.get("name") or "unknown"
             full_name = repo.get("full_name") or name
@@ -176,44 +387,8 @@ async def sync_repositories_for_user(
             private = bool(repo.get("private", False))
             default_branch = repo.get("default_branch") or "main"
             is_fork = bool(repo.get("fork", False))
-
-            fork_source = None
-            if is_fork:
-                if "parent" in repo and isinstance(repo["parent"], dict):
-                    fork_source = repo["parent"].get("full_name")
-                else:
-                    owner_info = repo.get("owner")
-                    owner_login = (
-                        owner_info.get("login")
-                        if isinstance(owner_info, dict)
-                        else None
-                    )
-                    if owner_login and name:
-                        try:
-                            details = await client.get_repository_details(
-                                owner_login, name
-                            )
-                            if "parent" in details and isinstance(
-                                details["parent"], dict
-                            ):
-                                fork_source = details["parent"].get("full_name")
-                        except GitHubApiError as exc:
-                            logger.debug(
-                                "Không thể lấy parent của fork %s: %s",
-                                full_name,
-                                type(exc).__name__,
-                            )
-
-            owner_info = repo.get("owner")
-            owner_login = (
-                owner_info.get("login") if isinstance(owner_info, dict) else None
-            )
-            languages: dict[str, int] = {}
-            if owner_login and name:
-                try:
-                    languages = await client.get_repository_languages(owner_login, name)
-                except GitHubNotFoundError:
-                    languages = {}
+            fork_source = repo_fork_source_map.get(idx)
+            languages = repo_languages_map.get(idx) or {}
 
             primary_language = repo.get("language")
             if not primary_language and languages:
@@ -230,11 +405,7 @@ async def sync_repositories_for_user(
             github_updated_at = _parse_iso(repo.get("updated_at"))
             pushed_at = _parse_iso(repo.get("pushed_at"))
 
-            # 1. Tìm hoặc tạo Repository theo external_id
-            existing = db.scalar(
-                select(Repository).where(Repository.external_id == external_id)
-            )
-
+            existing = existing_repos.get(external_id)
             if existing is not None:
                 existing.name = name
                 existing.full_name = full_name
@@ -287,17 +458,10 @@ async def sync_repositories_for_user(
                 )
                 db.add(repo_record)
                 db.flush()
+                existing_repos[external_id] = repo_record
 
-            # 2. Đảm bảo liên kết trong bảng pivot user_repository
-            pivot_exists = db.scalar(
-                select(1)
-                .select_from(user_repository)
-                .where(
-                    user_repository.c.user_id == user.id,
-                    user_repository.c.repository_id == repo_record.id,
-                )
-            )
-            if not pivot_exists:
+            # Đảm bảo liên kết trong bảng pivot user_repository
+            if repo_record.id not in existing_pivot_repo_ids:
                 db.execute(
                     user_repository.insert().values(
                         user_id=user.id,
@@ -305,19 +469,20 @@ async def sync_repositories_for_user(
                         added_at=sync_timestamp,
                     )
                 )
+                existing_pivot_repo_ids.add(repo_record.id)
 
         db.commit()
 
         set_sync_status_cache(
             user.id,
             status="completed",
-            total_synced=len(repos_data),
+            total_synced=len(unique_repos_data),
             last_synced_at=sync_timestamp.isoformat(),
         )
 
         return {
             "status": "completed",
-            "synced_count": len(repos_data),
+            "synced_count": len(unique_repos_data),
             "last_synced_at": sync_timestamp.isoformat(),
         }
 

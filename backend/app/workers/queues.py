@@ -17,7 +17,7 @@ from app.core.redis import get_redis_connection
 SERIALIZER = "json"
 
 # Thời gian tối đa một job được chạy trước khi RQ hủy nó (giây).
-JOB_TIMEOUT_SECONDS = 60
+JOB_TIMEOUT_SECONDS = 300
 # Kết quả job thành công được giữ trong Redis bao lâu (giây).
 RESULT_TTL_SECONDS = 3600
 # Job lỗi (kèm traceback) được giữ bao lâu để điều tra (giây).

@@ -15,7 +15,8 @@ import logging
 import random
 import re
 from datetime import datetime
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -103,6 +104,27 @@ class GitHubApiClient:
         self.max_retries = max_retries
         self.base_delay = base_delay
         self._client = client
+        self._owned_client: httpx.AsyncClient | None = None
+        self._context_depth: int = 0
+
+    async def __aenter__(self) -> Self:
+        self._context_depth += 1
+        if self._client is None and self._owned_client is None:
+            self._owned_client = httpx.AsyncClient(timeout=self.timeout)
+            self._client = self._owned_client
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self._context_depth = max(0, self._context_depth - 1)
+        if self._context_depth == 0 and self._owned_client is not None:
+            await self._owned_client.aclose()
+            self._client = None
+            self._owned_client = None
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -250,7 +272,7 @@ class GitHubApiClient:
     async def list_repositories(
         self,
         per_page: int = 100,
-        max_pages: int = 10,
+        max_pages: int = 50,
     ) -> list[dict[str, Any]]:
         """Lấy danh sách tất cả repositories có thể truy cập
         của tài khoản authenticated.
@@ -319,7 +341,7 @@ class GitHubApiClient:
                     if isinstance(v, (int, float))
                 }
             return {}
-        except GitHubNotFoundError:
+        except (GitHubNotFoundError, GitHubPermissionError):
             return {}
 
     async def get_repository_details(
