@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { Button } from '@/shared/ui/Button'
 import { env } from '@/shared/config/env'
 import { AuthPanel } from '@/features/auth/AuthPanel'
@@ -43,6 +44,37 @@ export function SystemStatusPage() {
       </header>
 
       <AuthPanel />
+
+      {user && (
+        <section className="card" style={{ marginBottom: '1.5rem', background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h2 style={{ fontSize: '1.15rem', margin: '0 0 4px', color: '#166534' }}>
+                📊 Phân tích hoạt động GitHub (PBI-010)
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: '#15803d' }}>
+                Phân tích commits và pull requests theo khoảng thời gian thực tế từ GitHub API.
+              </p>
+            </div>
+            <Link
+              to="/activity"
+              style={{
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 8,
+                background: '#16a34a',
+                color: '#ffffff',
+                fontWeight: 600,
+              }}
+            >
+              Mở trang phân tích hoạt động →
+            </Link>
+          </div>
+        </section>
+      )}
 
       <GitHubRepositoriesSection isAuthenticated={Boolean(user)} />
 
