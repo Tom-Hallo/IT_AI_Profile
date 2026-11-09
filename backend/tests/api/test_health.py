@@ -102,7 +102,7 @@ def test_failure_log_does_not_contain_secret(client, monkeypatch, caplog):
 
 
 def test_slow_dependency_is_cut_off_by_timeout(monkeypatch):
-    """Dependency treo 1s bị cắt ở 0.2s; endpoint trả 503 ngay, không chờ thread treo."""
+    """Verify slow dependencies return HTTP 503 after timeout."""
 
     def hang() -> None:
         time.sleep(1.0)
