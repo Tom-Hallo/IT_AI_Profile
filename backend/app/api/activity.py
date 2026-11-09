@@ -32,12 +32,21 @@ async def get_activity_analysis(
     repository_id: int,
     db: Annotated[Session, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    mode: Literal["preset", "month", "custom"] = Query(...),
-    preset: Literal["1m", "3m", "6m", "1y"] | None = None,
+    mode: Literal["preset", "month", "year", "custom"] = Query(...),
+    preset: Literal["1m", "3m", "6m", "1y", "all"] | None = None,
     month: str | None = None,
+    year: str | int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     timezone: str = "UTC",
 ):
-    start, end = resolve_range(mode, preset, month, start_date, end_date, timezone)
+    start, end = resolve_range(
+        mode=mode,
+        preset=preset,
+        month=month,
+        year=year,
+        start_date=start_date,
+        end_date=end_date,
+        timezone_name=timezone,
+    )
     return await analyze(db, repository_id, user.id, start, end)

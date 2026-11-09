@@ -206,21 +206,16 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
         lambda _db, _uid: ("fake-token", "read:user"),
     )
 
-    # Return sequence:
-    # 1. run_analysis initial select job
-    # 2. run_analysis load repo
-    # 3. checkpoint metadata_loaded
-    # 4. checkpoint inspecting_repository_content
-    # 5. checkpoint finalizing_evidence
-    # 6. run_analysis finalize job
-    mock_db.scalar.side_effect = [
-        job_record,
-        repo_record,
-        job_record,
-        job_record,
-        job_record,
-        job_record,
-    ]
+    # Dynamic return sequence: call 1 = initial job, call 2 = repo record, calls >= 3 = job checkpoints
+    def mock_scalar_fn(stmt=None):
+        if not hasattr(mock_scalar_fn, "call_count"):
+            mock_scalar_fn.call_count = 0
+        mock_scalar_fn.call_count += 1
+        if mock_scalar_fn.call_count == 2:
+            return repo_record
+        return job_record
+
+    mock_db.scalar.side_effect = mock_scalar_fn
 
     result = run_analysis(
         job_id=str(job_uuid),
@@ -235,6 +230,7 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
     assert job_record.status == "succeeded"
     assert job_record.progress == 100
     assert job_record.step == "completed"
+    assert mock_scalar_fn.call_count >= 6
 
     # Verifiable evidence in cache
     cache_key = (15, "1111222233334444555566667777888899990000")
@@ -394,3 +390,86 @@ def test_api_jobs_crud_and_csrf(monkeypatch):
         assert res_retry.status_code == 202
 
     app.dependency_overrides.clear()
+
+
+def test_run_analysis_cancelled_during_inspection_halts_promptly(monkeypatch):
+    """Verify job cancels promptly during multi-file inspection if cancel_requested."""
+    job_uuid = uuid.uuid4()
+    job_record = _mock_job(
+        job_id=job_uuid,
+        user_id=5,
+        repo_id=12,
+        scope="full",
+        status="queued",
+    )
+    repo_record = _mock_repo(repo_id=12, name="cancel-repo", private=False)
+
+    fake_source = InMemoryContentSource(
+        {
+            "package.json": '{"dependencies": {"express": "^4.18.2"}}',
+            "requirements.txt": "fastapi>=0.110.0",
+        }
+    )
+
+    mock_db = MagicMock()
+
+    class FakeSessionScope:
+        def __enter__(self):
+            return mock_db
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    monkeypatch.setattr("app.db.session.session_scope", FakeSessionScope)
+    monkeypatch.setattr(
+        "app.modules.auth.service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    call_count = 0
+
+    def mock_scalar_cancel(stmt=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return job_record
+        if call_count == 2:
+            return repo_record
+        # Simulate user requesting cancellation mid-run
+        if call_count >= 3:
+            job_record.status = "cancel_requested"
+        return job_record
+
+    mock_db.scalar.side_effect = mock_scalar_cancel
+
+    res = run_analysis(
+        job_id=str(job_uuid),
+        custom_source=fake_source,
+        custom_commit_sha="2222333344445555666677778888999900001111",
+    )
+    assert res is None
+    assert job_record.status == "cancelled"
+
+
+def test_dispatch_handles_os_error_as_503(monkeypatch):
+    """Verify dispatch catches OSError (e.g., socket refuse) and fails closed with 503."""
+    from app.modules.analysis.router import dispatch
+
+    mock_job = _mock_job(status="queued")
+    mock_db = MagicMock()
+
+    def raise_os_error(*args, **kwargs):
+        raise OSError("Socket connection refused")
+
+    monkeypatch.setattr("app.modules.analysis.router.enqueue_task", raise_os_error)
+    fail_dispatch_mock = MagicMock()
+    monkeypatch.setattr(
+        "app.modules.analysis.service.fail_dispatch", fail_dispatch_mock
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        dispatch(mock_job, mock_db)
+
+    assert exc_info.value.status_code == 503
+    assert "Analysis queue unavailable" in exc_info.value.detail
+    fail_dispatch_mock.assert_called_once_with(mock_db, mock_job.id)

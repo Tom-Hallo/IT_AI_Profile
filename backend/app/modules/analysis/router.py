@@ -54,7 +54,7 @@ def dispatch(job: Any, db: Session) -> None:
     """Fail closed if Redis cannot accept the job; do not leave it queued."""
     try:
         enqueue_task("app.workers.tasks.analysis.run_analysis", str(job.id))
-    except (RedisError, ConnectionError, TimeoutError) as exc:
+    except (RedisError, ConnectionError, TimeoutError, OSError) as exc:
         logger.error("Analysis enqueue failed: %s", type(exc).__name__)
         service.fail_dispatch(db, job.id)
         raise HTTPException(
