@@ -45,3 +45,6 @@ ignore = ["E501", "EXE002"]
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 known-third-party = ["alembic", "sqlalchemy"]
+
+[tool.ruff.lint.flake8-self]
+ignore-names = ["_sa_instance_state"]
