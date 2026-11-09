@@ -1,8 +1,10 @@
 from calendar import monthrange
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
+
+from app.modules.analysis.evidence import UTC
 
 
 def resolve_range(
