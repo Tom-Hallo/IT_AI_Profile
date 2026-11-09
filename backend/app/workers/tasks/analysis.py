@@ -116,6 +116,9 @@ def run_analysis(
         owner = full_name.split("/")[0] if "/" in full_name else repo_name
         r_name = full_name.split("/")[1] if "/" in full_name else repo_name
 
+        def _on_progress(step: str, pct: int) -> None:
+            checkpoint(job_uuid, token, step, pct)
+
         async def _execute_inspection() -> dict[str, Any]:
             content_source = custom_source
             commit_sha = custom_commit_sha or "0000000000000000000000000000000000000000"
@@ -144,9 +147,10 @@ def run_analysis(
             return await inspector.inspect(
                 source=content_source,
                 github_languages=repo_languages,
+                on_progress=_on_progress,
             )
 
-        checkpoint(job_uuid, token, "inspecting_repository_content", 50)
+        checkpoint(job_uuid, token, "inspecting_repository_content", 30)
 
         # 3. Chạy phân tích tĩnh mã nguồn, framework & kiến trúc (PBI-012)
         analysis_result = asyncio.run(_execute_inspection())
