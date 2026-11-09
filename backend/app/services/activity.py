@@ -35,7 +35,7 @@ async def _collect(client, endpoint, params, max_pages=10):
 
 
 def _timestamp(value):
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 async def analyze(db: Session, repository_id: int, user_id: int, start, end):

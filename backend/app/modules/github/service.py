@@ -14,7 +14,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from dateutil.parser import isoparse
+from dateutil.parser import ParserError, isoparse
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -44,7 +45,7 @@ def _parse_iso(val: str | None) -> datetime | None:
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt
-    except Exception:
+    except (ParserError, ValueError, TypeError, OverflowError):
         return None
 
 
@@ -57,7 +58,7 @@ def get_sync_status_cache(user_id: int) -> dict[str, Any] | None:
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
             return json.loads(raw)
-    except Exception:
+    except (RedisError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
         logger.warning(
             f"Không thể đọc sync status cache từ Redis cho user_id={user_id}"
         )
@@ -86,7 +87,7 @@ def set_sync_status_cache(
             json.dumps(data),
             ex=SYNC_STATUS_TTL_SECONDS,
         )
-    except Exception:
+    except (RedisError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
         logger.warning(
             f"Không thể ghi sync status cache vào Redis cho user_id={user_id}"
         )
@@ -195,8 +196,12 @@ async def sync_repositories_for_user(
                                 details["parent"], dict
                             ):
                                 fork_source = details["parent"].get("full_name")
-                        except Exception:
-                            pass
+                        except GitHubApiError as exc:
+                            logger.debug(
+                                "Không thể lấy parent của fork %s: %s",
+                                full_name,
+                                type(exc).__name__,
+                            )
 
             owner_info = repo.get("owner")
             owner_login = (

@@ -6,11 +6,11 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-import app.modules.assessments.models  # noqa: F401
-import app.modules.auth.models  # noqa: F401
-import app.modules.cvs.models  # noqa: F401
-import app.modules.github.models  # noqa: F401
-import app.modules.roadmaps.models  # noqa: F401
+import app.modules.assessments.models
+import app.modules.auth.models
+import app.modules.cvs.models
+import app.modules.github.models
+import app.modules.roadmaps.models
 import app.modules.users.models  # noqa: F401
 from app.core.security import encrypt_token
 from app.db.base import Base

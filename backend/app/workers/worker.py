@@ -18,6 +18,7 @@ import os
 from collections.abc import Sequence
 from types import TracebackType
 
+from redis.exceptions import RedisError
 from rq import Queue, Worker
 from rq.job import Job
 from rq.worker import SimpleWorker
@@ -88,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         check_redis()
-    except Exception as exc:
+    except (RedisError, OSError, ValueError) as exc:
         # Chỉ ghi loại lỗi: thông báo gốc có thể chứa host/URL kết nối.
         logger.error("Khong ket noi duoc Redis (%s). Worker dung.", type(exc).__name__)
         return 1

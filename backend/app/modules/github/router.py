@@ -7,6 +7,7 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -83,7 +84,7 @@ async def trigger_repository_sync(
                 message="Tiến trình đồng bộ đã được đưa vào hàng đợi xử lý.",
                 job_id=job.id,
             )
-        except Exception as exc:
+        except (RedisError, OSError, TimeoutError) as exc:
             logger.warning(
                 f"Không thể đưa vào hàng đợi RQ ({exc}), chuyển sang thực thi đồng bộ trực tiếp."
             )

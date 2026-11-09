@@ -50,6 +50,7 @@ def run_worker_process(queue_name: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "WORKER_QUEUES": queue_name}
     return subprocess.run(
         [sys.executable, "-m", "app.workers.worker", "--burst"],
+        check=False,
         cwd=BACKEND_DIR,
         env=env,
         capture_output=True,
@@ -105,6 +106,7 @@ def test_cli_enqueue_wait_and_status(queue_name):
 
     enqueued = subprocess.run(
         [*cli, "ping", "--message", "cli", "--queue", queue_name],
+        check=False,
         cwd=BACKEND_DIR, env=env, capture_output=True, text=True, timeout=30,
     )  # fmt: skip
     assert enqueued.returncode == 0, enqueued.stderr
@@ -115,6 +117,7 @@ def test_cli_enqueue_wait_and_status(queue_name):
 
     status = subprocess.run(
         [*cli, "status", job_id],
+        check=False,
         cwd=BACKEND_DIR, env=env, capture_output=True, text=True, timeout=30,
     )  # fmt: skip
     assert status.returncode == 0, status.stderr

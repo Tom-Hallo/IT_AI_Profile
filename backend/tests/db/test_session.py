@@ -111,10 +111,9 @@ def test_session_scope_commits_on_success(sqlite_session_factory):
 
 
 def test_session_scope_rolls_back_and_reraises_on_error(sqlite_session_factory):
-    with pytest.raises(ValueError, match="boom"):
-        with db_session.session_scope() as session:
-            session.execute(text("INSERT INTO items VALUES (1)"))
-            raise ValueError("boom")
+    with pytest.raises(ValueError, match="boom"), db_session.session_scope() as session:
+        session.execute(text("INSERT INTO items VALUES (1)"))
+        raise ValueError("boom")
     assert _count(sqlite_session_factory) == 0
 
 
@@ -162,10 +161,9 @@ def test_session_scope_against_real_postgres_commits_and_rolls_back():
     with db_session.session_scope() as session:
         assert session.execute(text("SELECT 1")).scalar_one() == 1
 
-    with pytest.raises(RuntimeError):
-        with db_session.session_scope() as session:
-            session.execute(text("SELECT 1"))
-            raise RuntimeError("giả lập lỗi trong task")
+    with pytest.raises(RuntimeError), db_session.session_scope() as session:
+        session.execute(text("SELECT 1"))
+        raise RuntimeError("giả lập lỗi trong task")
 
     # Sau lỗi, kết nối trả về pool vẫn dùng được.
     db_session.check_database()

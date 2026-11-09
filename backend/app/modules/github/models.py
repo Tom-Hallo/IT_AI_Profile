@@ -7,7 +7,7 @@ PBI-009 — real GitHub sync metadata
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -60,9 +60,10 @@ user_repository = Table(
 
 class Repository(Base):
     __tablename__ = "repositories"
-    __table_args__ = {
+
+    __table_args__: ClassVar[dict[str, str]] = {
         "schema": "ita",
-        "comment": "GitHub repositories linked to a user",
+        "comment": "Application users",
     }
 
     id: Mapped[int] = mapped_column(

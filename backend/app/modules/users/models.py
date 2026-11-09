@@ -6,7 +6,7 @@ PBI-002 — schema ita
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from sqlalchemy import BigInteger, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {
+
+    __table_args__: ClassVar[dict[str, str]] = {
         "schema": "ita",
         "comment": "Application users",
     }

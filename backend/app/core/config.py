@@ -75,7 +75,7 @@ class Settings(BaseSettings):
             decoded = base64.urlsafe_b64decode(raw)
             if len(decoded) != 32:
                 raise ValueError("khóa mã hóa phải gồm đúng 32 bytes (base64 urlsafe)")
-        except Exception:
+        except (ValueError, TypeError, base64.binascii.Error):
             raise ValueError(
                 "khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)"
             ) from None
@@ -135,21 +135,22 @@ class Settings(BaseSettings):
 
 
 def load_settings() -> Settings:
-    """Đọc cấu hình; nếu sai thì ném ConfigurationError chỉ nêu TÊN biến."""
+    """Đọc cấu hình; lỗi chỉ hiển thị tên biến môi trường."""
     try:
-        # type: ignore[call-arg]  # giá trị lấy từ môi trường
         return Settings()
     except ValidationError as exc:
         problems: list[str] = []
+
         for err in exc.errors(include_input=False, include_url=False):
             name = ".".join(str(part) for part in err["loc"]).upper()
             kind = "thiếu" if err["type"] == "missing" else "không hợp lệ"
             problems.append(f"{name} ({kind})")
+
         raise ConfigurationError(
             "Cấu hình môi trường chưa đúng, kiểm tra các biến: "
             + ", ".join(problems)
             + ". Xem .env.example."
-        ) from None  # `from None`: không kéo theo ngữ cảnh lỗi gốc
+        ) from None
 
 
 settings = load_settings()

@@ -119,8 +119,7 @@ class GitHubApiClient:
 
         url = (
             url_or_endpoint
-            if url_or_endpoint.startswith("http://")
-            or url_or_endpoint.startswith("https://")
+            if url_or_endpoint.startswith(("http://", "https://"))
             else f"{self.base_url}{url_or_endpoint}"
         )
 
