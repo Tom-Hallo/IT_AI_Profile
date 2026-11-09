@@ -48,13 +48,35 @@ class Settings(BaseSettings):
     github_client_id: str | None = None
     github_client_secret: SecretStr | None = None
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
+    github_token_encryption_key: SecretStr | None = None
     frontend_url: str = "http://localhost:5173"
 
-    @field_validator("github_client_id", "github_client_secret", mode="before")
+    @field_validator(
+        "github_client_id",
+        "github_client_secret",
+        "github_token_encryption_key",
+        mode="before",
+    )
     @classmethod
     def _empty_github_credentials_as_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("github_token_encryption_key")
+    @classmethod
+    def _validate_encryption_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        import base64
+
+        raw = value.get_secret_value()
+        try:
+            decoded = base64.urlsafe_b64decode(raw)
+            if len(decoded) != 32:
+                raise ValueError("khóa mã hóa phải gồm đúng 32 bytes (base64 urlsafe)")
+        except Exception:
+            raise ValueError("khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)") from None
         return value
 
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.

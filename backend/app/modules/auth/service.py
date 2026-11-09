@@ -3,11 +3,12 @@
 import secrets
 
 from redis import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.redis import get_redis_connection
+from app.core.security import decrypt_token, encrypt_token
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
 from app.modules.users.models import User
@@ -103,13 +104,57 @@ class GitHubAccountConflictError(Exception):
     """GitHub identity hoặc email đã thuộc về tài khoản khác."""
 
 
+def _update_github_oauth_token(
+    db: Session,
+    oauth_account: OAuthAccount,
+    identity: GitHubIdentity,
+) -> None:
+    """
+    Cập nhật GitHub OAuth token an toàn.
+
+    - Mã hóa token trước khi lưu.
+    - Rollback nếu mã hóa hoặc commit thất bại.
+    - Không bỏ qua lỗi.
+    - Không đưa token thật vào thông báo lỗi.
+    """
+
+    if not identity.access_token:
+        return
+
+    try:
+        encrypted_token = encrypt_token(identity.access_token)
+
+        oauth_account.encrypted_access_token = encrypted_token
+        oauth_account.scope = identity.scope
+        oauth_account.token_updated_at = func.now()
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
+
 def get_or_create_github_user(
     db: Session,
     identity: GitHubIdentity,
 ) -> User:
-    """Tìm hoặc tạo User từ danh tính GitHub đã xác minh."""
+    """
+    Tìm hoặc tạo User từ danh tính GitHub đã xác minh.
+
+    Security:
+    - Không tự động liên kết email đã thuộc tài khoản khác.
+    - Mã hóa GitHub access token trước khi lưu.
+    - Không bỏ qua lỗi mã hóa hoặc database.
+    - Rollback khi transaction thất bại.
+    - Xử lý race condition khi tạo OAuth account.
+    """
 
     provider = "github"
+
+    # ========================================================
+    # 1. VALIDATE GITHUB IDENTITY
+    # ========================================================
 
     if not identity.provider_user_id or not identity.email:
         raise ValueError("GitHub identity không hợp lệ.")
@@ -119,7 +164,10 @@ def get_or_create_github_user(
     if not email:
         raise ValueError("Email GitHub không hợp lệ.")
 
-    # 1. Tìm tài khoản OAuth đã liên kết bằng GitHub ID.
+    # ========================================================
+    # 2. CHECK EXISTING GITHUB OAUTH ACCOUNT
+    # ========================================================
+
     oauth_result = db.execute(
         select(OAuthAccount).where(
             OAuthAccount.provider == provider,
@@ -130,9 +178,20 @@ def get_or_create_github_user(
     oauth_account = oauth_result.scalar_one_or_none()
 
     if oauth_account is not None:
+        # Nếu cập nhật token thất bại, lỗi được truyền lên.
+        # Không tiếp tục như thể token đã lưu thành công.
+        _update_github_oauth_token(
+            db=db,
+            oauth_account=oauth_account,
+            identity=identity,
+        )
+
         return oauth_account.user
 
-    # 2. Không tự động liên kết nếu email đã thuộc User khác.
+    # ========================================================
+    # 3. CHECK EMAIL CONFLICT
+    # ========================================================
+
     user_result = db.execute(select(User).where(User.email == email))
 
     existing_user = user_result.scalar_one_or_none()
@@ -140,7 +199,21 @@ def get_or_create_github_user(
     if existing_user is not None:
         raise GitHubAccountConflictError("Email đã được sử dụng bởi tài khoản khác.")
 
-    # 3. Tạo User và OAuthAccount trong cùng transaction.
+    # ========================================================
+    # 4. ENCRYPT GITHUB TOKEN
+    # ========================================================
+
+    encrypted_token = None
+
+    if identity.access_token:
+        # Không dùng try/except pass.
+        # Nếu mã hóa thất bại, dừng quy trình.
+        encrypted_token = encrypt_token(identity.access_token)
+
+    # ========================================================
+    # 5. CREATE USER AND OAUTH ACCOUNT
+    # ========================================================
+
     user = User(
         email=email,
         full_name=identity.full_name.strip() or email,
@@ -155,6 +228,9 @@ def get_or_create_github_user(
             user_id=user.id,
             provider=provider,
             provider_user_id=identity.provider_user_id,
+            encrypted_access_token=encrypted_token,
+            scope=identity.scope,
+            token_updated_at=(func.now() if encrypted_token else None),
         )
 
         db.add(oauth_account)
@@ -162,10 +238,15 @@ def get_or_create_github_user(
 
         return user
 
+    # ========================================================
+    # 6. HANDLE CONCURRENT GITHUB LOGIN
+    # ========================================================
+
     except IntegrityError as exc:
         db.rollback()
 
-        # Có thể một request khác vừa tạo cùng GitHub identity.
+        # Có thể request khác đã tạo OAuth account
+        # cho cùng GitHub identity trước đó.
         oauth_result = db.execute(
             select(OAuthAccount).where(
                 OAuthAccount.provider == provider,
@@ -176,12 +257,62 @@ def get_or_create_github_user(
         oauth_account = oauth_result.scalar_one_or_none()
 
         if oauth_account is not None:
+            # Cập nhật token trên tài khoản vừa được tạo.
+            # Không bỏ qua lỗi cập nhật.
+            _update_github_oauth_token(
+                db=db,
+                oauth_account=oauth_account,
+                identity=identity,
+            )
+
             return oauth_account.user
 
         raise GitHubAccountConflictError(
             "Không thể tạo tài khoản GitHub do dữ liệu bị trùng."
         ) from exc
 
+    # ========================================================
+    # 7. HANDLE OTHER ERRORS
+    # ========================================================
+
     except Exception:
         db.rollback()
         raise
+
+
+def get_user_github_token(
+    db: Session,
+    user_id: int,
+) -> tuple[str | None, str | None]:
+    """Lấy và giải mã GitHub access token cùng scope đã cấp của user."""
+    stmt = select(OAuthAccount).where(
+        OAuthAccount.user_id == user_id,
+        OAuthAccount.provider == "github",
+    )
+    account = db.scalar(stmt)
+    encrypted = getattr(account, "encrypted_access_token", None)
+    if not account or not encrypted:
+        return None, None
+
+    try:
+        token = decrypt_token(encrypted)
+        return token, getattr(account, "scope", None)
+    except Exception:
+        return None, None
+
+
+def disconnect_github(db: Session, user_id: int) -> bool:
+    """Xóa token và hủy liên kết GitHub của người dùng."""
+    stmt = select(OAuthAccount).where(
+        OAuthAccount.user_id == user_id,
+        OAuthAccount.provider == "github",
+    )
+    account = db.scalar(stmt)
+    if not account:
+        return False
+
+    account.encrypted_access_token = None
+    account.scope = None
+    account.token_updated_at = None
+    db.commit()
+    return True

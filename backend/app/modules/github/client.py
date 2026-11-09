@@ -1,0 +1,310 @@
+"""GitHub REST API client với phân trang, xử lý rate limit và retry (PBI-009).
+
+Quy tắc bảo mật:
+- Token không bao giờ được log hoặc đưa vào exception message.
+- Bounded retries: chỉ retry lỗi mạng và 5xx; không retry vô hạn hoặc retry lỗi 401/403.
+- Rate limit 403/429 được bóc tách header X-RateLimit-Reset và Retry-After để báo chính xác.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+import re
+from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+GITHUB_API_BASE_URL = "https://api.github.com"
+GITHUB_API_VERSION = "2022-11-28"
+DEFAULT_TIMEOUT_SECONDS = 15.0
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY = 1.0
+
+
+class GitHubApiError(Exception):
+    """Lỗi an toàn khi giao tiếp với GitHub API (không chứa secret)."""
+
+
+class GitHubTokenRevokedError(GitHubApiError):
+    """GitHub token không hợp lệ hoặc đã bị thu hồi (HTTP 401)."""
+
+
+class GitHubPermissionError(GitHubApiError):
+    """Không có quyền truy cập tài nguyên (HTTP 403 Forbidden)."""
+
+
+class GitHubRateLimitError(GitHubApiError):
+    """Vượt quá giới hạn rate limit của GitHub (HTTP 403 Rate Limit hoặc HTTP 429)."""
+
+    def __init__(
+        self,
+        message: str = "GitHub API rate limit exceeded.",
+        reset_at: datetime | None = None,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reset_at = reset_at
+        self.retry_after = retry_after
+
+
+class GitHubNotFoundError(GitHubApiError):
+    """Không tìm thấy tài nguyên trên GitHub (HTTP 404)."""
+
+
+class GitHubServerError(GitHubApiError):
+    """Lỗi máy chủ từ phía GitHub (HTTP 5xx)."""
+
+
+class GitHubNetworkError(GitHubApiError):
+    """Lỗi mạng hoặc hết thời gian kết nối tới GitHub."""
+
+
+def _parse_next_link(link_header: str | None) -> str | None:
+    """Trích xuất URL của trang tiếp theo từ GitHub Link header.
+
+    Ví dụ: `<https://api.github.com/user/repos?page=2>; rel="next", <...>; rel="last"`
+    """
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        match = re.match(r'<([^>]+)>;\s*rel="([^"]+)"', part.strip())
+        if match and match.group(2) == "next":
+            return match.group(1)
+    return None
+
+
+class GitHubApiClient:
+    """Client giao tiếp với GitHub REST API."""
+
+    def __init__(
+        self,
+        access_token: str,
+        base_url: str = GITHUB_API_BASE_URL,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        base_delay: float = DEFAULT_BASE_DELAY,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not access_token or not isinstance(access_token, str):
+            raise ValueError("access_token không được để trống.")
+        self._access_token = access_token
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self._client = client
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._access_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+            "User-Agent": "IT-Talent-AI-Profile",
+        }
+
+    async def _request(
+        self,
+        method: str,
+        url_or_endpoint: str,
+        params: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """Gửi HTTP request với bounded retry và backoff có jitter cho lỗi tạm thời."""
+
+        url = (
+            url_or_endpoint
+            if url_or_endpoint.startswith("http://") or url_or_endpoint.startswith("https://")
+            else f"{self.base_url}{url_or_endpoint}"
+        )
+
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "api.github.com"
+            or parsed.port not in (None, 443)
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise GitHubApiError("URL GitHub API không hợp lệ.")
+
+        async def _execute(http_client: httpx.AsyncClient) -> httpx.Response:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    response = await http_client.request(
+                        method,
+                        url,
+                        headers=self._headers,
+                        params=params,
+                    )
+
+                    # 1. 2xx Thành công
+                    if response.status_code in (200, 201, 204):
+                        return response
+
+                    # 2. 401 Unauthorized (Lỗi token cố định, không retry)
+                    if response.status_code == 401:
+                        raise GitHubTokenRevokedError(
+                            "GitHub access token không hợp lệ hoặc đã bị thu hồi."
+                        )
+
+                    # 3. 403 Forbidden hoặc Rate Limit
+                    if response.status_code == 403:
+                        remaining = response.headers.get("x-ratelimit-remaining")
+                        is_rate_limit = (
+                            remaining == "0"
+                            or "rate limit" in response.text.lower()
+                            or "secondary rate limit" in response.text.lower()
+                        )
+                        if is_rate_limit:
+                            reset_timestamp = response.headers.get("x-ratelimit-reset")
+                            reset_at = None
+                            if reset_timestamp:
+                                try:
+                                    reset_at = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+                                except (ValueError, TypeError):
+                                    pass
+                            retry_after_str = response.headers.get("retry-after")
+                            retry_after = int(retry_after_str) if retry_after_str else None
+                            raise GitHubRateLimitError(
+                                "GitHub API đã đạt giới hạn yêu cầu (rate limit).",
+                                reset_at=reset_at,
+                                retry_after=retry_after,
+                            )
+                        raise GitHubPermissionError(
+                            "Không có quyền truy cập tài nguyên này trên GitHub."
+                        )
+
+                    # 4. 429 Too Many Requests
+                    if response.status_code == 429:
+                        retry_after_str = response.headers.get("retry-after")
+                        retry_after = int(retry_after_str) if retry_after_str else None
+                        raise GitHubRateLimitError(
+                            "GitHub API trả về 429 Too Many Requests.",
+                            retry_after=retry_after,
+                        )
+
+                    # 5. 404 Not Found
+                    if response.status_code == 404:
+                        raise GitHubNotFoundError("Không tìm thấy tài nguyên trên GitHub.")
+
+                    # 6. 5xx Server Error (Lỗi tạm thời, có thể retry)
+                    if response.status_code >= 500:
+                        if attempt < self.max_retries:
+                            delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                            logger.warning(
+                                f"GitHub 5xx server error ({response.status_code}), "
+                                f"retry sau {delay:.2f}s"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        raise GitHubServerError(
+                            f"GitHub API lỗi máy chủ (HTTP {response.status_code})."
+                        )
+
+                    # Lỗi client 4xx khác
+                    raise GitHubApiError(f"GitHub API trả về mã lỗi HTTP {response.status_code}.")
+
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    if attempt < self.max_retries:
+                        delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                        logger.warning(
+                            f"Lỗi mạng GitHub ({exc.__class__.__name__}), retry sau {delay:.2f}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise GitHubNetworkError(
+                        "Không thể kết nối tới GitHub API sau nhiều lần thử lại."
+                    ) from exc
+
+            raise GitHubNetworkError("Không thể hoàn thành yêu cầu tới GitHub API.")
+
+        if self._client is not None:
+            return await _execute(self._client)
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            return await _execute(client)
+
+    async def list_repositories(
+        self,
+        per_page: int = 100,
+        max_pages: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách tất cả repositories có thể truy cập của tài khoản authenticated.
+
+        Hỗ trợ phân trang chuẩn theo RFC 5988 (Link header).
+        """
+        repositories: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+
+        url_or_endpoint: str | None = "/user/repos"
+        params: dict[str, Any] | None = {
+            "per_page": min(per_page, 100),
+            "sort": "updated",
+            "direction": "desc",
+            "affiliation": "owner,collaborator,organization_member",
+        }
+
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            response = await self._request("GET", url_or_endpoint, params=params)
+            data = response.json()
+
+            if not isinstance(data, list):
+                raise GitHubApiError("Định dạng dữ liệu trả về từ GitHub không phải danh sách.")
+
+            for repo in data:
+                if isinstance(repo, dict) and "id" in repo:
+                    repo_id = repo["id"]
+                    if repo_id not in seen_ids:
+                        seen_ids.add(repo_id)
+                        repositories.append(repo)
+
+            # Phân trang: Đọc Link header
+            next_url = _parse_next_link(response.headers.get("link"))
+            if next_url:
+                url_or_endpoint = next_url
+                params = None  # URL trong Link header đã bao gồm query params
+            else:
+                break
+
+        return repositories
+
+    async def get_repository_languages(
+        self,
+        owner: str,
+        repo: str,
+    ) -> dict[str, int]:
+        """Lấy số lượng byte theo ngôn ngữ lập trình của repository.
+
+        Giữ nguyên số byte thật từ GitHub (ví dụ: {"Python": 185000, "TypeScript": 92000}).
+        """
+        try:
+            response = await self._request("GET", f"/repos/{owner}/{repo}/languages")
+            if response.status_code == 204:
+                return {}
+            data = response.json()
+            if isinstance(data, dict):
+                return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))}
+            return {}
+        except GitHubNotFoundError:
+            return {}
+
+    async def get_repository_details(
+        self,
+        owner: str,
+        repo: str,
+    ) -> dict[str, Any]:
+        """Lấy chi tiết repository (bao gồm parent/source nếu là fork)."""
+        response = await self._request("GET", f"/repos/{owner}/{repo}")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise GitHubApiError("Thông tin chi tiết repository không hợp lệ.")
+        return data

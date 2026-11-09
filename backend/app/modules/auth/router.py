@@ -19,6 +19,7 @@ from app.modules.auth.service import (
     consume_oauth_state,
     create_oauth_state,
     create_session,
+    disconnect_github,
     get_or_create_github_user,
     revoke_session,
 )
@@ -78,8 +79,11 @@ def _frontend_redirect(error: str | None = None) -> RedirectResponse:
 
 
 @router.get("/github")
-def github_login() -> RedirectResponse:
-    """Redirect the user to GitHub OAuth authorization."""
+def github_login(include_private: bool = False) -> RedirectResponse:
+    """Redirect the user to GitHub OAuth authorization.
+
+    Nếu `include_private=True`, yêu cầu thêm quyền `repo` để đồng bộ private repositories.
+    """
 
     if not settings.github_oauth_enabled:
         raise HTTPException(
@@ -90,10 +94,12 @@ def github_login() -> RedirectResponse:
     browser_binding = secrets.token_urlsafe(32)
     state = create_oauth_state(browser_binding)
 
+    scope = "read:user user:email repo" if include_private else "read:user user:email"
+
     params = {
         "client_id": settings.github_client_id,
         "redirect_uri": settings.github_redirect_uri,
-        "scope": "read:user user:email",
+        "scope": scope,
         "state": state,
     }
 
@@ -209,6 +215,23 @@ def get_me(
         "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
+    }
+
+
+@router.post("/github/disconnect")
+def disconnect_github_account(
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_session),  # noqa: B008
+) -> dict:
+    """Hủy liên kết tài khoản GitHub và xóa token đã lưu."""
+
+    disconnected = disconnect_github(db, current_user.id)
+
+    return {
+        "disconnected": disconnected,
+        "message": (
+            "Đã hủy liên kết GitHub thành công." if disconnected else "Chưa liên kết GitHub."
+        ),
     }
 
 
