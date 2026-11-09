@@ -13,8 +13,8 @@ Nguyên tắc "một nguồn cấu hình":
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from sqlalchemy import create_engine, text
 
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings

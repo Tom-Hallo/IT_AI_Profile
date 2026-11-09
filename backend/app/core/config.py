@@ -43,6 +43,42 @@ class Settings(BaseSettings):
 
     # --- Tùy chọn ---
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    # GitHub OAuth: để trống khi chưa cấu hình OAuth App.
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
+    github_token_encryption_key: SecretStr | None = None
+    frontend_url: str = "http://localhost:5173"
+
+    @field_validator(
+        "github_client_id",
+        "github_client_secret",
+        "github_token_encryption_key",
+        mode="before",
+    )
+    @classmethod
+    def _empty_github_credentials_as_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("github_token_encryption_key")
+    @classmethod
+    def _validate_encryption_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        import base64
+
+        raw = value.get_secret_value()
+        try:
+            decoded = base64.urlsafe_b64decode(raw)
+            if len(decoded) != 32:
+                raise ValueError("khóa mã hóa phải gồm đúng 32 bytes (base64 urlsafe)")
+        except Exception:
+            raise ValueError("khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)") from None
+        return value
+
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     worker_queues: Annotated[list[str], NoDecode] = ["default"]
@@ -82,6 +118,15 @@ class Settings(BaseSettings):
         return value
 
     @property
+    def github_oauth_enabled(self) -> bool:
+        """Chỉ bật GitHub OAuth khi đã có đủ Client ID và Client Secret."""
+        return bool(
+            self.github_client_id
+            and self.github_client_secret
+            and self.github_client_secret.get_secret_value()
+        )
+
+    @property
     def docs_enabled(self) -> bool:
         """Swagger/OpenAPI chỉ bật ở development (Blueprint mục 7.2, S4)."""
         return self.app_env == "development"
@@ -90,7 +135,8 @@ class Settings(BaseSettings):
 def load_settings() -> Settings:
     """Đọc cấu hình; nếu sai thì ném ConfigurationError chỉ nêu TÊN biến."""
     try:
-        return Settings()  # type: ignore[call-arg]  # giá trị lấy từ môi trường
+        # type: ignore[call-arg]  # giá trị lấy từ môi trường
+        return Settings()
     except ValidationError as exc:
         problems: list[str] = []
         for err in exc.errors(include_input=False, include_url=False):

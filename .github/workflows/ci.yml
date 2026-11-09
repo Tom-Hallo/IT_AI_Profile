@@ -26,14 +26,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[dev]"
 
+      - name: Ruff Lint
+        working-directory: backend
+        run: ruff check .
+
+      - name: Ruff Format Check
+        working-directory: backend
+        run: ruff format --check .
+
       - name: Run tests
         working-directory: backend
         env:
           APP_ENV: test
           DATABASE_URL: postgresql+psycopg://ita:test-password@localhost:5432/it_ai_profile
           REDIS_URL: redis://localhost:6379/0
-        run: pytest -m "not integration"
-
+        run: |
+          export GITHUB_TOKEN_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          pytest -m "not integration"
   frontend:
     name: Frontend Checks
     runs-on: ubuntu-latest
@@ -66,3 +75,17 @@ jobs:
         env:
           VITE_API_BASE_URL: /api/v1
         run: npm run build
+  gitleaks:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks Scan
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

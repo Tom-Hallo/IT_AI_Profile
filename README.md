@@ -2,8 +2,10 @@
 
 **IT Talent AI Profile** là dự án nền tảng hồ sơ năng lực CNTT thông minh dành cho **developer**. Định hướng của sản phẩm là kết nối GitHub, phân tích dự án và kỹ năng, hỗ trợ định hướng nghề nghiệp bằng AI, xây dựng lộ trình học tập và chuẩn bị CV phù hợp với vị trí ứng tuyển.
 
-> **Trạng thái hiện tại (PBI-001):** Repository đã có nền tảng React/Vite, FastAPI, PostgreSQL, Redis và RQ Worker, cùng trang **kiểm tra trạng thái hệ thống**. Các chức năng nghiệp vụ như đăng nhập GitHub, chấm điểm năng lực, AI Mentor, roadmap và CV/JD matching là **định hướng của sản phẩm, chưa được triển khai đầy đủ trong PBI-001**.
->
+> **Trạng thái hiện tại (PBI-001, PBI-005):** Repository đã có nền tảng React/Vite, FastAPI, PostgreSQL, Redis và RQ Worker, cùng trang **kiểm tra trạng thái hệ thống**. PBI-005 bổ sung chức năng đăng nhập GitHub OAuth, quản lý phiên đăng nhập và đăng xuất. Các chức năng chấm điểm năng lực, AI Mentor, roadmap và CV/JD matching vẫn là định hướng phát triển tiếp theo.
+
+> Cấu hình Docker Compose dưới đây dùng cho **môi trường phát triển**, không phải cấu hình triển khai production.
+
 > Cấu hình Docker Compose dưới đây dùng cho **môi trường phát triển**, không phải cấu hình triển khai production.
 
 ## 1. Công nghệ và kiến trúc
@@ -281,6 +283,33 @@ Nguồn chuẩn cho Docker Compose là file **`.env` ở thư mục gốc**, t�
 Trong Docker Compose, `DATABASE_URL` và `REDIS_URL` được tạo từ cấu hình Compose. Nếu **chạy trực tiếp trên máy**, sử dụng `backend/.env.example` và `frontend/.env.example` riêng; xem tài liệu của từng thành phần.
 
 Không đặt secret trong biến bắt đầu bằng `VITE_`, vì các biến này có thể được đưa vào mã chạy trên trình duyệt. Redis/PostgreSQL trong Compose được publish trên `127.0.0.1` để hạn chế truy cập từ mạng ngoài.
+
+## 8.1. GitHub OAuth – PBI-005
+
+### 8.1.1. Tạo GitHub OAuth App
+
+Truy cập:
+
+https://github.com/settings/developers
+
+Chọn **OAuth Apps → New OAuth App** và cấu hình:
+
+| Trường | Giá trị |
+| --- | --- |
+| Application name | IT AI Profile |
+| Homepage URL | http://localhost:5173 |
+| Authorization callback URL | http://localhost:8001/api/v1/auth/github/callback |
+
+Sau khi tạo OAuth App, lấy `Client ID` và tạo `Client Secret`.
+
+### 8.1.2. Cấu hình Backend
+
+Thêm các biến sau vào file `backend/.env`:
+
+```env
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_REDIRECT_URI=http://localhost:8001/api/v1/auth/github/callback
 
 ## 9. Cấu trúc thư mục chính
 

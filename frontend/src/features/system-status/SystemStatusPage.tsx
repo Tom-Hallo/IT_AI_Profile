@@ -1,4 +1,8 @@
+import { Button } from '@/shared/ui/Button'
 import { env } from '@/shared/config/env'
+import { AuthPanel } from '@/features/auth/AuthPanel'
+import { useAuth } from '@/features/auth/useAuth'
+import { GitHubRepositoriesSection } from '@/features/github/GitHubRepositoriesSection'
 import { describeError } from './describeError'
 import { type HealthState, useHealthStatus } from './useHealthStatus'
 import './SystemStatusPage.css'
@@ -26,6 +30,7 @@ function BackendSummary({ state }: { state: HealthState }) {
 }
 
 export function SystemStatusPage() {
+  const { user } = useAuth()
   const { state, refresh } = useHealthStatus()
   const isLoading = state.phase === 'loading'
   const data = state.phase === 'ok' || state.phase === 'degraded' ? state.data : null
@@ -36,6 +41,10 @@ export function SystemStatusPage() {
         <h1>IT Talent AI Profile</h1>
         <p className="subtitle">Trang kiểm tra hệ thống</p>
       </header>
+
+      <AuthPanel />
+
+      <GitHubRepositoriesSection isAuthenticated={Boolean(user)} />
 
       <section className="card" aria-labelledby="status-heading">
         <h2 id="status-heading">Trạng thái hệ thống</h2>
@@ -103,9 +112,9 @@ export function SystemStatusPage() {
           </div>
         )}
 
-        <button type="button" className="button" onClick={refresh} disabled={isLoading}>
+        <Button variant="primary" onClick={refresh} disabled={isLoading}>
           {isLoading ? 'Đang kiểm tra…' : 'Kiểm tra lại'}
-        </button>
+        </Button>
       </section>
     </main>
   )

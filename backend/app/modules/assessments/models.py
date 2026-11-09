@@ -20,8 +20,19 @@ if TYPE_CHECKING:
 class Assessment(Base):
     __tablename__ = "assessments"
     __table_args__ = (
+<<<<<<< HEAD
         CheckConstraint("score >= 0 AND score <= 100", name="ck_assessments_score_range"),
         {"schema": "ita"},
+=======
+        CheckConstraint(
+            "score >= 0 AND score <= 100",
+            name="ck_assessments_score_range",
+        ),
+        {
+            "schema": "ita",
+            "comment": "Skill assessment results for a user",
+        },
+>>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

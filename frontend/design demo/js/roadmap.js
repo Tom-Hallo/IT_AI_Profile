@@ -1,0 +1,2 @@
+import {toast} from './common.js';
+const checks=[...document.querySelectorAll('.road-check')];const key='craft-roadmap';let saved=JSON.parse(localStorage.getItem(key)||'null');if(Array.isArray(saved)&&saved.length===checks.length)checks.forEach((c,i)=>c.checked=!!saved[i]);function refresh(){const n=checks.filter(x=>x.checked).length;document.getElementById('road-progress').textContent=n+' / '+checks.length+' completed';localStorage.setItem(key,JSON.stringify(checks.map(x=>x.checked)))}checks.forEach(c=>c.addEventListener('change',refresh));refresh();
