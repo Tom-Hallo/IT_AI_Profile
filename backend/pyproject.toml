@@ -13,7 +13,7 @@ dependencies = [
     "fastapi==0.161.1",
     "uvicorn[standard]==0.54.0",
     "pydantic-settings==2.16.1",
-    "sqlalchemy==2.1.6",
+    "sqlalchemy[asyncio]==2.1.6",
     "psycopg[binary]==3.3.6",
     "alembic==1.20.1",
     "redis==8.1.0",
@@ -37,8 +37,7 @@ pythonpath = ["."]
 addopts = "-ra"
 
 [tool.ruff]
-line-length = 100
-target-version = "py312"
+extend-exclude = ["build"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -46,3 +45,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 known-third-party = ["alembic", "sqlalchemy"]
+
+[tool.ruff.lint.flake8-self]
+ignore-names = ["_sa_instance_state"]

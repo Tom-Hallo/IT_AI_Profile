@@ -11,14 +11,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from dateutil.parser import isoparse
+from dateutil.parser import ParserError, isoparse
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.redis import get_redis_connection
+from app.modules.analysis.evidence import UTC
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
     GitHubApiClient,
@@ -44,7 +46,7 @@ def _parse_iso(val: str | None) -> datetime | None:
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt
-    except Exception:
+    except (ParserError, ValueError, TypeError, OverflowError):
         return None
 
 
@@ -57,8 +59,10 @@ def get_sync_status_cache(user_id: int) -> dict[str, Any] | None:
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
             return json.loads(raw)
-    except Exception:
-        logger.warning(f"Không thể đọc sync status cache từ Redis cho user_id={user_id}")
+    except (RedisError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        logger.warning(
+            f"Không thể đọc sync status cache từ Redis cho user_id={user_id}"
+        )
     return None
 
 
@@ -84,8 +88,10 @@ def set_sync_status_cache(
             json.dumps(data),
             ex=SYNC_STATUS_TTL_SECONDS,
         )
-    except Exception:
-        logger.warning(f"Không thể ghi sync status cache vào Redis cho user_id={user_id}")
+    except (RedisError, OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        logger.warning(
+            f"Không thể ghi sync status cache vào Redis cho user_id={user_id}"
+        )
 
 
 def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
@@ -177,17 +183,31 @@ async def sync_repositories_for_user(
                     fork_source = repo["parent"].get("full_name")
                 else:
                     owner_info = repo.get("owner")
-                    owner_login = owner_info.get("login") if isinstance(owner_info, dict) else None
+                    owner_login = (
+                        owner_info.get("login")
+                        if isinstance(owner_info, dict)
+                        else None
+                    )
                     if owner_login and name:
                         try:
-                            details = await client.get_repository_details(owner_login, name)
-                            if "parent" in details and isinstance(details["parent"], dict):
+                            details = await client.get_repository_details(
+                                owner_login, name
+                            )
+                            if "parent" in details and isinstance(
+                                details["parent"], dict
+                            ):
                                 fork_source = details["parent"].get("full_name")
-                        except Exception:
-                            pass
+                        except GitHubApiError as exc:
+                            logger.debug(
+                                "Không thể lấy parent của fork %s: %s",
+                                full_name,
+                                type(exc).__name__,
+                            )
 
             owner_info = repo.get("owner")
-            owner_login = owner_info.get("login") if isinstance(owner_info, dict) else None
+            owner_login = (
+                owner_info.get("login") if isinstance(owner_info, dict) else None
+            )
             languages: dict[str, int] = {}
             if owner_login and name:
                 try:
@@ -211,7 +231,9 @@ async def sync_repositories_for_user(
             pushed_at = _parse_iso(repo.get("pushed_at"))
 
             # 1. Tìm hoặc tạo Repository theo external_id
-            existing = db.scalar(select(Repository).where(Repository.external_id == external_id))
+            existing = db.scalar(
+                select(Repository).where(Repository.external_id == external_id)
+            )
 
             if existing is not None:
                 existing.name = name

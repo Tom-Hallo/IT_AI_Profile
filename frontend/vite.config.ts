@@ -37,7 +37,11 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),
+<<<<<<< HEAD
           designDemo: path.resolve(import.meta.dirname, 'design-demo/index.html'),
+=======
+          designDemo: path.resolve(import.meta.dirname, 'design demo/index.html'),
+>>>>>>> 9f09017c71c47bc2f88c48ecc4c762c76bc967cf
         },
       },
     },

@@ -1,4 +1,4 @@
-"""Điểm vào của FastAPI: `uvicorn app.main:app`."""
+"""Điểm vào của FastAPI: uvicorn app.main:app."""
 
 import logging
 
@@ -19,23 +19,39 @@ def create_app(config: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="IT Talent AI Profile API",
         version=APP_VERSION,
-        # Swagger/OpenAPI chỉ ở development, đặt dưới /api/v1 để đi qua proxy của Vite (mục 7.2).
         docs_url=f"{API_PREFIX}/docs" if cfg.docs_enabled else None,
-        openapi_url=f"{API_PREFIX}/openapi.json" if cfg.docs_enabled else None,
+        openapi_url=(f"{API_PREFIX}/openapi.json" if cfg.docs_enabled else None),
         redoc_url=None,
     )
 
-    # Danh sách cho phép rõ ràng, đã cấm '*' trong Settings (S5).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type", "Authorization"],
+        allow_methods=[
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+        ],
+        allow_headers=[
+            "Accept",
+            "Content-Type",
+            "Authorization",
+        ],
     )
 
     app.include_router(api_router, prefix=API_PREFIX)
-    logger.info("%s %s khởi động (APP_ENV=%s)", APP_NAME, APP_VERSION, cfg.app_env)
+
+    logger.info(
+        "%s %s khởi động (APP_ENV=%s)",
+        APP_NAME,
+        APP_VERSION,
+        cfg.app_env,
+    )
+
     return app
 
 

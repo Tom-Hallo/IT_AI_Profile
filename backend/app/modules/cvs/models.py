@@ -6,7 +6,7 @@ PBI-002 — schema ita
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -20,14 +20,7 @@ if TYPE_CHECKING:
 
 class CV(Base):
     __tablename__ = "cvs"
-<<<<<<< HEAD
     __table_args__ = {"schema": "ita"}
-=======
-    __table_args__ = {
-        "schema": "ita",
-        "comment": "Versioned CV data stored as JSONB",
-    }
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(

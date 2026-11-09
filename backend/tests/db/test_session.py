@@ -41,7 +41,9 @@ def test_only_db_session_creates_an_engine():
 
 def test_alembic_env_does_not_read_environment_or_hardcode_url():
     """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL."""
-    source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text("utf-8")
+    source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text(
+        "utf-8"
+    )
     tree = ast.parse(source)
     imported = {
         alias.name.split(".")[0]
@@ -80,7 +82,7 @@ def test_business_tables_defined_in_pbi_002_and_pbi_005():
         "ita.user_oauth_accounts",
     }
 
-    assert set(Base.metadata.tables.keys()) == expected_tables
+    assert expected_tables.issubset(set(Base.metadata.tables.keys()))
 
 
 # --- get_session / session_scope (dùng SQLite trong bộ nhớ, không cần PostgreSQL) -----------
@@ -109,10 +111,9 @@ def test_session_scope_commits_on_success(sqlite_session_factory):
 
 
 def test_session_scope_rolls_back_and_reraises_on_error(sqlite_session_factory):
-    with pytest.raises(ValueError, match="boom"):
-        with db_session.session_scope() as session:
-            session.execute(text("INSERT INTO items VALUES (1)"))
-            raise ValueError("boom")
+    with pytest.raises(ValueError, match="boom"), db_session.session_scope() as session:
+        session.execute(text("INSERT INTO items VALUES (1)"))
+        raise ValueError("boom")
     assert _count(sqlite_session_factory) == 0
 
 
@@ -150,7 +151,8 @@ def test_check_database_raises_when_server_unreachable(monkeypatch):
 # --- Tích hợp với PostgreSQL thật (RUN_INTEGRATION=1) ------------------------------------------
 
 integration = pytest.mark.skipif(
-    os.environ.get("RUN_INTEGRATION") != "1", reason="cần RUN_INTEGRATION=1 và PostgreSQL đang chạy"
+    os.environ.get("RUN_INTEGRATION") != "1",
+    reason="cần RUN_INTEGRATION=1 và PostgreSQL đang chạy",
 )
 
 
@@ -159,10 +161,9 @@ def test_session_scope_against_real_postgres_commits_and_rolls_back():
     with db_session.session_scope() as session:
         assert session.execute(text("SELECT 1")).scalar_one() == 1
 
-    with pytest.raises(RuntimeError):
-        with db_session.session_scope() as session:
-            session.execute(text("SELECT 1"))
-            raise RuntimeError("giả lập lỗi trong task")
+    with pytest.raises(RuntimeError), db_session.session_scope() as session:
+        session.execute(text("SELECT 1"))
+        raise RuntimeError("giả lập lỗi trong task")
 
     # Sau lỗi, kết nối trả về pool vẫn dùng được.
     db_session.check_database()

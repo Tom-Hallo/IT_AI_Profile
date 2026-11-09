@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     github_token_encryption_key: SecretStr | None = None
     frontend_url: str = "http://localhost:5173"
+    ita_analysis_tmp_root: str = "/var/lib/ita/analysis-tmp"
 
     @field_validator(
         "github_client_id",
@@ -69,14 +70,17 @@ class Settings(BaseSettings):
         if value is None:
             return None
         import base64
+        import binascii
 
         raw = value.get_secret_value()
         try:
             decoded = base64.urlsafe_b64decode(raw)
             if len(decoded) != 32:
                 raise ValueError("khóa mã hóa phải gồm đúng 32 bytes (base64 urlsafe)")
-        except Exception:
-            raise ValueError("khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)") from None
+        except (ValueError, TypeError, binascii.Error):
+            raise ValueError(
+                "khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)"
+            ) from None
         return value
 
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.

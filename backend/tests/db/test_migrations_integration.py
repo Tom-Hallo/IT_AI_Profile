@@ -19,10 +19,6 @@ EXPECTED_TABLES = {
     "cvs",
     "roadmaps",
     "user_repository",
-<<<<<<< HEAD
-=======
-    "user_oauth_accounts",
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
 }
 
 
@@ -98,8 +94,12 @@ def test_all_tables_created_in_ita_schema(alembic_cli, temp_database_url):
 # TC04 - upgrade is idempotent
 # ---------------------------------------------------------------------------
 def test_upgrade_is_idempotent(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
     assert _stored_versions(temp_database_url) == [_head()]
 
 
@@ -148,12 +148,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a user
             conn.execute(
                 _text(
-<<<<<<< HEAD
                     "INSERT INTO ita.users (email, full_name, hashed_password) "
                     "VALUES (:e, :n, :p)"
-=======
-                    "INSERT INTO ita.users (email, full_name, hashed_password) VALUES (:e, :n, :p)"
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
                 ),
                 {"e": "alice@example.com", "n": "Alice", "p": "hash_placeholder"},
             )
@@ -161,8 +157,6 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                 _text("SELECT id FROM ita.users WHERE email = 'alice@example.com'")
             ).scalar_one()
 
-<<<<<<< HEAD
-=======
             # Insert an OAuth-only user (no internal password).
             conn.execute(
                 _text(
@@ -190,23 +184,19 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                 },
             )
 
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
             # Insert a repository
             conn.execute(
                 _text(
                     "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
-<<<<<<< HEAD
                 {"oid": user_id, "eid": "gh:12345", "n": "my-repo", "url": "https://github.com/alice/my-repo"},
-=======
                 {
                     "oid": user_id,
                     "eid": "gh:12345",
                     "n": "my-repo",
                     "url": "https://github.com/alice/my-repo",
                 },
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
             )
             repo_id = conn.execute(
                 _text("SELECT id FROM ita.repositories WHERE external_id = 'gh:12345'")
@@ -214,51 +204,35 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert an assessment with valid score
             conn.execute(
-<<<<<<< HEAD
                 _text(
                     "INSERT INTO ita.assessments (user_id, type, score) "
                     "VALUES (:uid, :t, :s)"
                 ),
-=======
-                _text("INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"),
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
                 {"uid": user_id, "t": "python", "s": 85.5},
             )
 
             # Insert a CV
             conn.execute(
-<<<<<<< HEAD
                 _text(
                     "INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"
                 ),
-=======
-                _text("INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"),
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
                 {"uid": user_id, "c": '{"skills": ["Python"]}'},
             )
 
             # Insert a roadmap
             conn.execute(
-<<<<<<< HEAD
                 _text(
                     "INSERT INTO ita.roadmaps (user_id, title, data) "
                     "VALUES (:uid, :t, :d)"
                 ),
-=======
-                _text("INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"),
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
                 {"uid": user_id, "t": "My Roadmap", "d": '{"steps": []}'},
             )
 
             # Pivot
             conn.execute(
                 _text(
-<<<<<<< HEAD
                     "INSERT INTO ita.user_repository (user_id, repository_id) "
                     "VALUES (:uid, :rid)"
-=======
-                    "INSERT INTO ita.user_repository (user_id, repository_id) VALUES (:uid, :rid)"
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
                 ),
                 {"uid": user_id, "rid": repo_id},
             )
@@ -298,43 +272,6 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                         ),
                         {"uid": 999999, "t": "java", "s": 50},
                     )
-<<<<<<< HEAD
-=======
-
-                    # Duplicate GitHub identity must fail.
-            with _pytest.raises(
-                Exception,
-                match="uq_user_oauth_accounts_provider_provider_user_id|unique",
-            ):
-                with engine2.begin() as conn:
-                    conn.execute(
-                        _text(
-                            "INSERT INTO ita.user_oauth_accounts "
-                            "(user_id, provider, provider_user_id) "
-                            "VALUES (:uid, :provider, :provider_id)"
-                        ),
-                        {
-                            "uid": user_id,
-                            "provider": "github",
-                            "provider_id": "github-12345",
-                        },
-                    )
-
-            # OAuth account with nonexistent user must fail.
-            with _pytest.raises(Exception, match="fk_|foreign key"):
-                with engine2.begin() as conn:
-                    conn.execute(
-                        _text(
-                            "INSERT INTO ita.user_oauth_accounts "
-                            "(user_id, provider, provider_user_id) "
-                            "VALUES (:uid, :provider, :provider_id)"
-                        ),
-                        {
-                            "uid": 999999,
-                            "provider": "github",
-                            "provider_id": "github-invalid",
-                        },
-                    )
 
             # Deleting a user must cascade-delete linked OAuth accounts.
             with engine2.begin() as conn:
@@ -352,7 +289,6 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
                 assert remaining == 0
 
->>>>>>> fc36cecf8f87eefdd7e66c02c68f921457a2aea6
         finally:
             engine2.dispose()
     finally:

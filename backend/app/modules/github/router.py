@@ -7,6 +7,7 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 

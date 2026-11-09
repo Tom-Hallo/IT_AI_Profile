@@ -1,13 +1,16 @@
 """Redis services for GitHub OAuth state and application sessions."""
 
+"""Redis services for GitHub OAuth state and application sessions."""
+
 import secrets
 
+from cryptography.fernet import InvalidToken
 from redis import Redis
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.redis import get_redis_connection
+
 from app.core.security import decrypt_token, encrypt_token
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
@@ -297,7 +300,7 @@ def get_user_github_token(
     try:
         token = decrypt_token(encrypted)
         return token, getattr(account, "scope", None)
-    except Exception:
+    except (InvalidToken, ValueError, TypeError):
         return None, None
 
 

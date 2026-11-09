@@ -9,14 +9,17 @@ Quy tắc bảo mật:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import random
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
+
+from app.modules.analysis.evidence import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +122,7 @@ class GitHubApiClient:
 
         url = (
             url_or_endpoint
-            if url_or_endpoint.startswith("http://") or url_or_endpoint.startswith("https://")
+            if url_or_endpoint.startswith(("http://", "https://"))
             else f"{self.base_url}{url_or_endpoint}"
         )
 
@@ -166,11 +169,15 @@ class GitHubApiClient:
                             reset_at = None
                             if reset_timestamp:
                                 try:
-                                    reset_at = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+                                    reset_at = datetime.fromtimestamp(
+                                        int(reset_timestamp), tz=UTC
+                                    )
                                 except (ValueError, TypeError):
                                     pass
                             retry_after_str = response.headers.get("retry-after")
-                            retry_after = int(retry_after_str) if retry_after_str else None
+                            retry_after = (
+                                int(retry_after_str) if retry_after_str else None
+                            )
                             raise GitHubRateLimitError(
                                 "GitHub API đã đạt giới hạn yêu cầu (rate limit).",
                                 reset_at=reset_at,
@@ -191,12 +198,16 @@ class GitHubApiClient:
 
                     # 5. 404 Not Found
                     if response.status_code == 404:
-                        raise GitHubNotFoundError("Không tìm thấy tài nguyên trên GitHub.")
+                        raise GitHubNotFoundError(
+                            "Không tìm thấy tài nguyên trên GitHub."
+                        )
 
                     # 6. 5xx Server Error (Lỗi tạm thời, có thể retry)
                     if response.status_code >= 500:
                         if attempt < self.max_retries:
-                            delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                            delay = self.base_delay * (2**attempt) + random.uniform(
+                                0.1, 0.5
+                            )
                             logger.warning(
                                 f"GitHub 5xx server error ({response.status_code}), "
                                 f"retry sau {delay:.2f}s"
@@ -208,11 +219,15 @@ class GitHubApiClient:
                         )
 
                     # Lỗi client 4xx khác
-                    raise GitHubApiError(f"GitHub API trả về mã lỗi HTTP {response.status_code}.")
+                    raise GitHubApiError(
+                        f"GitHub API trả về mã lỗi HTTP {response.status_code}."
+                    )
 
                 except (httpx.TimeoutException, httpx.NetworkError) as exc:
                     if attempt < self.max_retries:
-                        delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                        delay = self.base_delay * (2**attempt) + random.uniform(
+                            0.1, 0.5
+                        )
                         logger.warning(
                             f"Lỗi mạng GitHub ({exc.__class__.__name__}), retry sau {delay:.2f}s"
                         )
@@ -258,7 +273,9 @@ class GitHubApiClient:
             data = response.json()
 
             if not isinstance(data, list):
-                raise GitHubApiError("Định dạng dữ liệu trả về từ GitHub không phải danh sách.")
+                raise GitHubApiError(
+                    "Định dạng dữ liệu trả về từ GitHub không phải danh sách."
+                )
 
             for repo in data:
                 if isinstance(repo, dict) and "id" in repo:
@@ -292,7 +309,11 @@ class GitHubApiClient:
                 return {}
             data = response.json()
             if isinstance(data, dict):
-                return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))}
+                return {
+                    str(k): int(v)
+                    for k, v in data.items()
+                    if isinstance(v, (int, float))
+                }
             return {}
         except GitHubNotFoundError:
             return {}
@@ -308,3 +329,95 @@ class GitHubApiClient:
         if not isinstance(data, dict):
             raise GitHubApiError("Thông tin chi tiết repository không hợp lệ.")
         return data
+
+    async def get_latest_commit_sha(
+        self,
+        owner: str,
+        repo: str,
+        branch_or_ref: str = "main",
+        until: datetime | None = None,
+    ) -> str | None:
+        """Lấy commit SHA mới nhất của branch hoặc theo mốc thời gian."""
+        params: dict[str, Any] = {"sha": branch_or_ref, "per_page": 1}
+        if until is not None:
+            params["until"] = until.isoformat()
+        try:
+            response = await self._request(
+                "GET", f"/repos/{owner}/{repo}/commits", params=params
+            )
+            data = response.json()
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                return data[0].get("sha")
+            return None
+        except GitHubNotFoundError:
+            return None
+
+    async def get_tree(
+        self,
+        owner: str,
+        repo: str,
+        tree_sha: str,
+        recursive: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Lấy toàn bộ cây thư mục/tập tin (Git Tree) của repository."""
+        params: dict[str, Any] = {}
+        if recursive:
+            params["recursive"] = 1
+        try:
+            response = await self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
+                params=params,
+            )
+            data = response.json()
+            if (
+                isinstance(data, dict)
+                and "tree" in data
+                and isinstance(data["tree"], list)
+            ):
+                return data["tree"]
+            return []
+        except GitHubNotFoundError:
+            return []
+
+    async def get_file_content(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        ref: str | None = None,
+        max_bytes: int = 512 * 1024,
+    ) -> str | None:
+        """Lấy nội dung văn bản UTF-8 của một tập tin trong repository.
+
+        Tự động decode base64 và áp dụng giới hạn kích thước an toàn.
+        """
+        params: dict[str, Any] = {}
+        if ref:
+            params["ref"] = ref
+        safe_path = quote(path.lstrip("/"), safe="/")
+        try:
+            response = await self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/contents/{safe_path}",
+                params=params,
+            )
+            data = response.json()
+            if not isinstance(data, dict):
+                return None
+            size = data.get("size", 0)
+            if size > max_bytes:
+                logger.warning(
+                    f"Tập tin {path} vượt quá giới hạn dung lượng ({size} > {max_bytes} bytes)."
+                )
+                return None
+            content_b64 = data.get("content")
+            if not content_b64 or not isinstance(content_b64, str):
+                return None
+            decoded = base64.b64decode(content_b64.encode("ascii"))
+            return decoded.decode("utf-8", errors="replace")
+        except GitHubNotFoundError:
+            return None
+        except (ValueError, UnicodeError) as exc:
+            logger.warning(f"Không thể giải mã nội dung tập tin {path}: {exc}")
+            return None

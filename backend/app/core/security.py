@@ -2,7 +2,7 @@
 
 Quy tắc:
 - Token GitHub OAuth được mã hóa trước khi lưu vào DB bằng cryptography.fernet
-  (AES-128-CBC + HMAC-SHA256).
+(AES-128-CBC + HMAC-SHA256).
 - Khóa mã hóa đọc từ settings.github_token_encryption_key.
 - Không có fallback plaintext nếu thiếu khóa (ném ConfigurationError).
 - Không bao giờ log token thô hoặc đưa token vào exception hay API response.
@@ -22,7 +22,9 @@ def _get_fernet() -> Fernet:
     if not settings.github_token_encryption_key:
         raise ConfigurationError("Chưa cấu hình GITHUB_TOKEN_ENCRYPTION_KEY để mã hóa token.")
     try:
-        key_bytes = settings.github_token_encryption_key.get_secret_value().encode("utf-8")
+        key_bytes = settings.github_token_encryption_key.get_secret_value().encode(
+            "utf-8"
+        )
         return Fernet(key_bytes)
     except Exception as exc:
         raise ConfigurationError("GITHUB_TOKEN_ENCRYPTION_KEY không hợp lệ.") from exc
@@ -47,6 +49,7 @@ def decrypt_token(encrypted_token: str) -> str:
         return decrypted_bytes.decode("utf-8")
     except InvalidToken:
         raise ValueError("Không thể giải mã token (token bị hỏng hoặc sai khóa).") from None
+
 
 
 def mask_token(token: str | None) -> str:

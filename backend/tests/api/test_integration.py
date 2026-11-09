@@ -14,7 +14,8 @@ from app.db import session as db_session
 from app.main import create_app
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_INTEGRATION") != "1", reason="cần RUN_INTEGRATION=1 và DB/Redis đang chạy"
+    os.environ.get("RUN_INTEGRATION") != "1",
+    reason="cần RUN_INTEGRATION=1 và DB/Redis đang chạy",
 )
 
 

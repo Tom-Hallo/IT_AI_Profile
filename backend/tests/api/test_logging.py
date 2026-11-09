@@ -4,9 +4,7 @@ from app.core.logging import REDACTED, RedactingFilter, redact
 
 
 def test_redacts_credentials_in_urls():
-    text = (
-        "connect postgresql+psycopg://ita:Hunter2@postgres:5432/db and redis://:pw123@redis:6379/0"
-    )
+    text = "connect postgresql+psycopg://ita:Hunter2@postgres:5432/db and redis://:pw123@redis:6379/0"
     out = redact(text)
     assert "Hunter2" not in out
     assert "pw123" not in out

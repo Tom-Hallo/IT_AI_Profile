@@ -18,6 +18,7 @@ import os
 from collections.abc import Sequence
 from types import TracebackType
 
+from redis.exceptions import RedisError
 from rq import Queue, Worker
 from rq.job import Job
 from rq.worker import SimpleWorker
@@ -74,9 +75,13 @@ def build_worker(queue_names: Sequence[str] | None = None) -> Worker:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m app.workers.worker", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="python -m app.workers.worker", description=__doc__
+    )
     parser.add_argument(
-        "--burst", action="store_true", help="Xử lý hết job đang chờ rồi thoát (dùng khi test)"
+        "--burst",
+        action="store_true",
+        help="Xử lý hết job đang chờ rồi thoát (dùng khi test)",
     )
     args = parser.parse_args(argv)
 
@@ -84,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         check_redis()
-    except Exception as exc:
+    except (RedisError, OSError, ValueError) as exc:
         # Chỉ ghi loại lỗi: thông báo gốc có thể chứa host/URL kết nối.
         logger.error("Khong ket noi duoc Redis (%s). Worker dung.", type(exc).__name__)
         return 1
