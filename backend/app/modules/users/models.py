@@ -22,7 +22,14 @@ if TYPE_CHECKING:
 
 class User(Base):
     __tablename__ = "users"
+<<<<<<< HEAD
     __table_args__ = {"schema": "ita"}
+=======
+    __table_args__ = {
+        "schema": "ita",
+        "comment": "Application users",
+    }
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
@@ -34,7 +41,10 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+<<<<<<< HEAD
 
+=======
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
     # Relationships
     repositories: Mapped[list[Repository]] = relationship(
         "Repository",

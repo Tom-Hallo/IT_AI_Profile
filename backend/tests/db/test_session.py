@@ -63,17 +63,21 @@ def test_naming_convention_is_set_before_any_table_exists():
     assert set(NAMING_CONVENTION) == {"ix", "uq", "ck", "fk", "pk"}
 
 
-def test_no_business_tables_are_defined_in_pbi_001():
-    """Import mọi module của `app` rồi kiểm tra Base.metadata vẫn rỗng.
-
-    Test này thuộc phạm vi PBI-001 (Blueprint D10/D19: chưa tạo bảng nghiệp vụ). PBI đầu tiên
-    thêm model PHẢI cập nhật hoặc bỏ test này, đó là chủ ý.
-    """
+def test_business_tables_defined_in_pbi_002():
+    """Import all modules and verify Base.metadata has the 6 PBI-002 tables."""
     import app
 
     for module in pkgutil.walk_packages(app.__path__, prefix="app."):
         importlib.import_module(module.name)
-    assert list(Base.metadata.tables) == []
+    expected_tables = {
+        "ita.users",
+        "ita.repositories",
+        "ita.assessments",
+        "ita.cvs",
+        "ita.roadmaps",
+        "ita.user_repository",
+    }
+    assert set(Base.metadata.tables.keys()) == expected_tables
 
 
 # --- get_session / session_scope (dùng SQLite trong bộ nhớ, không cần PostgreSQL) -----------

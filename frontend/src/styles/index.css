@@ -1,0 +1,51 @@
+/* PBI-004 — Dashboard/index-only styles.
+   Load AFTER tokens.css, base.css, components.css and layout.css.
+   Shared component rules belong in components.css; shared shell rules in layout.css. */
+
+/* Keep the page usable on narrow screens and with long repository names. */
+.main-inner, .metrics > *, .analysis-grid > *, .repo-grid > * { min-width: 0; }
+.page-heading h1 { overflow-wrap: anywhere; }
+.metric-value { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.repo-grid { align-items: stretch; }
+.repo-grid > * { min-width: 0; overflow-wrap: anywhere; }
+
+/* Index dashboard's chart and evidence layout. */
+.chart-card { overflow: hidden; }
+.chart-area { height: auto; max-height: 480px; overflow: visible; }
+.evidence-item { overflow-wrap: anywhere; }
+.repos-toolbar { min-width: 0; }
+.repos-toolbar .input { min-width: 0; }
+
+/* Dashboard-only controls: keyboard focus remains visible. */
+.chart-area [tabindex]:focus-visible,
+.chart-area [role="button"]:focus-visible {
+  outline: 3px solid var(--color-ring);
+  outline-offset: 3px;
+}
+
+/* Ensure overlay and drawer fit smaller viewports. */
+.drawer { max-width: 100vw; }
+.drawer-body { min-height: 0; overscroll-behavior: contain; }
+
+@media (max-width: 1100px) {
+  .chart-area { max-width: 620px; }
+}
+
+@media (max-width: 767px) {
+  .page-heading > * { min-width: 0; max-width: 100%; }
+  .page-heading h1 { font-size: clamp(1.5rem, 6vw, 2rem); }
+  .repos-toolbar { width: 100%; }
+  .repos-toolbar .input { flex: 1 1 160px; }
+  .chart-area { width: 100%; }
+  .card-footer { flex-wrap: wrap; }
+  .drawer { width: min(410px, 100vw); }
+}
+
+@media (max-width: 380px) {
+  .metric-card { min-height: auto; }
+  .repos-toolbar .input { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .sidebar, .fab { transition: none !important; animation: none !important; }
+}
