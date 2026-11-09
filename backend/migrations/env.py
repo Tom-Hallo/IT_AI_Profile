@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import event
 
 # Register business models
+import app.modules.analysis.models
 import app.modules.assessments.models
 import app.modules.auth.models
 import app.modules.cvs.models

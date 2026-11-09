@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.time_range import resolve_range
@@ -19,7 +19,13 @@ from app.modules.analysis.inspector import (
     RepositoryInspector,
 )
 from app.modules.analysis.limits import AnalysisLimits
-from app.modules.analysis.models import ACTIVE, AnalysisJob, AnalysisJobEvent
+from app.modules.analysis.models import (
+    ACTIVE,
+    AnalysisEvidence,
+    AnalysisJob,
+    AnalysisJobEvent,
+    AnalysisReport,
+)
 from app.modules.analysis.schemas import RepositoryAnalysisRequest
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
@@ -270,6 +276,7 @@ async def analyze_repository(
     request: RepositoryAnalysisRequest,
     custom_source: RepositoryContentSource | None = None,
     client: GitHubApiClient | None = None,
+    custom_commit_sha: str | None = None,
 ) -> dict[str, Any]:
     """Phân tích tĩnh toàn diện repository và bảo toàn bằng chứng xác thực."""
     # 1. Kiểm tra quyền truy cập repository
@@ -311,7 +318,7 @@ async def analyze_repository(
         target_until = end_utc
 
     # 5. Khởi tạo content source và xác định commit SHA
-    commit_sha = "0000000000000000000000000000000000000000"
+    commit_sha = custom_commit_sha or "0000000000000000000000000000000000000000"
     content_source = custom_source
 
     if content_source is None:
@@ -361,11 +368,69 @@ async def analyze_repository(
         github_languages=repo.languages,
     )
 
-    # 7. Lưu trữ cache kết quả và bằng chứng phục vụ truy xuất sau này
-    cache_key = (repo.id, commit_sha)
-    _ANALYSIS_CACHE[cache_key] = result
+    # 7. Lưu trữ kết quả và bằng chứng xác thực vào DB và cache
+    save_analysis_result(db, result)
 
     return result
+
+
+def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport | None:
+    """Save an analysis result and its verifiable evidence records to PostgreSQL and L1 cache."""
+    cache_key = (result["repository_id"], result["commit_sha"])
+    _ANALYSIS_CACHE[cache_key] = result
+
+    try:
+        analyzed_at_val = result.get("analyzed_at")
+        if isinstance(analyzed_at_val, str):
+            analyzed_dt = datetime.fromisoformat(analyzed_at_val)
+        elif isinstance(analyzed_at_val, datetime):
+            analyzed_dt = analyzed_at_val
+        else:
+            analyzed_dt = now()
+
+        report = AnalysisReport(
+            repository_id=result["repository_id"],
+            commit_sha=result["commit_sha"],
+            analyzed_at=analyzed_dt,
+            scope=result.get("scope", "all"),
+            time_range=result.get("time_range"),
+            structure=result.get("structure", {}),
+            languages=result.get("languages", []),
+            frameworks=result.get("frameworks", []),
+            architecture=result.get("architecture", []),
+            budget=result.get("budget", {}),
+        )
+        db.add(report)
+        db.flush()
+
+        evidence_items = result.get("evidence", [])
+        for e in evidence_items:
+            e_dict = e if isinstance(e, dict) else e.model_dump()
+            ev_rec = AnalysisEvidence(
+                report_id=report.id,
+                repository_id=result["repository_id"],
+                commit_sha=result["commit_sha"],
+                file_path=e_dict.get("file_path", ""),
+                finding_type=e_dict.get("finding_type", "structure"),
+                classification=e_dict.get("classification", ""),
+                evidence_source=e_dict.get("evidence_source", "metadata"),
+                detection_method=e_dict.get("detection_method", "metadata_extraction"),
+                confidence=e_dict.get("confidence", "high"),
+                confidence_score=float(e_dict.get("confidence_score", 1.0)),
+                rationale=e_dict.get("rationale", ""),
+                line_number=e_dict.get("line_number"),
+                matched_content=e_dict.get("matched_content"),
+                scope=e_dict.get("scope", result.get("scope", "all")),
+                time_range=e_dict.get("time_range", result.get("time_range")),
+            )
+            db.add(ev_rec)
+
+        db.commit()
+        return report
+    except (SQLAlchemyError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("Could not persist analysis report to database: %s", exc)
+        db.rollback()
+        return None
 
 
 def get_latest_analysis(
@@ -374,32 +439,86 @@ def get_latest_analysis(
     user: User,
     commit_sha: str | None = None,
 ) -> dict[str, Any]:
-    """Lấy kết quả phân tích gần nhất đã lưu trong phiên."""
+    """Lấy kết quả phân tích gần nhất đã lưu trong DB hoặc phiên."""
     verify_repository_access(db, repository_id, user)
 
-    # Nếu có commit_sha cụ thể
+    # 1. Kiểm tra bộ nhớ đệm (L1 cache)
     if commit_sha:
         cache_key = (repository_id, commit_sha)
         if cache_key in _ANALYSIS_CACHE:
             return _ANALYSIS_CACHE[cache_key]
+    else:
+        matching = [
+            res for (r_id, _), res in _ANALYSIS_CACHE.items() if r_id == repository_id
+        ]
+        if matching:
+            matching.sort(key=lambda r: r.get("analyzed_at", ""), reverse=True)
+            return matching[0]
+
+    # 2. Truy vấn từ cơ sở dữ liệu PostgreSQL nếu cache chưa có
+    try:
+        stmt = select(AnalysisReport).where(
+            AnalysisReport.repository_id == repository_id
+        )
+        if commit_sha:
+            stmt = stmt.where(AnalysisReport.commit_sha == commit_sha)
+        stmt = stmt.order_by(AnalysisReport.analyzed_at.desc())
+        report = db.scalar(stmt)
+        if report:
+            ev_stmt = select(AnalysisEvidence).where(
+                AnalysisEvidence.report_id == report.id
+            )
+            ev_rows = db.scalars(ev_stmt).all()
+            evidence_list = [
+                {
+                    "repository_id": ev.repository_id,
+                    "commit_sha": ev.commit_sha,
+                    "file_path": ev.file_path,
+                    "finding_type": ev.finding_type,
+                    "classification": ev.classification,
+                    "evidence_source": ev.evidence_source,
+                    "detection_method": ev.detection_method,
+                    "confidence": ev.confidence,
+                    "confidence_score": ev.confidence_score,
+                    "rationale": ev.rationale,
+                    "line_number": ev.line_number,
+                    "matched_content": ev.matched_content,
+                    "scope": ev.scope,
+                    "time_range": ev.time_range,
+                    "timestamp": ev.timestamp.isoformat() if ev.timestamp else None,
+                }
+                for ev in ev_rows
+            ]
+            result = {
+                "repository_id": report.repository_id,
+                "commit_sha": report.commit_sha,
+                "analyzed_at": (
+                    report.analyzed_at.isoformat() if report.analyzed_at else ""
+                ),
+                "scope": report.scope,
+                "time_range": report.time_range,
+                "structure": report.structure,
+                "languages": report.languages,
+                "frameworks": report.frameworks,
+                "architecture": report.architecture,
+                "evidence": evidence_list,
+                "evidence_count": len(evidence_list),
+                "budget": report.budget,
+            }
+            _ANALYSIS_CACHE[(report.repository_id, report.commit_sha)] = result
+            return result
+    except (SQLAlchemyError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("Error fetching analysis report from database: %s", exc)
+
+    if commit_sha:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Không tìm thấy kết quả phân tích cho commit SHA: {commit_sha}",
         )
-
-    # Tìm phân tích mới nhất của repository
-    matching = [
-        res for (r_id, _), res in _ANALYSIS_CACHE.items() if r_id == repository_id
-    ]
-    if not matching:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository chưa được phân tích. Vui lòng kích hoạt phân tích trước.",
-        )
-
-    # Sắp xếp theo analyzed_at mới nhất
-    matching.sort(key=lambda r: r.get("analyzed_at", ""), reverse=True)
-    return matching[0]
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Repository chưa được phân tích. Vui lòng kích hoạt phân tích trước.",
+    )
 
 
 def get_analysis_evidence(

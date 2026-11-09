@@ -18,9 +18,9 @@ from app.modules.analysis.inspector import (
 from app.modules.analysis.limits import AnalysisLimits
 from app.modules.analysis.models import AnalysisJob
 from app.modules.analysis.service import (
-    _ANALYSIS_CACHE,
     GitHubRepositoryContentSource,
     event,
+    save_analysis_result,
 )
 from app.modules.github.client import GitHubApiClient
 
@@ -153,9 +153,9 @@ def run_analysis(
 
         checkpoint(job_uuid, token, "finalizing_evidence", 85)
 
-        # 4. Bảo toàn kết quả và bằng chứng xác thực trong cache/store
-        cache_key = (repo_id, analysis_result["commit_sha"])
-        _ANALYSIS_CACHE[cache_key] = analysis_result
+        # 4. Bảo toàn kết quả và bằng chứng xác thực trong DB & cache
+        with session_scope() as db:
+            save_analysis_result(db, analysis_result)
 
         # 5. Cập nhật trạng thái thành công hoàn tất (succeeded)
         with session_scope() as db:
