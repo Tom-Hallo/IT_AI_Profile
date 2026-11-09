@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { apiFetch, ApiError } from '@/shared/api/client'
 
-type Mode = 'preset' | 'month' | 'custom'
+type Mode = 'preset' | 'month' | 'year' | 'custom'
 interface Analysis {
   period: { start_utc: string; end_exclusive_utc: string }
   activity: { commits: number; pull_requests_created: number; additions: number; deletions: number }
@@ -14,6 +14,7 @@ export function ActivityAnalysisPage() {
   const [mode, setMode] = useState<Mode>('preset')
   const [preset, setPreset] = useState('1m')
   const [month, setMonth] = useState('')
+  const [year, setYear] = useState('2026')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [timezone, setTimezone] = useState('Asia/Ho_Chi_Minh')
@@ -32,6 +33,7 @@ export function ActivityAnalysisPage() {
     const query = new URLSearchParams({ mode, timezone })
     if (mode === 'preset') query.set('preset', preset)
     if (mode === 'month') query.set('month', month)
+    if (mode === 'year') query.set('year', year)
     if (mode === 'custom') {
       query.set('start_date', start)
       query.set('end_date', end)
@@ -61,7 +63,7 @@ export function ActivityAnalysisPage() {
     <form onSubmit={(e) => void submit(e)} style={{ display: 'grid', gap: 12 }}>
       <label>Chế độ <select value={mode} onChange={e => setMode(e.target.value as Mode)}>
         <option value="preset">Gần đây</option><option value="month">Theo tháng</option>
-        <option value="custom">Tùy chọn</option>
+        <option value="year">Theo năm</option><option value="custom">Tùy chọn</option>
       </select></label>
       {mode === 'preset' && <label>Khoảng <select value={preset} onChange={e => setPreset(e.target.value)}>
         <option value="1m">1 tháng</option><option value="3m">3 tháng</option>
@@ -69,6 +71,8 @@ export function ActivityAnalysisPage() {
       </select></label>}
       {mode === 'month' && <label>Tháng <input type="month" required value={month}
         onChange={e => setMonth(e.target.value)} /></label>}
+      {mode === 'year' && <label>Năm <input type="number" required min="2000" max="2100" value={year}
+        onChange={e => setYear(e.target.value)} /></label>}
       {mode === 'custom' && <>
         <label>Từ ngày <input type="date" required value={start}
           onChange={e => setStart(e.target.value)} /></label>
