@@ -119,9 +119,11 @@ export function useGitHubRepositories(isAuthenticated: boolean) {
   // Polling khi trạng thái đồng bộ đang chạy ("running")
   useEffect(() => {
     if (syncStatus?.status === 'running') {
+      let consecutiveErrors = 0
       pollIntervalRef.current = window.setInterval(async () => {
         try {
           const updated = await fetchSyncStatus()
+          consecutiveErrors = 0
           setSyncStatus(updated)
           if (updated.status !== 'running') {
             if (pollIntervalRef.current !== null) {
@@ -143,7 +145,14 @@ export function useGitHubRepositories(isAuthenticated: boolean) {
             }
           }
         } catch {
-          // Bỏ qua lỗi polling tạm thời
+          consecutiveErrors += 1
+          if (consecutiveErrors >= 5) {
+            if (pollIntervalRef.current !== null) {
+              clearInterval(pollIntervalRef.current)
+              pollIntervalRef.current = null
+            }
+            setStatusError('Không thể tiếp tục theo dõi tiến trình đồng bộ (lỗi mạng hoặc máy chủ).')
+          }
         }
       }, 2500)
     }

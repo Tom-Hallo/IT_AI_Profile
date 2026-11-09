@@ -129,7 +129,7 @@ def test_sync_trigger_background_enqueues_job(app, test_user):
         data = res.json()
         assert data["status"] == "running"
         assert data["job_id"] == "job-12345"
-        mock_cache.assert_called_once_with(1, status="running")
+        mock_cache.assert_called_once_with(1, status="running", job_id="job-12345")
 
 
 @pytest.mark.anyio
