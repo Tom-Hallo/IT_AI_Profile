@@ -1,6 +1,7 @@
 """Versioned, user-scoped consent state and append-only audit events."""
 
 from datetime import datetime
+from typing import ClassVar
 
 from sqlalchemy import (
     BigInteger,
@@ -48,9 +49,19 @@ class PrivateConsent(Base):
 
 class PrivateConsentAudit(Base):
     __tablename__ = "private_consent_audits"
-    __table_args__ = {"schema": "ita"}
-    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "ita"}
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        index=True,
+        nullable=False,
+    )
     repository_id: Mapped[int] = mapped_column(BigInteger)
     consent_type: Mapped[str] = mapped_column(String(32))
     provider_key: Mapped[str] = mapped_column(String(80))
