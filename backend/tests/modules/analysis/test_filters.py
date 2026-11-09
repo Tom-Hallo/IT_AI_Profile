@@ -105,3 +105,4 @@ def test_manifest_identification():
 def test_normalize_posix_path():
     assert normalize_posix_path("backend\\app\\main.py") == "backend/app/main.py"
     assert normalize_posix_path("/frontend/src/App.tsx") == "frontend/src/App.tsx"
+
