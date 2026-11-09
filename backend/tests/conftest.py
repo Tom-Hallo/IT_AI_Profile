@@ -1,70 +1,72 @@
-"""Cấu hình test chung. Đặt biến môi trường trước khi import app.
+"""Fixture dùng chung cho test database (Database Engineer, D1).
 
-Khi chạy integration test, sử dụng DATABASE_URL thật từ file .env.
-Khi chạy unit test, sử dụng DATABASE_URL giả.
+Alembic luôn được chạy bằng TIẾN TRÌNH CON (`python -m alembic`) giống hệt cách người
+dùng gõ lệnh:
+vừa kiểm tra đúng đường chạy thật, vừa tránh `fileConfig` của Alembic làm đổi cấu hình
+logging
+của tiến trình pytest.
 """
 
-import datetime
 import os
+import subprocess
 import sys
+import uuid
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from unittest.mock import MagicMock
 
-from cryptography.fernet import Fernet
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
-if not hasattr(datetime, "UTC"):
-    datetime.UTC = datetime.timezone.utc  # noqa: UP017
+from app.core.config import settings
 
-# Bổ sung đường dẫn .venv vào CUỐI sys.path để hỗ trợ nạp tzdata trên Windows
-_venv_site = Path(__file__).resolve().parent.parent / ".venv" / "Lib" / "site-packages"
-if _venv_site.exists() and str(_venv_site) not in sys.path:
-    sys.path.append(str(_venv_site))
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
-# Dự phòng mock DBAPI và Redis cho môi trường unit test cục bộ khi thiếu binary C driver
-if os.environ.get("RUN_INTEGRATION") != "1":
-    try:
-        import psycopg  # noqa: F401
-    except ImportError:
-        m_psycopg = MagicMock()
-        m_psycopg.__version__ = "3.3.6"
-        m_psycopg.Error = type("Error", (Exception,), {})
-        m_psycopg.OperationalError = type("OperationalError", (m_psycopg.Error,), {})
-        m_psycopg.DatabaseError = type("DatabaseError", (m_psycopg.Error,), {})
-        sys.modules.setdefault("psycopg", m_psycopg)
-        sys.modules.setdefault("psycopg.pq", MagicMock())
-        sys.modules.setdefault("psycopg.types", MagicMock())
-        sys.modules.setdefault("psycopg.adapt", MagicMock())
+AlembicRunner = Callable[..., subprocess.CompletedProcess[str]]
 
-    try:
-        from sqlalchemy.dialects.postgresql import JSONB
-        from sqlalchemy.ext.compiler import compiles
 
-        @compiles(JSONB, "sqlite")
-        def compile_jsonb_sqlite(type_, compiler, **kw):
-            return "JSON"
-    except ImportError:
-        pass
+@pytest.fixture
+def alembic_cli() -> AlembicRunner:
+    def run(
+        *args: str, database_url: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        env = dict(os.environ)
+        if database_url is not None:
+            env["DATABASE_URL"] = database_url
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", *args],
+            cwd=BACKEND_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
 
-    try:
-        import redis  # noqa: F401
-    except ImportError:
-        m_redis = MagicMock()
-        m_redis.__path__ = []
-        m_redis.exceptions.RedisError = type("RedisError", (Exception,), {})
-        sys.modules.setdefault("redis", m_redis)
-        sys.modules.setdefault("redis.client", m_redis.client)
-        sys.modules.setdefault("redis.exceptions", m_redis.exceptions)
+    return run
 
-os.environ.setdefault("APP_ENV", "test")
 
-if os.environ.get("RUN_INTEGRATION") != "1":
-    os.environ.setdefault(
-        "DATABASE_URL",
-        "postgresql+psycopg://test:test-pass@127.0.0.1:5432/test_db",
+@pytest.fixture
+def temp_database_url() -> Iterator[str]:
+    """Tạo một database TẠM trên cùng máy chủ PostgreSQL rồi xóa khi xong.
+
+    Nhờ vậy test migration (kể cả downgrade) không bao giờ đụng vào dữ liệu dev thật.
+    Cần RUN_INTEGRATION=1 và tài khoản có quyền CREATEDB (user trong .env.example là
+    superuser).
+    """
+    if os.environ.get("RUN_INTEGRATION") != "1":
+        pytest.skip("cần RUN_INTEGRATION=1 và PostgreSQL đang chạy")
+
+    base_url = make_url(settings.database_url.get_secret_value())
+    name = f"ita_migration_test_{uuid.uuid4().hex[:10]}"
+    admin = create_engine(
+        base_url.set(database="postgres"), isolation_level="AUTOCOMMIT"
     )
-
-os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6379/0")
-os.environ.setdefault(
-    "GITHUB_TOKEN_ENCRYPTION_KEY",
-    Fernet.generate_key().decode(),
-)
+    try:
+        with admin.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{name}"'))
+        yield base_url.set(database=name).render_as_string(hide_password=False)
+    finally:
+        with admin.connect() as connection:
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()

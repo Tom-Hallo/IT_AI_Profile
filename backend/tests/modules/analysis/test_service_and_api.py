@@ -1,4 +1,6 @@
-"""Tests for Service layer and API endpoints (Authorization, Scopes, Time-range, Reanalysis, Evidence) (PBI-012)."""
+"""Tests for Service layer and API endpoints (Authorization, Scopes, Time-range,
+Reanalysis, Evidence) (PBI-012).
+"""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -340,7 +342,9 @@ def test_api_trigger_and_get_analysis(monkeypatch):
 
 
 def test_get_latest_analysis_loads_from_database_on_cache_miss():
-    """Verify get_latest_analysis fetches and reconstructs report from DB when not in L1 cache."""
+    """Verify get_latest_analysis fetches and reconstructs report from DB when not in L1
+    cache.
+    """
     from datetime import datetime
 
     from app.modules.analysis.models import AnalysisEvidence, AnalysisReport

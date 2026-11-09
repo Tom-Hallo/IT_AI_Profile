@@ -1,9 +1,4 @@
-"""Regression tests for SQLAlchemy ORM mapper initialization and GitHub OAuth login (PBI-005).
-
-Verifies that all SQLAlchemy model relationships (User -> Assessment, CV, Roadmap,
-Repository, OAuthAccount) are correctly configured at application startup without
-raising InvalidRequestError during GitHub OAuth user retrieval or callback handling.
-"""
+"""Regression tests for SQLAlchemy mapper initialization and GitHub OAuth."""
 
 from __future__ import annotations
 
@@ -30,7 +25,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 def test_fresh_python_process_configures_all_orm_mappers():
-    """Verify a clean Python interpreter initializes all mappers via app.main."""
+    """Verify session imports configure all ORM mappers."""
     code = (
         "import sys; "
         "sys.path.insert(0, '.'); "
@@ -51,7 +46,7 @@ def test_fresh_python_process_configures_all_orm_mappers():
 
 
 def test_fresh_python_process_session_import_configures_all_mappers():
-    """Verify importing app.db.session in a clean process loads all models and configures mappers."""
+    """Verify session imports configure all ORM mappers."""
     code = (
         "import sys; "
         "sys.path.insert(0, '.'); "
@@ -74,7 +69,7 @@ def test_fresh_python_process_session_import_configures_all_mappers():
 
 
 def test_worker_task_module_can_query_user_without_mapper_error():
-    """Verify worker tasks that query User do not trigger unmapped relationship errors."""
+    """Verify worker imports configure ORM relationships."""
     code = (
         "import sys; "
         "sys.path.insert(0, '.'); "
@@ -97,7 +92,7 @@ def test_worker_task_module_can_query_user_without_mapper_error():
 
 @pytest.fixture
 def isolated_db_session():
-    """Create an isolated in-memory SQLite database session with required tables and ita schema."""
+    """Create an isolated SQLite database session for testing."""
     init_models()
     engine = create_engine(
         "sqlite:///:memory:",
@@ -135,8 +130,8 @@ def isolated_db_session():
                 scope VARCHAR(255),
                 token_updated_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT uq_user_oauth_accounts_provider_provider_user_id UNIQUE (provider, provider_user_id)
-            );
+                CONSTRAINT uq_user_oauth_accounts_provider_provider_user_id
+                    UNIQUE (provider, provider_user_id)            );
             """
         )
 
@@ -150,7 +145,7 @@ def isolated_db_session():
 
 
 def test_get_or_create_github_user_with_isolated_db(isolated_db_session: Session):
-    """Verify get_or_create_github_user creates and retrieves user without Assessment mapper error."""
+    """Verify GitHub user creation and retrieval without mapper errors."""
     identity = GitHubIdentity(
         provider_user_id="gh-987654",
         email="developer@example.com",

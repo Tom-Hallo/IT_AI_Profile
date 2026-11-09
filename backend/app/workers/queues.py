@@ -3,7 +3,8 @@
 Quy tắc (Blueprint mục 1.4 và 9.4):
 - Kết nối Redis chỉ lấy từ `app.core.redis.get_redis_connection()` (một nguồn duy nhất).
 - Tên hàng đợi lấy từ `settings.worker_queues`; không đọc biến môi trường ở đây.
-- Serializer là JSON ở CẢ hai phía: tham số job chỉ gồm kiểu JSON đơn giản (id, chuỗi, số),
+- Serializer là JSON ở CẢ hai phía: tham số job chỉ gồm kiểu JSON đơn giản (id, chuỗi,
+số),
   không dùng pickle. Bên enqueue và worker lệch serializer thì job không đọc được.
 """
 

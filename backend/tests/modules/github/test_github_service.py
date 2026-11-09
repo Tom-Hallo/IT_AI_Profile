@@ -1,4 +1,6 @@
-"""Tests for GitHub repository synchronization service (database persistence & idempotence)."""
+"""Tests for GitHub repository synchronization service (database persistence &
+idempotence).
+"""
 
 import httpx
 import pytest
@@ -6,11 +8,11 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-import app.modules.assessments.models
-import app.modules.auth.models
-import app.modules.cvs.models
-import app.modules.github.models
-import app.modules.roadmaps.models
+import app.modules.assessments.models  # noqa: F401
+import app.modules.auth.models  # noqa: F401
+import app.modules.cvs.models  # noqa: F401
+import app.modules.github.models  # noqa: F401
+import app.modules.roadmaps.models  # noqa: F401
 import app.modules.users.models  # noqa: F401
 from app.core.security import encrypt_token
 from app.db.base import Base
@@ -55,7 +57,7 @@ def sample_user(in_memory_db: Session) -> User:
         id=1,
         email="developer@example.com",
         full_name="Test Developer",
-        hashed_password=None,
+        hashed_password="test-only-placeholder-hash",
     )
     in_memory_db.add(user)
     in_memory_db.flush()

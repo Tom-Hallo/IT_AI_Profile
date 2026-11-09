@@ -1,4 +1,6 @@
-"""API routes for repository code, language, framework & architecture analysis and background jobs (PBI-011 & PBI-012)."""
+"""API routes for repository code, language, framework & architecture analysis and
+background jobs (PBI-011 & PBI-012).
+"""
 
 from __future__ import annotations
 
@@ -155,7 +157,9 @@ async def trigger_repository_analysis(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryAnalysisResponse:
-    """Kích hoạt tiến trình phân tích tĩnh mã nguồn, ngôn ngữ, framework và kiến trúc repository."""
+    """Kích hoạt tiến trình phân tích tĩnh mã nguồn, ngôn ngữ, framework và kiến trúc
+    repository.
+    """
     result = await analyze_repository(
         db=db,
         repository_id=repository_id,
@@ -227,7 +231,9 @@ def get_repository_evidence_records(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> EvidenceListResponse:
-    """Truy xuất danh sách bằng chứng xác thực gắn với file path và commit SHA (PBI-012/PBI-015)."""
+    """Truy xuất danh sách bằng chứng xác thực gắn với file path và commit SHA
+    (PBI-012/PBI-015).
+    """
     evidence_items = get_analysis_evidence(
         db=db,
         repository_id=repository_id,

@@ -1,4 +1,6 @@
-"""Tests for RepositoryInspector, language/framework detection, resource limits, and evidence correctness (PBI-012)."""
+"""Tests for RepositoryInspector, language/framework detection, resource limits, and
+evidence correctness (PBI-012).
+"""
 
 import pytest
 
@@ -83,7 +85,9 @@ async def test_multi_language_and_multiple_frameworks():
                 "typescript": "^5.3.0"
             }
         }""",
-        "frontend/src/App.tsx": "import React from 'react'; export const App = () => <div>Hello</div>;",
+        "frontend/src/App.tsx": (
+            "import React from 'react'; export const App = () => <div>Hello</div>;"
+        ),
         "frontend/src/main.ts": "import './App';",
         "frontend/vite.config.ts": "import { defineConfig } from 'vite';",
         "docker-compose.yml": "services:\n  backend:\n  frontend:",
@@ -96,7 +100,7 @@ async def test_multi_language_and_multiple_frameworks():
     result = await inspector.inspect(source)
 
     # 1. Kiểm tra đa ngôn ngữ
-    lang_names = [l["name"] for l in result["languages"]]
+    lang_names = [language["name"] for language in result["languages"]]
     assert "Python" in lang_names
     assert "TypeScript" in lang_names
 

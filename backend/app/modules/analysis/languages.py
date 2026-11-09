@@ -1,4 +1,6 @@
-"""Programming language detection engine with multi-source verifiable evidence (PBI-012).
+"""Programming language detection engine.
+
+Multi-source verifiable evidence (PBI-012).
 
 Detects languages combining:
 1. Dependency manifests (pyproject.toml, package.json, pom.xml, go.mod, etc.)
@@ -117,7 +119,8 @@ class LanguageDetector:
         lang_bytes: dict[str, int] = {}
         manifest_paths = manifest_paths or set()
 
-        # 1. Thu thập bằng chứng từ cấu hình và manifest (Bằng chứng có độ tin cậy cao nhất)
+        # 1. Thu thập bằng chứng từ cấu hình và manifest (Bằng chứng có độ tin cậy cao
+        # nhất)
         for m_path in manifest_paths:
             fname = m_path.lower().split("/")[-1]
             if fname in MANIFEST_TO_LANGUAGE:
@@ -138,7 +141,8 @@ class LanguageDetector:
                         confidence=ConfidenceLevel.HIGH,
                         confidence_score=1.0,
                         rationale=(
-                            f"Phát hiện ngôn ngữ {lang} thông qua tập tin cấu hình/manifest: {m_path}"
+                            f"Phát hiện ngôn ngữ {lang} thông qua tập tin "
+                            f"cấu hình/manifest: {m_path}"
                         ),
                     )
                     collector.add(record)
@@ -156,7 +160,8 @@ class LanguageDetector:
                     lang_bytes[lang] = lang_bytes.get(lang, 0) + fsize
 
                     if collector is not None and lang_file_counts[lang] <= 3:
-                        # Ghi nhận bằng chứng mẫu (tối đa 3 file đầu tiên cho mỗi ngôn ngữ)
+                        # Ghi nhận bằng chứng mẫu (tối đa 3 file đầu tiên cho mỗi ngôn
+                        # ngữ)
                         record = EvidenceRecord(
                             repository_id=self.repository_id,
                             commit_sha=self.commit_sha,
@@ -191,7 +196,8 @@ class LanguageDetector:
                             confidence=ConfidenceLevel.HIGH,
                             confidence_score=0.95,
                             rationale=(
-                                f"Metadata thống kê dung lượng ngôn ngữ từ GitHub: {g_bytes} bytes"
+                                "Metadata thống kê dung lượng ngôn ngữ "
+                                f"từ GitHub: {g_bytes} bytes"
                             ),
                         )
                         collector.add(record)
@@ -216,7 +222,7 @@ class LanguageDetector:
         findings: list[LanguageFinding] = []
         for lang in sorted(
             lang_file_counts.keys(),
-            key=lambda l: lang_bytes.get(l, 0),
+            key=lambda language: lang_bytes.get(language, 0),
             reverse=True,
         ):
             b_count = lang_bytes.get(lang, 0)
