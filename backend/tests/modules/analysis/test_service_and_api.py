@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
 from app.main import create_app
-from app.modules.analysis.evidence import EvidenceRecord
+from app.modules.analysis.evidence import UTC, EvidenceRecord
 from app.modules.analysis.inspector import InMemoryContentSource
 from app.modules.analysis.schemas import RepositoryAnalysisRequest
 from app.modules.analysis.service import (
@@ -169,6 +169,9 @@ async def test_reanalysis_preserves_evidence_identity(monkeypatch):
         lambda _db, _uid: ("fake-token", "read:user"),
     )
 
+    commit_a_sha = "1111111111111111111111111111111111111111"
+    commit_b_sha = "2222222222222222222222222222222222222222"
+
     # 1. Phân tích Commit A
     commit_a_files = {
         "package.json": '{"name": "a", "dependencies": {"express": "4.18.0"}}'
@@ -183,12 +186,11 @@ async def test_reanalysis_preserves_evidence_identity(monkeypatch):
         user=user,
         request=req,
         custom_source=source_a,
+        custom_commit_sha=commit_a_sha,
     )
 
     # 2. Phân tích Commit B với phiên bản khác
-    commit_b_files = {
-        "package.json": '{"name": "b", "dependencies": {"fastapi": "0.110.0"}}'
-    }
+    commit_b_files = {"requirements.txt": "fastapi>=0.110.0\nuvicorn>=0.28.0"}
     source_b = InMemoryContentSource(commit_b_files)
 
     res_b = await analyze_repository(
@@ -197,13 +199,20 @@ async def test_reanalysis_preserves_evidence_identity(monkeypatch):
         user=user,
         request=req,
         custom_source=source_b,
+        custom_commit_sha=commit_b_sha,
     )
-    commit_b = res_b["commit_sha"]
+    assert res_b["commit_sha"] == commit_b_sha
 
     # 3. Lấy lại kết quả phân tích theo commit_sha và xác minh bằng chứng không bị đè
-    evidence_items = get_analysis_evidence(mock_db, 8, user, commit_sha=commit_b)
-    assert len(evidence_items) > 0
-    assert all(e.commit_sha == commit_b for e in evidence_items)
+    evidence_a = get_analysis_evidence(mock_db, 8, user, commit_sha=commit_a_sha)
+    assert len(evidence_a) > 0
+    assert all(e.commit_sha == commit_a_sha for e in evidence_a)
+    assert any(e.classification == "Express" for e in evidence_a)
+
+    evidence_b = get_analysis_evidence(mock_db, 8, user, commit_sha=commit_b_sha)
+    assert len(evidence_b) > 0
+    assert all(e.commit_sha == commit_b_sha for e in evidence_b)
+    assert any(e.classification == "FastAPI" for e in evidence_b)
 
 
 # --------------------------------------------------------------------------
@@ -328,3 +337,76 @@ def test_api_trigger_and_get_analysis(monkeypatch):
         assert ev_data["items"][0]["classification"] == "FastAPI"
 
     app.dependency_overrides.clear()
+
+
+def test_get_latest_analysis_loads_from_database_on_cache_miss():
+    """Verify get_latest_analysis fetches and reconstructs report from DB when not in L1 cache."""
+    from datetime import datetime
+
+    from app.modules.analysis.models import AnalysisEvidence, AnalysisReport
+    from app.modules.analysis.service import _ANALYSIS_CACHE, get_latest_analysis
+
+    # Ensure repository 99 is not in _ANALYSIS_CACHE
+    to_delete = [k for k in _ANALYSIS_CACHE if k[0] == 99]
+    for k in to_delete:
+        del _ANALYSIS_CACHE[k]
+
+    mock_db = MagicMock()
+    # 1st call: verify_repository_access
+    # 2nd call: select(AnalysisReport)
+    mock_repo = _create_mock_repo(repo_id=99)
+    mock_report = MagicMock(spec=AnalysisReport)
+    mock_report.id = 1
+    mock_report.repository_id = 99
+    mock_report.commit_sha = "aabbcc" * 6 + "1234"
+    mock_report.analyzed_at = datetime(2026, 11, 9, 12, 0, 0, tzinfo=UTC)
+    mock_report.scope = "all"
+    mock_report.time_range = None
+    mock_report.structure = {
+        "total_files": 2,
+        "inspected_files": 2,
+        "ignored_files": 0,
+    }
+    mock_report.languages = [
+        {
+            "name": "Python",
+            "primary": True,
+            "file_count": 2,
+            "evidence_count": 1,
+            "bytes_count": 100,
+            "percentage": 100.0,
+        }
+    ]
+    mock_report.frameworks = []
+    mock_report.architecture = []
+    mock_report.budget = {"inspected_files": 2}
+
+    mock_evidence = MagicMock(spec=AnalysisEvidence)
+    mock_evidence.repository_id = 99
+    mock_evidence.commit_sha = mock_report.commit_sha
+    mock_evidence.file_path = "app.py"
+    mock_evidence.finding_type = "language"
+    mock_evidence.classification = "Python"
+    mock_evidence.evidence_source = "source_code"
+    mock_evidence.detection_method = "content_inspection"
+    mock_evidence.confidence = "high"
+    mock_evidence.confidence_score = 1.0
+    mock_evidence.rationale = "Python syntax"
+    mock_evidence.line_number = 1
+    mock_evidence.matched_content = "def test():"
+    mock_evidence.scope = "all"
+    mock_evidence.time_range = None
+    mock_evidence.timestamp = datetime(2026, 11, 9, 12, 0, 0, tzinfo=UTC)
+
+    mock_db.scalar.side_effect = [mock_repo, mock_report]
+    mock_db.scalars.return_value.all.return_value = [mock_evidence]
+
+    user = _create_mock_user(user_id=1)
+    res = get_latest_analysis(mock_db, 99, user)
+
+    assert res["repository_id"] == 99
+    assert res["commit_sha"] == mock_report.commit_sha
+    assert len(res["evidence"]) == 1
+    assert res["evidence"][0]["classification"] == "Python"
+    # Cached for subsequent calls
+    assert (99, mock_report.commit_sha) in _ANALYSIS_CACHE
