@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import health
 from app.modules.auth.router import router as auth_router
 from app.modules.github.router import router as github_router
+from app.api.activity import router as activity_router
 
 API_PREFIX = "/api/v1"
 
@@ -11,3 +12,4 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth_router)
 api_router.include_router(github_router)
+api_router.include_router(activity_router)
