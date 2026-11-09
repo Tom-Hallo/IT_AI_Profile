@@ -80,7 +80,7 @@ def sample_user(in_memory_db: Session) -> User:
         id=1,
         email="dev_timeout@example.com",
         full_name="Timeout Test User",
-        hashed_password=None,
+        hashed_password="test-only-placeholder-hash",
     )
     in_memory_db.add(user)
     in_memory_db.flush()

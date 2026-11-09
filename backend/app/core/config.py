@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     github_token_encryption_key: SecretStr | None = None
     frontend_url: str = "http://localhost:5173"
     ita_analysis_tmp_root: str = "/var/lib/ita/analysis-tmp"
+    github_sync_timeout_seconds: int = 300
+    github_api_concurrency: int = 8
 
     @field_validator(
         "github_client_id",
