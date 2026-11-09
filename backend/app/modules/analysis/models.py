@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -71,13 +71,15 @@ class AnalysisJob(Base):
 
 class AnalysisJobEvent(Base):
     __tablename__ = "analysis_job_events"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "ita"}
+    __table_args__ = (
+        Index("ix_ita_analysis_job_events_job_id", "job_id"),
+        {"schema": "ita"},
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("ita.analysis_jobs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     progress: Mapped[int] = mapped_column(Integer, nullable=False)

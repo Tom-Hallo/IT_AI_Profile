@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+import app.db.models  # noqa: F401
 from app.core.config import settings
 
 CHECK_TIMEOUT_SECONDS = 3

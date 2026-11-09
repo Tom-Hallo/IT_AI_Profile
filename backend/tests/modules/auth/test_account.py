@@ -1,15 +1,9 @@
-from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.orm import configure_mappers
 
-import app.modules.assessments.models as assessment_models
-import app.modules.auth.models as auth_models
-import app.modules.cvs.models as cv_models
-import app.modules.github.models as github_models
-import app.modules.roadmaps.models as roadmap_models
+import app.db.models  # noqa: F401
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
 from app.modules.auth.service import (
@@ -17,29 +11,6 @@ from app.modules.auth.service import (
     get_or_create_github_user,
 )
 from app.modules.users.models import User
-
-assert all(
-    (
-        assessment_models,
-        auth_models,
-        cv_models,
-        github_models,
-        roadmap_models,
-    )
-)
-MODEL_MODULES = (
-    "app.modules.users.models",
-    "app.modules.auth.models",
-    "app.modules.roadmaps.models",
-    "app.modules.github.models",
-    "app.modules.cvs.models",
-    "app.modules.assessments.models",
-)
-
-for module_path in MODEL_MODULES:
-    import_module(module_path)
-
-configure_mappers()
 
 
 @pytest.fixture

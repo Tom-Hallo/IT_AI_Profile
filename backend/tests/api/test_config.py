@@ -95,6 +95,8 @@ def _make(**overrides) -> Settings:
         "app_env": "test",
         "database_url": "postgresql+psycopg://u:p@h/d",
         "redis_url": "redis://h:6379/0",
+        "github_client_id": None,
+        "github_client_secret": None,
     }
     values.update(overrides)
     return Settings(**values)

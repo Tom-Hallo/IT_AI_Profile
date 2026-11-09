@@ -6,13 +6,7 @@ from alembic import context
 from sqlalchemy import event
 
 # Register business models
-import app.modules.analysis.models
-import app.modules.assessments.models
-import app.modules.auth.models
-import app.modules.cvs.models
-import app.modules.github.models
-import app.modules.roadmaps.models
-import app.modules.users.models  # noqa: F401
+import app.db.models  # noqa: F401
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
