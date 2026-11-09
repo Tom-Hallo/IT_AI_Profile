@@ -40,9 +40,7 @@ async def get_activity_analysis(
     timezone: str = "UTC",
 ):
     try:
-        start, end = resolve_range(
-            mode, preset, month, start_date, end_date, timezone
-        )
+        start, end = resolve_range(mode, preset, month, start_date, end_date, timezone)
         return await analyze(db, repository_id, user_id, start, end)
     except HTTPException:
         raise
