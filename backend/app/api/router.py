@@ -6,6 +6,7 @@ from app.modules.analysis.router import router as analysis_router
 from app.modules.auth.router import router as auth_router
 from app.modules.github.router import router as github_router
 from app.modules.github.selection_router import router as selection_router
+
 API_PREFIX = "/api/v1"
 
 api_router = APIRouter()
