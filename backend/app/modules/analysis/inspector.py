@@ -1,4 +1,6 @@
-"""Repository Inspector engine orchestrating static analysis and evidence generation (PBI-012).
+"""Repository Inspector engine orchestrating static analysis.
+
+Evidence generation (PBI-012).
 
 Orchestrates:
 1. Tree traversal and path safety verification (prevents traversal attacks).
@@ -54,7 +56,9 @@ class RepositoryContentSource(ABC):
 
     @abstractmethod
     async def get_tree_items(self) -> list[dict[str, Any]]:
-        """Trả về danh sách các mục trong Git Tree: [{'path': ..., 'size': ..., 'type': 'blob'|'tree'}]"""
+        """Trả về danh sách các mục trong Git Tree: [{'path': ..., 'size': ..., 'type':
+        'blob'|'tree'}]
+        """
         ...
 
     @abstractmethod
@@ -119,7 +123,10 @@ class RepositoryInspector:
         # Xử lý Empty Repository
         if not raw_tree:
             logger.info(
-                f"Repository id={self.repository_id} rỗng (0 tập tin), trả về kết quả an toàn."
+                (
+                    f"Repository id={self.repository_id} rỗng (0 tập tin), "
+                    "trả về kết quả an toàn."
+                )
             )
             if on_progress:
                 on_progress("empty_repository", 90)
@@ -142,12 +149,16 @@ class RepositoryInspector:
         lockfile_paths: set[str] = set()
         ignored_count = 0
 
-        # 2. Lọc và kiểm tra an toàn đường dẫn (Chống Path Traversal & loại bỏ vendor/binaries)
+        # 2. Lọc và kiểm tra an toàn đường dẫn (Chống Path Traversal & loại bỏ
+        # vendor/binaries)
         for item in raw_tree:
             path = item.get("path", "")
             if not is_safe_path(path):
                 logger.warning(
-                    f"Bỏ qua đường dẫn không an toàn hoặc cố tình path traversal: {path!r}"
+                    (
+                        "Bỏ qua đường dẫn không an toàn hoặc cố tình "
+                        f"path traversal: {path!r}"
+                    )
                 )
                 continue
 
@@ -336,14 +347,14 @@ class RepositoryInspector:
             },
             "languages": [
                 {
-                    "name": l.name,
-                    "primary": l.primary,
-                    "bytes_count": l.bytes_count,
-                    "percentage": l.percentage,
-                    "file_count": l.file_count,
-                    "evidence_count": len(l.evidence),
+                    "name": language.name,
+                    "primary": language.primary,
+                    "bytes_count": language.bytes_count,
+                    "percentage": language.percentage,
+                    "file_count": language.file_count,
+                    "evidence_count": len(language.evidence),
                 }
-                for l in languages
+                for language in languages
             ],
             "frameworks": [
                 {

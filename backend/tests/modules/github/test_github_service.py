@@ -1,4 +1,6 @@
-"""Tests for GitHub repository synchronization service (database persistence & idempotence)."""
+"""Tests for GitHub repository synchronization service (database persistence &
+idempotence).
+"""
 
 import httpx
 import pytest

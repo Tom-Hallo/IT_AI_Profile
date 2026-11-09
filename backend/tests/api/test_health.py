@@ -57,7 +57,10 @@ def test_health_503_when_dependency_fails(
 ):
     def boom() -> None:
         raise RuntimeError(
-            "password authentication failed for postgresql://test:test-pass@127.0.0.1/test_db"
+            (
+                "password authentication failed for "
+                "postgresql://test:test-pass@127.0.0.1/test_db"
+            )
         )
 
     monkeypatch.setattr(db_session, "check_database", boom if db_fails else _ok)
@@ -101,7 +104,8 @@ def test_failure_log_does_not_contain_secret(client, monkeypatch, caplog):
 
 
 def test_slow_dependency_is_cut_off_by_timeout(monkeypatch):
-    """Dependency treo 1s bị cắt ở 0.2s; endpoint trả 503 ngay, không chờ thread treo."""
+    """Dependency treo 1s bị cắt ở 0.2s; endpoint trả 503 ngay, không chờ thread treo.
+    """
 
     def hang() -> None:
         time.sleep(1.0)

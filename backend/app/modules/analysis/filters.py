@@ -2,7 +2,8 @@
 
 Rules:
 - Strictly prevent path traversal (reject '..', absolute paths, Windows drive prefixes).
-- Exclude generated code, vendor directories, dependency installations, binaries, build outputs.
+- Exclude generated code, vendor directories, dependency installations, binaries, build
+outputs.
 - Never execute untrusted repository code.
 """
 

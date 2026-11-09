@@ -85,7 +85,10 @@ async def trigger_repository_sync(
             )
         except Exception as exc:
             logger.warning(
-                f"Không thể đưa vào hàng đợi RQ ({exc}), chuyển sang thực thi đồng bộ trực tiếp."
+                (
+                    f"Không thể đưa vào hàng đợi RQ ({exc}), "
+                    "chuyển sang thực thi đồng bộ trực tiếp."
+                )
             )
 
     try:
@@ -201,7 +204,9 @@ def get_user_repository(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryItemResponse:
-    """Lấy thông tin chi tiết một repository, kiểm tra nghiêm ngặt quyền truy cập của user."""
+    """Lấy thông tin chi tiết một repository, kiểm tra nghiêm ngặt quyền truy cập của
+    user.
+    """
 
     stmt = (
         select(Repository)

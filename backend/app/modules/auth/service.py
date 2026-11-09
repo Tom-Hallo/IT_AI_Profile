@@ -1,7 +1,5 @@
 """Redis services for GitHub OAuth state and application sessions."""
 
-"""Redis services for GitHub OAuth state and application sessions."""
-
 import secrets
 
 from cryptography.fernet import InvalidToken
@@ -10,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.redis import get_redis_connection
 from app.core.security import decrypt_token, encrypt_token
 from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount

@@ -1,7 +1,8 @@
 """Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
 
 Quy tắc:
-- Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import settings`.
+- Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import
+settings`.
 - Biến bắt buộc không có giá trị mặc định: thiếu thì dừng ngay khi import.
 - Thông báo lỗi chỉ nêu TÊN biến, không bao giờ nêu giá trị.
 """
@@ -26,7 +27,8 @@ def _split_csv(value: object) -> object:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Chạy ngoài Docker: đọc backend/.env. Trong Docker, Compose truyền biến trực tiếp
+        # Chạy ngoài Docker: đọc backend/.env. Trong Docker, Compose truyền biến trực
+        # tiếp
         # và biến của tiến trình luôn được ưu tiên hơn file.
         env_file=".env",
         env_file_encoding="utf-8",

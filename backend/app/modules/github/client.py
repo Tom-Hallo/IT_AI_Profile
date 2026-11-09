@@ -3,7 +3,8 @@
 Quy tắc bảo mật:
 - Token không bao giờ được log hoặc đưa vào exception message.
 - Bounded retries: chỉ retry lỗi mạng và 5xx; không retry vô hạn hoặc retry lỗi 401/403.
-- Rate limit 403/429 được bóc tách header X-RateLimit-Reset và Retry-After để báo chính xác.
+- Rate limit 403/429 được bóc tách header X-RateLimit-Reset và Retry-After để báo chính
+xác.
 """
 
 from __future__ import annotations
@@ -229,7 +230,10 @@ class GitHubApiClient:
                             0.1, 0.5
                         )
                         logger.warning(
-                            f"Lỗi mạng GitHub ({exc.__class__.__name__}), retry sau {delay:.2f}s"
+                            (
+                                f"Lỗi mạng GitHub ({exc.__class__.__name__}), "
+                                f"retry sau {delay:.2f}s"
+                            )
                         )
                         await asyncio.sleep(delay)
                         continue
@@ -250,7 +254,8 @@ class GitHubApiClient:
         per_page: int = 100,
         max_pages: int = 10,
     ) -> list[dict[str, Any]]:
-        """Lấy danh sách tất cả repositories có thể truy cập của tài khoản authenticated.
+        """Lấy danh sách tất cả repositories có thể truy cập
+        của tài khoản authenticated.
 
         Hỗ trợ phân trang chuẩn theo RFC 5988 (Link header).
         """
@@ -301,7 +306,8 @@ class GitHubApiClient:
     ) -> dict[str, int]:
         """Lấy số lượng byte theo ngôn ngữ lập trình của repository.
 
-        Giữ nguyên số byte thật từ GitHub (ví dụ: {"Python": 185000, "TypeScript": 92000}).
+        Giữ nguyên số byte thật từ GitHub (ví dụ: {"Python": 185000, "TypeScript":
+        92000}).
         """
         try:
             response = await self._request("GET", f"/repos/{owner}/{repo}/languages")
@@ -408,7 +414,10 @@ class GitHubApiClient:
             size = data.get("size", 0)
             if size > max_bytes:
                 logger.warning(
-                    f"Tập tin {path} vượt quá giới hạn dung lượng ({size} > {max_bytes} bytes)."
+                    (
+                        f"Tập tin {path} vượt quá giới hạn dung lượng "
+                        f"({size} > {max_bytes} bytes)."
+                    )
                 )
                 return None
             content_b64 = data.get("content")

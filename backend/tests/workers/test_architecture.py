@@ -27,7 +27,8 @@ def test_workers_do_not_create_their_own_redis_or_db_clients():
 
 
 def test_worker_process_does_not_touch_the_database():
-    # Tiến trình worker cha không được truy cập DB (rủi ro fork, HANDOFF Database mục B).
+    # Tiến trình worker cha không được truy cập DB (rủi ro fork, HANDOFF Database mục
+    # B).
     # Job cần DB tự import session_scope BÊN TRONG hàm job (thư mục tasks/).
     for name in ("worker.py", "queues.py", "enqueue.py"):
         assert "app.db" not in _sources()[name], name

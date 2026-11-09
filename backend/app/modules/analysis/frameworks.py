@@ -1,7 +1,10 @@
-"""Framework and major library detection engine with verifiable static evidence (PBI-012).
+"""Framework and major library detection engine.
+
+Includes verifiable static evidence (PBI-012).
 
 Detects frameworks from trustworthy indicators:
-- Manifest dependencies (package.json, pyproject.toml, requirements.txt, pom.xml, csproj, etc.)
+- Manifest dependencies (package.json, pyproject.toml, requirements.txt, pom.xml,
+csproj, etc.)
 - Configuration files (next.config.js, vite.config.ts, angular.json, etc.)
 - Source code imports when inspection is safe.
 
@@ -297,9 +300,14 @@ class FrameworkDetector:
                     line_number=matched_dep.line_number,
                     matched_content=matched_dep.matched_line or matched_dep.name,
                     rationale=(
-                        f"Phát hiện {name} ({category}) khai báo trong {matched_dep.manifest_path}"
-                        f"{f' phiên bản {matched_dep.version_spec}' if matched_dep.version_spec else ''}"
-                        f"{rationale_note}"
+                        f"Phát hiện {name} ({category}) khai báo trong "
+                        f"{matched_dep.manifest_path}"
+                        + (
+                            f" phiên bản {matched_dep.version_spec}"
+                            if matched_dep.version_spec
+                            else ""
+                        )
+                        + f"{rationale_note}"
                     ),
                 )
                 if collector is not None:
@@ -329,7 +337,10 @@ class FrameworkDetector:
                     detection_method=DetectionMethod.STRUCTURAL_INSPECTION,
                     confidence=ConfidenceLevel.MEDIUM,
                     confidence_score=0.80,
-                    rationale=f"Phát hiện tập tin cấu hình đặc trưng của {name}: {matched_config_path}",
+                    rationale=(
+                        f"Phát hiện tập tin cấu hình đặc trưng của {name}: "
+                        f"{matched_config_path}"
+                    ),
                 )
                 if collector is not None:
                     collector.add(record)

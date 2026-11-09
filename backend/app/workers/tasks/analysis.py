@@ -1,4 +1,6 @@
-"""RQ task for repository static code, framework & architecture analysis (PBI-011 & PBI-012)."""
+"""RQ task for repository static code, framework & architecture analysis (PBI-011 &
+PBI-012).
+"""
 
 from __future__ import annotations
 
@@ -62,7 +64,9 @@ def run_analysis(
     custom_limits: AnalysisLimits | None = None,
     custom_commit_sha: str | None = None,
 ) -> dict[str, Any] | None:
-    """Execute background static repository analysis job with transactional state checkpoints."""
+    """Execute background static repository analysis job with transactional state
+    checkpoints.
+    """
     from app.db.session import session_scope
     from app.modules.auth.service import get_user_github_token
     from app.modules.github.models import Repository, user_repository
@@ -88,7 +92,8 @@ def run_analysis(
         scope = job.scope
 
     try:
-        # 1. Tải và kiểm tra tính hợp lệ của repository & quyền truy cập GitHub token (PBI-009/PBI-011)
+        # 1. Tải và kiểm tra tính hợp lệ của repository & quyền truy cập GitHub token
+        # (PBI-009/PBI-011)
         with session_scope() as db:
             repo = db.scalar(
                 select(Repository)

@@ -193,7 +193,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a repository
             conn.execute(
                 _text(
-                    "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
+                    "INSERT INTO ita.repositories "
+                    "(owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
                 {

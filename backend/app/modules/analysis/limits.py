@@ -1,4 +1,5 @@
-"""Configurable resource limits and budget tracking for repository analysis (PBI-012)."""
+"""Configurable resource limits and budget tracking for repository analysis (PBI-012).
+"""
 
 from __future__ import annotations
 
@@ -43,7 +44,10 @@ class AnalysisBudgetTracker:
         # 2. Kiểm tra số lượng tập tin tối đa
         if self.inspected_files_count >= self.limits.max_inspected_files:
             self.limit_reached = True
-            self.limit_reason = f"Đã đạt số lượng tập tin tối đa ({self.limits.max_inspected_files} files)"
+            self.limit_reason = (
+                "Đã đạt số lượng tập tin tối đa "
+                f"({self.limits.max_inspected_files} files)"
+            )
             return False
 
         # 3. Kiểm tra tổng dung lượng tối đa
@@ -52,7 +56,8 @@ class AnalysisBudgetTracker:
             > self.limits.max_total_analysis_bytes
         ):
             self.limit_reached = True
-            self.limit_reason = f"Đã đạt tổng dung lượng phân tích tối đa ({self.limits.max_total_analysis_bytes // 1024 // 1024} MB)"
+            max_mb = self.limits.max_total_analysis_bytes // (1024 * 1024)
+            self.limit_reason = f"Đã đạt tổng dung lượng phân tích tối đa ({max_mb} MB)"
             return False
 
         return True

@@ -5,7 +5,8 @@ Chủ sở hữu: Database Engineer (D1). Backend đã viết bản đầu (tạ
 
 Nguyên tắc "một nguồn cấu hình":
 - URL kết nối chỉ lấy từ `settings.database_url` (app/core/config.py).
-- Đây là NƠI DUY NHẤT gọi `create_engine`. Backend (API), Worker và Alembic (migrations/env.py)
+- Đây là NƠI DUY NHẤT gọi `create_engine`. Backend (API), Worker và Alembic
+(migrations/env.py)
   đều import `engine` từ đây, nên không thể có hai cấu hình kết nối mâu thuẫn nhau.
   Module nghiệp vụ KHÔNG được tự tạo engine (có test kiểm tra quy tắc này).
 - Không bao giờ log URL kết nối (chứa mật khẩu).
@@ -24,7 +25,8 @@ CHECK_TIMEOUT_SECONDS = 3
 # create_engine không mở kết nối ngay, nên import module này không cần DB đang chạy.
 engine = create_engine(
     settings.database_url.get_secret_value(),
-    # Kiểm tra kết nối còn sống trước khi dùng: DB restart không làm API/worker lỗi dai dẳng.
+    # Kiểm tra kết nối còn sống trước khi dùng: DB restart không làm API/worker lỗi dai
+    # dẳng.
     pool_pre_ping=True,
     connect_args={"connect_timeout": CHECK_TIMEOUT_SECONDS},
 )
@@ -44,9 +46,11 @@ def get_session() -> Iterator[Session]:
 
 @contextmanager
 def session_scope() -> Iterator[Session]:
-    """Dành cho Worker và script (ngoài FastAPI): một đơn vị công việc = một transaction.
+    """Dành cho Worker và script (ngoài FastAPI):
+    một đơn vị công việc = một transaction.
 
-    Thành công thì commit, có lỗi thì rollback rồi ném lại lỗi, cuối cùng luôn đóng session.
+    Thành công thì commit, có lỗi thì rollback rồi ném lại lỗi, cuối cùng luôn đóng
+    session.
     Quy ước Blueprint 9.4: mỗi task của worker tự mở session riêng bằng hàm này.
     """
     with SessionLocal() as session:

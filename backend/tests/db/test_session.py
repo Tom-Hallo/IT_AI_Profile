@@ -19,7 +19,8 @@ from app.db.base import NAMING_CONVENTION, Base
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
 
-# --- Cấu hình engine ---------------------------------------------------------------------------
+# --- Cấu hình engine
+# ---------------------------------------------------------------------------
 
 
 def test_engine_uses_psycopg_v3_and_settings_url():
@@ -40,7 +41,8 @@ def test_only_db_session_creates_an_engine():
 
 
 def test_alembic_env_does_not_read_environment_or_hardcode_url():
-    """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL."""
+    """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL.
+    """
     source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text(
         "utf-8"
     )
@@ -85,7 +87,8 @@ def test_business_tables_defined_in_pbi_002_and_pbi_005():
     assert expected_tables.issubset(set(Base.metadata.tables.keys()))
 
 
-# --- get_session / session_scope (dùng SQLite trong bộ nhớ, không cần PostgreSQL) -----------
+# --- get_session / session_scope (dùng SQLite trong bộ nhớ, không cần PostgreSQL)
+# -----------
 
 
 @pytest.fixture
@@ -134,7 +137,8 @@ def test_get_session_commits_only_when_caller_commits(sqlite_session_factory):
     assert _count(sqlite_session_factory) == 1
 
 
-# --- check_database khi DB không tới được -----------------------------------------------------
+# --- check_database khi DB không tới được
+# -----------------------------------------------------
 
 
 def test_check_database_raises_when_server_unreachable(monkeypatch):
@@ -148,7 +152,8 @@ def test_check_database_raises_when_server_unreachable(monkeypatch):
     dead.dispose()
 
 
-# --- Tích hợp với PostgreSQL thật (RUN_INTEGRATION=1) ------------------------------------------
+# --- Tích hợp với PostgreSQL thật (RUN_INTEGRATION=1)
+# ------------------------------------------
 
 integration = pytest.mark.skipif(
     os.environ.get("RUN_INTEGRATION") != "1",

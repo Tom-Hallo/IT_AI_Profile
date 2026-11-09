@@ -1,7 +1,9 @@
 """Fixture dùng chung cho test database (Database Engineer, D1).
 
-Alembic luôn được chạy bằng TIẾN TRÌNH CON (`python -m alembic`) giống hệt cách người dùng gõ lệnh:
-vừa kiểm tra đúng đường chạy thật, vừa tránh `fileConfig` của Alembic làm đổi cấu hình logging
+Alembic luôn được chạy bằng TIẾN TRÌNH CON (`python -m alembic`) giống hệt cách người
+dùng gõ lệnh:
+vừa kiểm tra đúng đường chạy thật, vừa tránh `fileConfig` của Alembic làm đổi cấu hình
+logging
 của tiến trình pytest.
 """
 
@@ -49,7 +51,8 @@ def temp_database_url() -> Iterator[str]:
     """Tạo một database TẠM trên cùng máy chủ PostgreSQL rồi xóa khi xong.
 
     Nhờ vậy test migration (kể cả downgrade) không bao giờ đụng vào dữ liệu dev thật.
-    Cần RUN_INTEGRATION=1 và tài khoản có quyền CREATEDB (user trong .env.example là superuser).
+    Cần RUN_INTEGRATION=1 và tài khoản có quyền CREATEDB (user trong .env.example là
+    superuser).
     """
     if os.environ.get("RUN_INTEGRATION") != "1":
         pytest.skip("cần RUN_INTEGRATION=1 và PostgreSQL đang chạy")

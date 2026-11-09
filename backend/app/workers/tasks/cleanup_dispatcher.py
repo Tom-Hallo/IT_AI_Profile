@@ -1,4 +1,6 @@
-"""Run periodically via scheduler or as a separate process: python -m app.workers.tasks.cleanup_dispatcher"""
+"""Run periodically via scheduler or as a separate process: python -m
+app.workers.tasks.cleanup_dispatcher
+"""
 
 from sqlalchemy import select
 
