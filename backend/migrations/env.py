@@ -1,13 +1,9 @@
-<<<<<<< HEAD
 """Moi truong chay Alembic (Database Engineer, D1).
 
 - URL ket noi KHONG doc tu alembic.ini hay os.environ: lay tu app.core.config.settings
   thong qua app.db.session.engine, cung engine ma Backend va Worker dung.
 - Khong in URL/mat khau ra man hinh hay log.
 """
-=======
-"""Alembic migration environment for IT Talent AI Profile."""
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
 
 from logging.config import fileConfig
 
@@ -29,7 +25,6 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 # Import tat ca models nghiep vu de Alembic phat hien cac bang
 # (PBI-002: them models tu day tro di)
@@ -42,8 +37,6 @@ import app.modules.users.models  # noqa: F401, E402
 
 # ---------------------------------------------------------------------------
 
-=======
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
 target_metadata = Base.metadata
 
 
@@ -79,11 +72,6 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-<<<<<<< HEAD
-=======
-        include_schemas=True,
-        include_name=include_name,
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
     )
 
     with context.begin_transaction():
@@ -97,11 +85,6 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 compare_type=True,
-<<<<<<< HEAD
-=======
-                include_schemas=True,
-                include_name=include_name,
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
             )
 
             with context.begin_transaction():

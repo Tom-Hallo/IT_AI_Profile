@@ -49,26 +49,13 @@ user_repository = Table(
         server_default=func.now(),
         nullable=False,
     ),
-<<<<<<< HEAD
     schema="ita",
-=======
-    sa.Index("ix_user_repository_user_id", "user_id"),
-    schema="ita",
-    comment="Pivot table: users <-> repositories (many-to-many)",
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
 )
 
 
 class Repository(Base):
     __tablename__ = "repositories"
-<<<<<<< HEAD
     __table_args__ = {"schema": "ita"}
-=======
-    __table_args__ = {
-        "schema": "ita",
-        "comment": "GitHub repositories linked to a user",
-    }
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[int] = mapped_column(
@@ -81,13 +68,9 @@ class Repository(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     html_url: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-<<<<<<< HEAD
     private: Mapped[bool] = mapped_column(
         Boolean, server_default=sa.text("false"), nullable=False
     )
-=======
-    private: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
->>>>>>> d35de7782a07584638b77040b87473fd8e91f925
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
