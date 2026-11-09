@@ -1,6 +1,7 @@
 """Smoke contract; integration tests with dedicated PostgreSQL still required."""
 from app.modules.analysis.models import ACTIVE, TERMINAL
 
+
 def test_state_sets_disjoint():
     assert not set(ACTIVE).intersection(TERMINAL)
 
