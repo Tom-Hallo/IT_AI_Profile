@@ -1,11 +1,10 @@
+from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from importlib import import_module
-
-from sqlalchemy.orm import configure_mappers
 
 import pytest
 from sqlalchemy.orm import configure_mappers
+
 import app.modules.assessments.models as assessment_models
 import app.modules.auth.models as auth_models
 import app.modules.cvs.models as cv_models
