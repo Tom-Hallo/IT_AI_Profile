@@ -1,4 +1,17 @@
+<<<<<<< HEAD
 """Alembic migration environment for IT Talent AI Profile."""
+=======
+<<<<<<< HEAD
+"""Moi truong chay Alembic (Database Engineer, D1).
+
+- URL ket noi KHONG doc tu alembic.ini hay os.environ: lay tu app.core.config.settings
+  thong qua app.db.session.engine, cung engine ma Backend va Worker dung.
+- Khong in URL/mat khau ra man hinh hay log.
+"""
+=======
+"""Alembic migration environment for IT Talent AI Profile."""
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
 
 from logging.config import fileConfig
 
@@ -7,7 +20,10 @@ from sqlalchemy import event
 
 # Register business models
 import app.modules.assessments.models  # noqa: F401, E402
+<<<<<<< HEAD
 import app.modules.auth.models  # noqa: F401, E402
+=======
+>>>>>>> 7782749 (T065DDA: fix trang demo)
 import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
@@ -21,6 +37,24 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+# ---------------------------------------------------------------------------
+# Import tat ca models nghiep vu de Alembic phat hien cac bang
+# (PBI-002: them models tu day tro di)
+# ---------------------------------------------------------------------------
+import app.modules.assessments.models  # noqa: F401, E402
+import app.modules.cvs.models  # noqa: F401, E402
+import app.modules.github.models  # noqa: F401, E402
+import app.modules.roadmaps.models  # noqa: F401, E402
+import app.modules.users.models  # noqa: F401, E402
+
+# ---------------------------------------------------------------------------
+
+=======
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
 target_metadata = Base.metadata
 
 
@@ -56,8 +90,16 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+<<<<<<< HEAD
         include_schemas=True,
         include_name=include_name,
+=======
+<<<<<<< HEAD
+=======
+        include_schemas=True,
+        include_name=include_name,
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
     )
 
     with context.begin_transaction():
@@ -71,8 +113,16 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 compare_type=True,
+<<<<<<< HEAD
                 include_schemas=True,
                 include_name=include_name,
+=======
+<<<<<<< HEAD
+=======
+                include_schemas=True,
+                include_name=include_name,
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
             )
 
             with context.begin_transaction():

@@ -1,0 +1,2 @@
+import {toast} from './common.js';
+const form=document.getElementById('profile-form');const data=JSON.parse(localStorage.getItem('craft-profile')||'{}');for(const [key,val] of Object.entries(data)){if(form.elements.namedItem(key))form.elements.namedItem(key).value=val}form.onsubmit=e=>{e.preventDefault();const obj=Object.fromEntries(new FormData(form));localStorage.setItem('craft-profile',JSON.stringify(obj));toast('Profile saved in this browser')};

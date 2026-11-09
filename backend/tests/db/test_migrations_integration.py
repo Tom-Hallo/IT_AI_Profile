@@ -145,7 +145,16 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a user
             conn.execute(
                 _text(
+<<<<<<< HEAD
                     "INSERT INTO ita.users (email, full_name, hashed_password) VALUES (:e, :n, :p)"
+=======
+<<<<<<< HEAD
+                    "INSERT INTO ita.users (email, full_name, hashed_password) "
+                    "VALUES (:e, :n, :p)"
+=======
+                    "INSERT INTO ita.users (email, full_name, hashed_password) VALUES (:e, :n, :p)"
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 ),
                 {"e": "alice@example.com", "n": "Alice", "p": "hash_placeholder"},
             )
@@ -186,12 +195,22 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                     "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+                {"oid": user_id, "eid": "gh:12345", "n": "my-repo", "url": "https://github.com/alice/my-repo"},
+=======
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 {
                     "oid": user_id,
                     "eid": "gh:12345",
                     "n": "my-repo",
                     "url": "https://github.com/alice/my-repo",
                 },
+<<<<<<< HEAD
+=======
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
             )
             repo_id = conn.execute(
                 _text("SELECT id FROM ita.repositories WHERE external_id = 'gh:12345'")
@@ -199,26 +218,67 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert an assessment with valid score
             conn.execute(
+<<<<<<< HEAD
                 _text("INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"),
+=======
+<<<<<<< HEAD
+                _text(
+                    "INSERT INTO ita.assessments (user_id, type, score) "
+                    "VALUES (:uid, :t, :s)"
+                ),
+=======
+                _text("INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"),
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 {"uid": user_id, "t": "python", "s": 85.5},
             )
 
             # Insert a CV
             conn.execute(
+<<<<<<< HEAD
                 _text("INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"),
+=======
+<<<<<<< HEAD
+                _text(
+                    "INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"
+                ),
+=======
+                _text("INSERT INTO ita.cvs (user_id, content) VALUES (:uid, :c)"),
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 {"uid": user_id, "c": '{"skills": ["Python"]}'},
             )
 
             # Insert a roadmap
             conn.execute(
+<<<<<<< HEAD
                 _text("INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"),
+=======
+<<<<<<< HEAD
+                _text(
+                    "INSERT INTO ita.roadmaps (user_id, title, data) "
+                    "VALUES (:uid, :t, :d)"
+                ),
+=======
+                _text("INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"),
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 {"uid": user_id, "t": "My Roadmap", "d": '{"steps": []}'},
             )
 
             # Pivot
             conn.execute(
                 _text(
+<<<<<<< HEAD
                     "INSERT INTO ita.user_repository (user_id, repository_id) VALUES (:uid, :rid)"
+=======
+<<<<<<< HEAD
+                    "INSERT INTO ita.user_repository (user_id, repository_id) "
+                    "VALUES (:uid, :rid)"
+=======
+                    "INSERT INTO ita.user_repository (user_id, repository_id) VALUES (:uid, :rid)"
+>>>>>>> d35de7782a07584638b77040b87473fd8e91f925
+>>>>>>> 7782749 (T065DDA: fix trang demo)
                 ),
                 {"uid": user_id, "rid": repo_id},
             )
