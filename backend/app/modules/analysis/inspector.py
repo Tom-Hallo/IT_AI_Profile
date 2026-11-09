@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -109,6 +110,7 @@ class RepositoryInspector:
         self,
         source: RepositoryContentSource,
         github_languages: dict[str, int] | None = None,
+        on_progress: Callable[[str, int], None] | None = None,
     ) -> dict[str, Any]:
         """Thực thi toàn bộ quy trình kiểm tra và phân tích tĩnh repository."""
         # 1. Lấy toàn bộ cây tập tin
@@ -119,6 +121,8 @@ class RepositoryInspector:
             logger.info(
                 f"Repository id={self.repository_id} rỗng (0 tập tin), trả về kết quả an toàn."
             )
+            if on_progress:
+                on_progress("empty_repository", 90)
             return self._build_result(
                 total_files=0,
                 inspected_files=0,
@@ -128,6 +132,9 @@ class RepositoryInspector:
                 architecture=[],
                 manifest_results=[],
             )
+
+        if on_progress:
+            on_progress("tree_loaded", 30)
 
         valid_tree_paths: list[str] = []
         file_sizes: dict[str, int] = {}
@@ -159,9 +166,13 @@ class RepositoryInspector:
             if "lock" in norm_path.lower():
                 lockfile_paths.add(norm_path)
 
+        if on_progress:
+            on_progress("filtering_paths", 35)
+
         # 3. Phân tích các tập tin manifest để bóc tách dependencies
         manifest_results: list[ManifestParserResult] = []
-        for m_path in manifest_paths:
+        total_m = len(manifest_paths)
+        for idx, m_path in enumerate(manifest_paths, 1):
             fsize = file_sizes.get(m_path, 0)
             if fsize > self.limits.max_file_size_bytes:
                 self.budget.record_oversized_skipped()
@@ -181,7 +192,13 @@ class RepositoryInspector:
             if res:
                 manifest_results.append(res)
 
+            if on_progress and total_m > 0:
+                pct = 35 + int((idx / total_m) * 25)
+                on_progress(f"parsing_manifests ({idx}/{total_m})", pct)
+
         # 4. Phát hiện ngôn ngữ lập trình
+        if on_progress:
+            on_progress("detecting_languages", 65)
         lang_detector = LanguageDetector(self.repository_id, self.commit_sha)
         languages = lang_detector.detect(
             tree_paths=valid_tree_paths,
@@ -192,6 +209,8 @@ class RepositoryInspector:
         )
 
         # 5. Phát hiện frameworks và thư viện chính
+        if on_progress:
+            on_progress("detecting_frameworks", 75)
         framework_detector = FrameworkDetector(self.repository_id, self.commit_sha)
         frameworks = framework_detector.detect_from_manifests(
             manifest_results=manifest_results,
@@ -200,6 +219,8 @@ class RepositoryInspector:
         )
 
         # 6. Phân tích đặc trưng kiến trúc phần mềm
+        if on_progress:
+            on_progress("analyzing_architecture", 82)
         arch_analyzer = ArchitectureAnalyzer(self.repository_id, self.commit_sha)
         architecture = arch_analyzer.analyze(
             tree_paths=valid_tree_paths,
