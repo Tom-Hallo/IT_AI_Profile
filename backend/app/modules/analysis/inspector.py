@@ -123,10 +123,8 @@ class RepositoryInspector:
         # Xử lý Empty Repository
         if not raw_tree:
             logger.info(
-                (
-                    f"Repository id={self.repository_id} rỗng (0 tập tin), "
-                    "trả về kết quả an toàn."
-                )
+                f"Repository id={self.repository_id} rỗng (0 tập tin), "
+                "trả về kết quả an toàn."
             )
             if on_progress:
                 on_progress("empty_repository", 90)
@@ -155,10 +153,8 @@ class RepositoryInspector:
             path = item.get("path", "")
             if not is_safe_path(path):
                 logger.warning(
-                    (
-                        "Bỏ qua đường dẫn không an toàn hoặc cố tình "
-                        f"path traversal: {path!r}"
-                    )
+                    "Bỏ qua đường dẫn không an toàn hoặc cố tình "
+                    f"path traversal: {path!r}"
                 )
                 continue
 

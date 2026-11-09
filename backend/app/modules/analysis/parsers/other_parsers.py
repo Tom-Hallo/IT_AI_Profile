@@ -69,10 +69,8 @@ def parse_build_gradle(
     # Tìm implementation("org.springframework.boot:spring-boot-starter-web:3.0.0") hoặc
     # '...'
     pattern = re.compile(
-        (
-            r"(?:implementation|api|compileOnly|testImplementation)"
-            r"""\s*\(?['"]([^'"]+)['"]\)?"""
-        )
+        r"(?:implementation|api|compileOnly|testImplementation)"
+        r"""\s*\(?['"]([^'"]+)['"]\)?"""
     )
     for idx, line in enumerate(content.splitlines(), start=1):
         m = pattern.search(line)

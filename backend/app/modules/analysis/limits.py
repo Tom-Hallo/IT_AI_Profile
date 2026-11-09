@@ -1,5 +1,4 @@
-"""Configurable resource limits and budget tracking for repository analysis (PBI-012).
-"""
+"""Configurable resource limits and budget tracking for repository analysis (PBI-012)."""
 
 from __future__ import annotations
 

@@ -230,10 +230,8 @@ class GitHubApiClient:
                             0.1, 0.5
                         )
                         logger.warning(
-                            (
-                                f"Lỗi mạng GitHub ({exc.__class__.__name__}), "
-                                f"retry sau {delay:.2f}s"
-                            )
+                            f"Lỗi mạng GitHub ({exc.__class__.__name__}), "
+                            f"retry sau {delay:.2f}s"
                         )
                         await asyncio.sleep(delay)
                         continue
@@ -414,10 +412,8 @@ class GitHubApiClient:
             size = data.get("size", 0)
             if size > max_bytes:
                 logger.warning(
-                    (
-                        f"Tập tin {path} vượt quá giới hạn dung lượng "
-                        f"({size} > {max_bytes} bytes)."
-                    )
+                    f"Tập tin {path} vượt quá giới hạn dung lượng "
+                    f"({size} > {max_bytes} bytes)."
                 )
                 return None
             content_b64 = data.get("content")

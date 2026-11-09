@@ -81,10 +81,8 @@ def test_activity_invalid_timezone(monkeypatch):
     monkeypatch.setattr(activity, "analyze", fake)
     with TestClient(app) as client:
         result = client.get(
-            (
-                "/api/v1/repositories/9/activity/analysis?mode=month"
-                "&month=2026-10&timezone=Bad/Zone"
-            )
+            "/api/v1/repositories/9/activity/analysis?mode=month"
+            "&month=2026-10&timezone=Bad/Zone"
         )
     assert result.status_code == 422
     fake.assert_not_awaited()

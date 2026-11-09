@@ -174,8 +174,7 @@ def test_retry_active_job_raises_conflict():
 
 
 def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
-    """Verify run_analysis executes RepositoryInspector, updates progress, and succeeds.
-    """
+    """Verify run_analysis executes RepositoryInspector, updates progress, and succeeds."""
     job_uuid = uuid.uuid4()
     job_record = _mock_job(
         job_id=job_uuid,
@@ -458,8 +457,7 @@ def test_run_analysis_cancelled_during_inspection_halts_promptly(monkeypatch):
 
 
 def test_dispatch_handles_os_error_as_503(monkeypatch):
-    """Verify dispatch catches OSError (e.g., socket refuse) and fails closed with 503.
-    """
+    """Verify dispatch catches OSError (e.g., socket refuse) and fails closed with 503."""
     from app.modules.analysis.router import dispatch
 
     mock_job = _mock_job(status="queued")

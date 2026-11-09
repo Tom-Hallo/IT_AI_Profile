@@ -86,8 +86,7 @@ async def test_multi_language_and_multiple_frameworks():
             }
         }""",
         "frontend/src/App.tsx": (
-            "import React from 'react'; "
-            "export const App = () => <div>Hello</div>;"
+            "import React from 'react'; export const App = () => <div>Hello</div>;"
         ),
         "frontend/src/main.ts": "import './App';",
         "frontend/vite.config.ts": "import { defineConfig } from 'vite';",

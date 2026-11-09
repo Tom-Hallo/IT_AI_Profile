@@ -141,10 +141,8 @@ class LanguageDetector:
                         confidence=ConfidenceLevel.HIGH,
                         confidence_score=1.0,
                         rationale=(
-                            (
-                                f"Phát hiện ngôn ngữ {lang} thông qua tập tin "
-                                f"cấu hình/manifest: {m_path}"
-                            )
+                            f"Phát hiện ngôn ngữ {lang} thông qua tập tin "
+                            f"cấu hình/manifest: {m_path}"
                         ),
                     )
                     collector.add(record)
@@ -198,10 +196,8 @@ class LanguageDetector:
                             confidence=ConfidenceLevel.HIGH,
                             confidence_score=0.95,
                             rationale=(
-                                (
-                                    "Metadata thống kê dung lượng ngôn ngữ "
-                                    f"từ GitHub: {g_bytes} bytes"
-                                )
+                                "Metadata thống kê dung lượng ngôn ngữ "
+                                f"từ GitHub: {g_bytes} bytes"
                             ),
                         )
                         collector.add(record)

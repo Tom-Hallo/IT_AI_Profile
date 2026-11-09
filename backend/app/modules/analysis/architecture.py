@@ -90,10 +90,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
                 rationale=(
-                    (
-                        "Thành phần Frontend tách biệt với manifest độc lập: "
-                        f"{frontend_manifests[0]}"
-                    )
+                    "Thành phần Frontend tách biệt với manifest độc lập: "
+                    f"{frontend_manifests[0]}"
                 ),
             )
             rec2 = EvidenceRecord(
@@ -107,10 +105,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
                 rationale=(
-                    (
-                        "Thành phần Backend tách biệt với manifest độc lập: "
-                        f"{backend_manifests[0]}"
-                    )
+                    "Thành phần Backend tách biệt với manifest độc lập: "
+                    f"{backend_manifests[0]}"
                 ),
             )
             if collector is not None:
@@ -403,10 +399,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.90,
                 rationale=(
-                    (
-                        "Cấu hình monorepo / điều phối đa dịch vụ: "
-                        f"{monorepo_evidence_path}"
-                    )
+                    "Cấu hình monorepo / điều phối đa dịch vụ: "
+                    f"{monorepo_evidence_path}"
                 ),
             )
             if collector is not None:

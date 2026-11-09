@@ -1,5 +1,4 @@
-"""Tests for file filtering, path traversal prevention, and exclusion rules (PBI-012).
-"""
+"""Tests for file filtering, path traversal prevention, and exclusion rules (PBI-012)."""
 
 from app.modules.analysis.filters import (
     is_ignored_path,

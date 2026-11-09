@@ -15,8 +15,8 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.modules.assessments.models import Assessment
-    from app.modules.cvs.models import CV
     from app.modules.auth.models import OAuthAccount
+    from app.modules.cvs.models import CV
     from app.modules.github.models import Repository
     from app.modules.roadmaps.models import Roadmap
 

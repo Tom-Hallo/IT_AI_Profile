@@ -41,8 +41,7 @@ def test_only_db_session_creates_an_engine():
 
 
 def test_alembic_env_does_not_read_environment_or_hardcode_url():
-    """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL.
-    """
+    """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL."""
     source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text(
         "utf-8"
     )

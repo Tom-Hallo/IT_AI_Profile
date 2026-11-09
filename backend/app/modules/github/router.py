@@ -85,10 +85,8 @@ async def trigger_repository_sync(
             )
         except Exception as exc:
             logger.warning(
-                (
-                    f"Không thể đưa vào hàng đợi RQ ({exc}), "
-                    "chuyển sang thực thi đồng bộ trực tiếp."
-                )
+                f"Không thể đưa vào hàng đợi RQ ({exc}), "
+                "chuyển sang thực thi đồng bộ trực tiếp."
             )
 
     try:
