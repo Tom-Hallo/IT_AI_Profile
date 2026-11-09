@@ -72,11 +72,6 @@ def run_analysis(job_id: str):
             access, _ = get_user_github_token(db, user_id)
             if repo is None or not access:
                 raise PermissionError("repository access revoked")
-            metadata = {
-                "repo": repo.full_name,
-                "languages": repo.languages or {},
-                "size_kb": repo.size_kb,
-            }
         checkpoint(job_uuid, token, "metadata_loaded", 25)
         # IMPORTANT: PBI-009 currently provides repository sync, not a verified
         # scoring pipeline. Fail closed instead of fabricating scores or 100%.
