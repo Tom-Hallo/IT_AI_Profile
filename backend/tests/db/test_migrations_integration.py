@@ -95,8 +95,12 @@ def test_all_tables_created_in_ita_schema(alembic_cli, temp_database_url):
 # TC04 - upgrade is idempotent
 # ---------------------------------------------------------------------------
 def test_upgrade_is_idempotent(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
     assert _stored_versions(temp_database_url) == [_head()]
 
 
@@ -104,7 +108,9 @@ def test_upgrade_is_idempotent(alembic_cli, temp_database_url):
 # TC05 - downgrade base clears all business tables, re-upgrade succeeds
 # ---------------------------------------------------------------------------
 def test_downgrade_base_then_upgrade_again(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
 
     down = alembic_cli("downgrade", "base", database_url=temp_database_url)
     assert down.returncode == 0, down.stderr
@@ -124,7 +130,9 @@ def test_downgrade_base_then_upgrade_again(alembic_cli, temp_database_url):
 # TC06 - alembic check reports no pending model changes
 # ---------------------------------------------------------------------------
 def test_check_reports_no_pending_model_changes(alembic_cli, temp_database_url):
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
     result = alembic_cli("check", database_url=temp_database_url)
     assert result.returncode == 0, result.stderr + result.stdout
 
@@ -137,7 +145,9 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
     import pytest as _pytest
     from sqlalchemy import text as _text
 
-    assert alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    assert (
+        alembic_cli("upgrade", "head", database_url=temp_database_url).returncode == 0
+    )
 
     engine = create_engine(temp_database_url)
     try:
@@ -199,7 +209,9 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert an assessment with valid score
             conn.execute(
-                _text("INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"),
+                _text(
+                    "INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"
+                ),
                 {"uid": user_id, "t": "python", "s": 85.5},
             )
 
@@ -211,7 +223,9 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
 
             # Insert a roadmap
             conn.execute(
-                _text("INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"),
+                _text(
+                    "INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"
+                ),
                 {"uid": user_id, "t": "My Roadmap", "d": '{"steps": []}'},
             )
 

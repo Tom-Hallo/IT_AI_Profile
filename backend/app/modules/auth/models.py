@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -59,6 +67,4 @@ class OAuthAccount(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<OAuthAccount provider={self.provider!r} provider_user_id={self.provider_user_id!r}>"
-        )
+        return f"<OAuthAccount provider={self.provider!r} provider_user_id={self.provider_user_id!r}>"

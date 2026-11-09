@@ -76,7 +76,9 @@ class Settings(BaseSettings):
             if len(decoded) != 32:
                 raise ValueError("khóa mã hóa phải gồm đúng 32 bytes (base64 urlsafe)")
         except Exception:
-            raise ValueError("khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)") from None
+            raise ValueError(
+                "khóa mã hóa không hợp lệ (phải là 32 bytes base64 urlsafe)"
+            ) from None
         return value
 
     # NoDecode: nhận chuỗi phân tách bằng dấu phẩy thay vì JSON.

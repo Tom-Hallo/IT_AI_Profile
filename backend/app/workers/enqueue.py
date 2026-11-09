@@ -35,7 +35,9 @@ POLL_INTERVAL_SECONDS = 0.5
 FINAL_STATUSES = {"finished", "failed", "stopped", "canceled"}
 
 
-def enqueue_task(func: Callable[..., Any] | str, *args: Any, queue_name: str | None = None) -> Job:
+def enqueue_task(
+    func: Callable[..., Any] | str, *args: Any, queue_name: str | None = None
+) -> Job:
     """Đưa một hàm (hoặc đường dẫn dạng chuỗi tới hàm) vào hàng đợi.
 
     `args` phải là kiểu JSON đơn giản. Đây là cách duy nhất nên dùng để enqueue,
@@ -81,15 +83,24 @@ def wait_for_job(job: Job, timeout_seconds: int) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m app.workers.enqueue", description="Enqueue job và xem trạng thái job."
+        prog="python -m app.workers.enqueue",
+        description="Enqueue job và xem trạng thái job.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
     ping_cmd = commands.add_parser("ping", help="Enqueue job mẫu ping")
-    ping_cmd.add_argument("--message", default="ping", help="Chuỗi gửi kèm (mặc định: ping)")
-    ping_cmd.add_argument("--queue", default=None, help="Tên hàng đợi (mặc định: WORKER_QUEUES[0])")
     ping_cmd.add_argument(
-        "--wait", type=int, default=0, metavar="GIAY", help="Chờ tối đa GIAY giây để job xong"
+        "--message", default="ping", help="Chuỗi gửi kèm (mặc định: ping)"
+    )
+    ping_cmd.add_argument(
+        "--queue", default=None, help="Tên hàng đợi (mặc định: WORKER_QUEUES[0])"
+    )
+    ping_cmd.add_argument(
+        "--wait",
+        type=int,
+        default=0,
+        metavar="GIAY",
+        help="Chờ tối đa GIAY giây để job xong",
     )
 
     status_cmd = commands.add_parser("status", help="Xem trạng thái và kết quả của job")

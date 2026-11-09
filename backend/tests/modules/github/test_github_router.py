@@ -76,7 +76,9 @@ def test_sync_without_github_token_returns_400(app, test_user):
     app.dependency_overrides[get_current_user] = lambda: test_user
     app.dependency_overrides[get_session] = lambda: object()
 
-    with patch("app.modules.github.router.get_user_github_token", return_value=(None, None)):
+    with patch(
+        "app.modules.github.router.get_user_github_token", return_value=(None, None)
+    ):
         client = TestClient(app)
         res = client.post("/api/v1/github/sync")
         assert res.status_code == 400
@@ -88,7 +90,10 @@ def test_sync_trigger_conflict_when_already_running(app, test_user):
     app.dependency_overrides[get_session] = lambda: object()
 
     with (
-        patch("app.modules.github.router.get_user_github_token", return_value=("token", "repo")),
+        patch(
+            "app.modules.github.router.get_user_github_token",
+            return_value=("token", "repo"),
+        ),
         patch(
             "app.modules.github.router.get_user_sync_status",
             return_value={"status": "running"},
@@ -107,7 +112,10 @@ def test_sync_trigger_background_enqueues_job(app, test_user):
     fake_job = SimpleNamespace(id="job-12345")
 
     with (
-        patch("app.modules.github.router.get_user_github_token", return_value=("token", "repo")),
+        patch(
+            "app.modules.github.router.get_user_github_token",
+            return_value=("token", "repo"),
+        ),
         patch(
             "app.modules.github.router.get_user_sync_status",
             return_value={"status": "idle"},
@@ -137,12 +145,18 @@ async def test_sync_trigger_synchronous(app, test_user):
         }
 
     with (
-        patch("app.modules.github.router.get_user_github_token", return_value=("token", "repo")),
+        patch(
+            "app.modules.github.router.get_user_github_token",
+            return_value=("token", "repo"),
+        ),
         patch(
             "app.modules.github.router.get_user_sync_status",
             return_value={"status": "idle"},
         ),
-        patch("app.modules.github.router.sync_repositories_for_user", side_effect=fake_sync),
+        patch(
+            "app.modules.github.router.sync_repositories_for_user",
+            side_effect=fake_sync,
+        ),
     ):
         client = TestClient(app)
         res = client.post("/api/v1/github/sync?background=false")
@@ -166,7 +180,9 @@ def test_get_sync_status_endpoint(app, test_user):
         "error_message": None,
     }
 
-    with patch("app.modules.github.router.get_user_sync_status", return_value=fake_status):
+    with patch(
+        "app.modules.github.router.get_user_sync_status", return_value=fake_status
+    ):
         client = TestClient(app)
         res = client.get("/api/v1/github/sync/status")
         assert res.status_code == 200
@@ -270,7 +286,10 @@ def test_user_isolation_cannot_access_other_users_repository(app, test_user, moc
     client = TestClient(app)
     res = client.get("/api/v1/github/repositories/999")
     assert res.status_code == 404
-    assert "Không tìm thấy repository hoặc bạn không có quyền truy cập" in res.json()["detail"]
+    assert (
+        "Không tìm thấy repository hoặc bạn không có quyền truy cập"
+        in res.json()["detail"]
+    )
 
 
 def test_tokens_never_leaked_in_responses(app, test_user, mock_db):

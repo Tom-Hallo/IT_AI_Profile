@@ -74,9 +74,13 @@ def build_worker(queue_names: Sequence[str] | None = None) -> Worker:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m app.workers.worker", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="python -m app.workers.worker", description=__doc__
+    )
     parser.add_argument(
-        "--burst", action="store_true", help="Xử lý hết job đang chờ rồi thoát (dùng khi test)"
+        "--burst",
+        action="store_true",
+        help="Xử lý hết job đang chờ rồi thoát (dùng khi test)",
     )
     args = parser.parse_args(argv)
 

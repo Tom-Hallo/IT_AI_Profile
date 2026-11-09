@@ -81,9 +81,15 @@ class Repository(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     html_url: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    private: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
-    default_branch: Mapped[str] = mapped_column(String(100), server_default="main", nullable=False)
-    is_fork: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
+    private: Mapped[bool] = mapped_column(
+        Boolean, server_default=sa.text("false"), nullable=False
+    )
+    default_branch: Mapped[str] = mapped_column(
+        String(100), server_default="main", nullable=False
+    )
+    is_fork: Mapped[bool] = mapped_column(
+        Boolean, server_default=sa.text("false"), nullable=False
+    )
     fork_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
     languages: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     primary_language: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -96,18 +102,30 @@ class Repository(Base):
     open_issues_count: Mapped[int] = mapped_column(
         BigInteger, server_default=sa.text("0"), nullable=False
     )
-    size_kb: Mapped[int] = mapped_column(BigInteger, server_default=sa.text("0"), nullable=False)
-    archived: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
-    disabled: Mapped[bool] = mapped_column(Boolean, server_default=sa.text("false"), nullable=False)
-    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    size_kb: Mapped[int] = mapped_column(
+        BigInteger, server_default=sa.text("0"), nullable=False
+    )
+    archived: Mapped[bool] = mapped_column(
+        Boolean, server_default=sa.text("false"), nullable=False
+    )
+    disabled: Mapped[bool] = mapped_column(
+        Boolean, server_default=sa.text("false"), nullable=False
+    )
+    pushed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     github_created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     github_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sync_status: Mapped[str] = mapped_column(String(50), server_default="synced", nullable=False)
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sync_status: Mapped[str] = mapped_column(
+        String(50), server_default="synced", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -128,4 +146,6 @@ class Repository(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<Repository id={self.id} name={self.name!r} full_name={self.full_name!r}>"
+        return (
+            f"<Repository id={self.id} name={self.name!r} full_name={self.full_name!r}>"
+        )

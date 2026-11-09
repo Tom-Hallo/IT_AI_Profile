@@ -27,7 +27,9 @@ def test_timezone_ho_chi_minh():
 
 def test_invalid_range():
     with pytest.raises(HTTPException):
-        resolve_range("custom", start_date=date(2026, 11, 2), end_date=date(2026, 11, 1))
+        resolve_range(
+            "custom", start_date=date(2026, 11, 2), end_date=date(2026, 11, 1)
+        )
 
 
 def test_invalid_month():
@@ -36,5 +38,7 @@ def test_invalid_month():
 
 
 def test_preset_leap_year():
-    start, end = resolve_range("preset", preset="1y", now=datetime(2024, 2, 29, 12, tzinfo=UTC))
+    start, end = resolve_range(
+        "preset", preset="1y", now=datetime(2024, 2, 29, 12, tzinfo=UTC)
+    )
     assert start.date() == date(2023, 2, 28)

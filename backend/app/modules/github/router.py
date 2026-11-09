@@ -135,7 +135,9 @@ def list_user_repositories(
     visibility: Literal["all", "public", "private"] = Query(
         default="all", description="Lọc theo phạm vi repository"
     ),
-    search: str | None = Query(default=None, description="Tìm kiếm theo tên hoặc mô tả"),
+    search: str | None = Query(
+        default=None, description="Tìm kiếm theo tên hoặc mô tả"
+    ),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryListResponse:

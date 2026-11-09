@@ -58,7 +58,9 @@ def get_sync_status_cache(user_id: int) -> dict[str, Any] | None:
                 raw = raw.decode("utf-8")
             return json.loads(raw)
     except Exception:
-        logger.warning(f"Không thể đọc sync status cache từ Redis cho user_id={user_id}")
+        logger.warning(
+            f"Không thể đọc sync status cache từ Redis cho user_id={user_id}"
+        )
     return None
 
 
@@ -85,7 +87,9 @@ def set_sync_status_cache(
             ex=SYNC_STATUS_TTL_SECONDS,
         )
     except Exception:
-        logger.warning(f"Không thể ghi sync status cache vào Redis cho user_id={user_id}")
+        logger.warning(
+            f"Không thể ghi sync status cache vào Redis cho user_id={user_id}"
+        )
 
 
 def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
@@ -177,17 +181,27 @@ async def sync_repositories_for_user(
                     fork_source = repo["parent"].get("full_name")
                 else:
                     owner_info = repo.get("owner")
-                    owner_login = owner_info.get("login") if isinstance(owner_info, dict) else None
+                    owner_login = (
+                        owner_info.get("login")
+                        if isinstance(owner_info, dict)
+                        else None
+                    )
                     if owner_login and name:
                         try:
-                            details = await client.get_repository_details(owner_login, name)
-                            if "parent" in details and isinstance(details["parent"], dict):
+                            details = await client.get_repository_details(
+                                owner_login, name
+                            )
+                            if "parent" in details and isinstance(
+                                details["parent"], dict
+                            ):
                                 fork_source = details["parent"].get("full_name")
                         except Exception:
                             pass
 
             owner_info = repo.get("owner")
-            owner_login = owner_info.get("login") if isinstance(owner_info, dict) else None
+            owner_login = (
+                owner_info.get("login") if isinstance(owner_info, dict) else None
+            )
             languages: dict[str, int] = {}
             if owner_login and name:
                 try:
@@ -211,7 +225,9 @@ async def sync_repositories_for_user(
             pushed_at = _parse_iso(repo.get("pushed_at"))
 
             # 1. Tìm hoặc tạo Repository theo external_id
-            existing = db.scalar(select(Repository).where(Repository.external_id == external_id))
+            existing = db.scalar(
+                select(Repository).where(Repository.external_id == external_id)
+            )
 
             if existing is not None:
                 existing.name = name

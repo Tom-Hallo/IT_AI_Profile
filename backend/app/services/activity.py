@@ -22,7 +22,9 @@ from app.modules.github.models import Repository, user_repository
 async def _collect(client, endpoint, params, max_pages=10):
     records = []
     for page in range(1, max_pages + 1):
-        response = await client._request("GET", endpoint, {**params, "page": page, "per_page": 100})
+        response = await client._request(
+            "GET", endpoint, {**params, "page": page, "per_page": 100}
+        )
         batch = response.json()
         if not isinstance(batch, list):
             raise HTTPException(502, "Unexpected GitHub response")
@@ -75,7 +77,9 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
         additions = deletions = 0
         for commit in commits:
             sha = commit.get("sha", "")
-            if len(sha) != 40 or any(ch not in "0123456789abcdef" for ch in sha.lower()):
+            if len(sha) != 40 or any(
+                ch not in "0123456789abcdef" for ch in sha.lower()
+            ):
                 raise HTTPException(502, "Invalid GitHub commit SHA")
             details = (await client._request("GET", f"{path}/commits/{sha}")).json()
             stats = details.get("stats") or {}
@@ -87,7 +91,9 @@ async def analyze(db: Session, repository_id: int, user_id: int, start, end):
             {"state": "all", "sort": "created", "direction": "desc"},
         )
         pr_count = sum(
-            start <= _timestamp(p["created_at"]) < end for p in prs if p.get("created_at")
+            start <= _timestamp(p["created_at"]) < end
+            for p in prs
+            if p.get("created_at")
         )
     except GitHubTokenRevokedError as exc:
         raise HTTPException(401, str(exc)) from None

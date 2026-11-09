@@ -41,7 +41,9 @@ def test_only_db_session_creates_an_engine():
 
 def test_alembic_env_does_not_read_environment_or_hardcode_url():
     """env.py phải lấy URL qua settings/engine: không import os, không chứa chuỗi URL."""
-    source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text("utf-8")
+    source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text(
+        "utf-8"
+    )
     tree = ast.parse(source)
     imported = {
         alias.name.split(".")[0]
@@ -150,7 +152,8 @@ def test_check_database_raises_when_server_unreachable(monkeypatch):
 # --- Tích hợp với PostgreSQL thật (RUN_INTEGRATION=1) ------------------------------------------
 
 integration = pytest.mark.skipif(
-    os.environ.get("RUN_INTEGRATION") != "1", reason="cần RUN_INTEGRATION=1 và PostgreSQL đang chạy"
+    os.environ.get("RUN_INTEGRATION") != "1",
+    reason="cần RUN_INTEGRATION=1 và PostgreSQL đang chạy",
 )
 
 

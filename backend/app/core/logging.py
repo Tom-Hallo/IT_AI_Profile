@@ -31,7 +31,9 @@ class RedactingFilter(logging.Filter):
 def configure_logging(level: str) -> None:
     """Cấu hình root logger; gọi một lần khi khởi động app."""
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
     handler.addFilter(RedactingFilter())
     root = logging.getLogger()
     root.handlers = [handler]

@@ -126,7 +126,11 @@ async def get_github_identity(code: str) -> GitHubIdentity:
             if not email:
                 raise GitHubOAuthError("Tài khoản GitHub không có email đã xác minh.")
 
-            full_name = name.strip() if isinstance(name, str) and name.strip() else login.strip()
+            full_name = (
+                name.strip()
+                if isinstance(name, str) and name.strip()
+                else login.strip()
+            )
 
             return GitHubIdentity(
                 provider_user_id=str(github_id),

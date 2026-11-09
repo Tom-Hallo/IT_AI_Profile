@@ -12,7 +12,9 @@ from app.main import create_app
 def test_activity_unauthenticated():
     app = create_app()
     with TestClient(app) as client:
-        result = client.get("/api/v1/repositories/1/activity/analysis?mode=preset&preset=1m")
+        result = client.get(
+            "/api/v1/repositories/1/activity/analysis?mode=preset&preset=1m"
+        )
     assert result.status_code == 401
 
 
@@ -39,7 +41,9 @@ def test_activity_authenticated(monkeypatch):
     fake = AsyncMock(return_value={"activity": {"commits": 2}})
     monkeypatch.setattr(activity, "analyze", fake)
     with TestClient(app) as client:
-        result = client.get("/api/v1/repositories/9/activity/analysis?mode=month&month=2026-10")
+        result = client.get(
+            "/api/v1/repositories/9/activity/analysis?mode=month&month=2026-10"
+        )
     assert result.status_code == 200
     assert result.json()["activity"]["commits"] == 2
     assert fake.await_args.args[1:3] == (9, 7)

@@ -46,7 +46,9 @@ def setup_github_mock(monkeypatch, responses):
     fake_settings = SimpleNamespace(
         github_oauth_enabled=True,
         github_client_id="test-client-id",
-        github_client_secret=SimpleNamespace(get_secret_value=lambda: "test-client-secret"),
+        github_client_secret=SimpleNamespace(
+            get_secret_value=lambda: "test-client-secret"
+        ),
         github_redirect_uri=("http://localhost:8000/api/v1/auth/github/callback"),
     )
 

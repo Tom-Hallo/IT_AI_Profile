@@ -35,8 +35,12 @@ def test_migration_files_follow_naming_template():
 
 def test_alembic_ini_has_no_connection_url():
     ini = (BACKEND_DIR / "alembic.ini").read_text(encoding="utf-8")
-    uncommented = [line for line in ini.splitlines() if not line.lstrip().startswith("#")]
-    assert not any("postgresql" in line or "sqlalchemy.url" in line for line in uncommented)
+    uncommented = [
+        line for line in ini.splitlines() if not line.lstrip().startswith("#")
+    ]
+    assert not any(
+        "postgresql" in line or "sqlalchemy.url" in line for line in uncommented
+    )
 
 
 def test_offline_sql_generation_works_without_database(alembic_cli):
@@ -63,5 +67,10 @@ def test_alembic_ini_and_template_are_ascii_only():
 
     Ky tu co dau trong file nay lam MOI lenh `alembic` bi UnicodeDecodeError tren Windows.
     """
-    for path in (BACKEND_DIR / "alembic.ini", BACKEND_DIR / "migrations" / "script.py.mako"):
-        path.read_bytes().decode("ascii")  # nem UnicodeDecodeError neu co ky tu non-ASCII
+    for path in (
+        BACKEND_DIR / "alembic.ini",
+        BACKEND_DIR / "migrations" / "script.py.mako",
+    ):
+        path.read_bytes().decode(
+            "ascii"
+        )  # nem UnicodeDecodeError neu co ky tu non-ASCII
