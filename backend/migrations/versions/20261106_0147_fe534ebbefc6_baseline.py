@@ -22,9 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    pass
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    pass
