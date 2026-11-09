@@ -60,12 +60,23 @@ def _make_mock_repo(
     return repo
 
 
-def _make_commit_item(sha: str, dt: datetime) -> dict:
+def _make_commit_item(
+    sha: str,
+    dt: datetime,
+    author_id: int | str = 1,
+    author_login: str = "testuser",
+    author_type: str = "User",
+) -> dict:
     return {
         "sha": sha,
+        "author": {
+            "id": author_id,
+            "login": author_login,
+            "type": author_type,
+        },
         "commit": {
             "committer": {"date": dt.isoformat()},
-            "author": {"date": dt.isoformat()},
+            "author": {"date": dt.isoformat(), "name": "Test User"},
             "message": f"Commit {sha[:7]}",
         },
     }
@@ -571,3 +582,182 @@ async def test_scenario_14_no_partial_results_on_error(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         await analyze(mock_db, repository_id=1, user_id=1, start=start, end=end)
     assert exc_info.value.status_code == 429
+
+
+# =========================================================================
+# Scenario 15: Product Alignment - Personal vs Repository Scope
+# =========================================================================
+
+
+@pytest.mark.anyio
+async def test_scenario_15_personal_vs_repository_scope(monkeypatch):
+    """Personal scope filters out teammates' commits and PRs;
+    repository scope aggregates all.
+    """
+    mock_db = MagicMock()
+    mock_db.scalar.return_value = _make_mock_repo()
+    monkeypatch.setattr(
+        "app.services.activity.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    commit_date = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    # 2 commits by user 1, 3 commits by user 2 (teammate)
+    commits = [
+        _make_commit_item("1" * 40, commit_date, author_id=1, author_login="dev1"),
+        _make_commit_item("2" * 40, commit_date, author_id=1, author_login="dev1"),
+        _make_commit_item("3" * 40, commit_date, author_id=2, author_login="teammate"),
+        _make_commit_item("4" * 40, commit_date, author_id=2, author_login="teammate"),
+        _make_commit_item("5" * 40, commit_date, author_id=2, author_login="teammate"),
+    ]
+
+    prs = [
+        {
+            "number": 101,
+            "title": "Feature A",
+            "html_url": "https://github.com/owner/repo/pull/101",
+            "created_at": commit_date.isoformat(),
+            "state": "closed",
+            "merged_at": commit_date.isoformat(),
+            "user": {"id": 1, "login": "dev1"},
+        },
+        {
+            "number": 102,
+            "title": "Teammate Fix",
+            "html_url": "https://github.com/owner/repo/pull/102",
+            "created_at": commit_date.isoformat(),
+            "state": "open",
+            "merged_at": None,
+            "user": {"id": 2, "login": "teammate"},
+        },
+    ]
+
+    async def fake_request(method: str, endpoint: str, params=None):
+        mock_r = MagicMock()
+        if endpoint == "/user":
+            mock_r.json.return_value = {"id": 1, "login": "dev1"}
+        elif "/commits/" in endpoint:
+            mock_r.json.return_value = {"stats": {"additions": 10, "deletions": 5}}
+        elif "/commits" in endpoint:
+            mock_r.json.return_value = commits
+        elif "/pulls" in endpoint:
+            mock_r.json.return_value = prs
+        return mock_r
+
+    fake_client = AsyncMock(spec=GitHubApiClient)
+    fake_client._request = fake_request
+    monkeypatch.setattr("app.services.activity.GitHubApiClient", lambda _t: fake_client)
+
+    start = datetime(2026, 10, 1, tzinfo=UTC)
+    end = datetime(2026, 11, 1, tzinfo=UTC)
+
+    # 1. Test Personal Scope
+    res_personal = await analyze(
+        mock_db, repository_id=1, user_id=1, start=start, end=end, scope="personal"
+    )
+    assert res_personal["scope"] == "personal"
+    assert res_personal["activity"]["commits"] == 2
+    assert res_personal["activity"]["pull_requests_created"] == 1
+    assert res_personal["activity"]["additions"] == 20
+    assert res_personal["activity"]["deletions"] == 10
+    assert len(res_personal["evidence"]["commits"]) == 2
+    assert len(res_personal["evidence"]["pull_requests"]) == 1
+
+    # Context remains available in personal scope
+    assert res_personal["personal_contribution"]["commits"] == 2
+    assert res_personal["repository_context"]["total_commits"] == 5
+    assert res_personal["repository_context"]["team_commits"] == 3
+    assert res_personal["repository_context"]["total_pull_requests_created"] == 2
+
+    # 2. Test Repository Scope
+    res_repo = await analyze(
+        mock_db, repository_id=1, user_id=1, start=start, end=end, scope="repository"
+    )
+    assert res_repo["scope"] == "repository"
+    assert res_repo["activity"]["commits"] == 5
+    assert res_repo["activity"]["pull_requests_created"] == 2
+    assert res_repo["activity"]["additions"] == 50
+    assert res_repo["activity"]["deletions"] == 25
+    assert len(res_repo["evidence"]["commits"]) == 5
+    assert len(res_repo["evidence"]["pull_requests"]) == 2
+    assert res_repo["data_completeness"]["pr_event_type"] == "created_at"
+
+
+# =========================================================================
+# Scenario 16: Bots, Merge Commits, and Unverified Authorship
+# =========================================================================
+
+
+@pytest.mark.anyio
+async def test_scenario_16_bots_merges_and_unverified_authorship(monkeypatch):
+    """Distinguishes merge commits, bots, and unverified authorship."""
+    mock_db = MagicMock()
+    mock_db.scalar.return_value = _make_mock_repo()
+    monkeypatch.setattr(
+        "app.services.activity.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    commit_date = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    bot_commit = _make_commit_item(
+        "b" * 40,
+        commit_date,
+        author_id=999,
+        author_login="dependabot[bot]",
+        author_type="Bot",
+    )
+    merge_commit = _make_commit_item(
+        "c" * 40, commit_date, author_id=1, author_login="dev1"
+    )
+    merge_commit["parents"] = [{"sha": "0" * 40}, {"sha": "1" * 40}]
+    unverified_commit = {
+        "sha": "d" * 40,
+        "author": None,  # Missing linked GitHub user
+        "commit": {
+            "committer": {"date": commit_date.isoformat()},
+            "author": {"date": commit_date.isoformat(), "name": "Random Dev"},
+            "message": "Unverified commit",
+        },
+        "parents": [{"sha": "0" * 40}],
+    }
+    regular_commit = _make_commit_item(
+        "e" * 40, commit_date, author_id=1, author_login="dev1"
+    )
+
+    commits = [bot_commit, merge_commit, unverified_commit, regular_commit]
+
+    async def fake_request(method: str, endpoint: str, params=None):
+        mock_r = MagicMock()
+        if endpoint == "/user":
+            mock_r.json.return_value = {"id": 1, "login": "dev1"}
+        elif "/commits/" in endpoint:
+            mock_r.json.return_value = {"stats": {"additions": 5, "deletions": 2}}
+        elif "/commits" in endpoint:
+            mock_r.json.return_value = commits
+        elif "/pulls" in endpoint:
+            mock_r.json.return_value = []
+        return mock_r
+
+    fake_client = AsyncMock(spec=GitHubApiClient)
+    fake_client._request = fake_request
+    monkeypatch.setattr("app.services.activity.GitHubApiClient", lambda _t: fake_client)
+
+    start = datetime(2026, 10, 1, tzinfo=UTC)
+    end = datetime(2026, 11, 1, tzinfo=UTC)
+
+    result = await analyze(
+        mock_db, repository_id=1, user_id=1, start=start, end=end, scope="personal"
+    )
+
+    # Regular + merge = 2 personal commits
+    assert result["personal_contribution"]["commits"] == 2
+    assert result["personal_contribution"]["merge_commits"] == 1
+    assert result["personal_contribution"]["bot_commits"] == 1
+    assert result["personal_contribution"]["unverified_commits"] == 1
+    assert result["repository_context"]["total_commits"] == 4
+
+    # Verify flags in evidence
+    ev_commits = {c["sha"]: c for c in result["evidence"]["commits"]}
+    assert ev_commits["c" * 40]["is_merge"] is True
+    assert ev_commits["e" * 40]["is_merge"] is False
+    assert ev_commits["e" * 40]["verified_authorship"] is True
