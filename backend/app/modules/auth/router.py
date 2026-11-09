@@ -230,7 +230,9 @@ def disconnect_github_account(
     return {
         "disconnected": disconnected,
         "message": (
-            "Đã hủy liên kết GitHub thành công." if disconnected else "Chưa liên kết GitHub."
+            "Đã hủy liên kết GitHub thành công."
+            if disconnected
+            else "Chưa liên kết GitHub."
         ),
     }
 

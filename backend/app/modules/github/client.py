@@ -119,7 +119,7 @@ class GitHubApiClient:
 
         url = (
             url_or_endpoint
-            if url_or_endpoint.startswith("http://") or url_or_endpoint.startswith("https://")
+            if url_or_endpoint.startswith(("http://", "https://"))
             else f"{self.base_url}{url_or_endpoint}"
         )
 
@@ -166,11 +166,15 @@ class GitHubApiClient:
                             reset_at = None
                             if reset_timestamp:
                                 try:
-                                    reset_at = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+                                    reset_at = datetime.fromtimestamp(
+                                        int(reset_timestamp), tz=UTC
+                                    )
                                 except (ValueError, TypeError):
                                     pass
                             retry_after_str = response.headers.get("retry-after")
-                            retry_after = int(retry_after_str) if retry_after_str else None
+                            retry_after = (
+                                int(retry_after_str) if retry_after_str else None
+                            )
                             raise GitHubRateLimitError(
                                 "GitHub API đã đạt giới hạn yêu cầu (rate limit).",
                                 reset_at=reset_at,
@@ -191,12 +195,16 @@ class GitHubApiClient:
 
                     # 5. 404 Not Found
                     if response.status_code == 404:
-                        raise GitHubNotFoundError("Không tìm thấy tài nguyên trên GitHub.")
+                        raise GitHubNotFoundError(
+                            "Không tìm thấy tài nguyên trên GitHub."
+                        )
 
                     # 6. 5xx Server Error (Lỗi tạm thời, có thể retry)
                     if response.status_code >= 500:
                         if attempt < self.max_retries:
-                            delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                            delay = self.base_delay * (2**attempt) + random.uniform(
+                                0.1, 0.5
+                            )
                             logger.warning(
                                 f"GitHub 5xx server error ({response.status_code}), "
                                 f"retry sau {delay:.2f}s"
@@ -208,11 +216,15 @@ class GitHubApiClient:
                         )
 
                     # Lỗi client 4xx khác
-                    raise GitHubApiError(f"GitHub API trả về mã lỗi HTTP {response.status_code}.")
+                    raise GitHubApiError(
+                        f"GitHub API trả về mã lỗi HTTP {response.status_code}."
+                    )
 
                 except (httpx.TimeoutException, httpx.NetworkError) as exc:
                     if attempt < self.max_retries:
-                        delay = self.base_delay * (2**attempt) + random.uniform(0.1, 0.5)
+                        delay = self.base_delay * (2**attempt) + random.uniform(
+                            0.1, 0.5
+                        )
                         logger.warning(
                             f"Lỗi mạng GitHub ({exc.__class__.__name__}), retry sau {delay:.2f}s"
                         )
@@ -258,7 +270,9 @@ class GitHubApiClient:
             data = response.json()
 
             if not isinstance(data, list):
-                raise GitHubApiError("Định dạng dữ liệu trả về từ GitHub không phải danh sách.")
+                raise GitHubApiError(
+                    "Định dạng dữ liệu trả về từ GitHub không phải danh sách."
+                )
 
             for repo in data:
                 if isinstance(repo, dict) and "id" in repo:
@@ -292,7 +306,11 @@ class GitHubApiClient:
                 return {}
             data = response.json()
             if isinstance(data, dict):
-                return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))}
+                return {
+                    str(k): int(v)
+                    for k, v in data.items()
+                    if isinstance(v, (int, float))
+                }
             return {}
         except GitHubNotFoundError:
             return {}

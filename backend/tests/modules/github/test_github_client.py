@@ -22,7 +22,10 @@ def test_parse_next_link():
         '<https://api.github.com/user/repos?page=2&per_page=100>; rel="next", '
         '<https://api.github.com/user/repos?page=5&per_page=100>; rel="last"'
     )
-    assert _parse_next_link(link_header) == "https://api.github.com/user/repos?page=2&per_page=100"
+    assert (
+        _parse_next_link(link_header)
+        == "https://api.github.com/user/repos?page=2&per_page=100"
+    )
 
     no_next = '<https://api.github.com/user/repos?page=5&per_page=100>; rel="last"'
     assert _parse_next_link(no_next) is None
@@ -93,7 +96,9 @@ async def test_token_revoked_raises_401():
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = GitHubApiClient("test-token", client=mock_client, base_delay=0.01)
 
-    with pytest.raises(GitHubTokenRevokedError, match="không hợp lệ hoặc đã bị thu hồi"):
+    with pytest.raises(
+        GitHubTokenRevokedError, match="không hợp lệ hoặc đã bị thu hồi"
+    ):
         await client.list_repositories()
 
 
@@ -105,7 +110,10 @@ async def test_rate_limit_raises_error_with_reset_header():
         return httpx.Response(
             403,
             json={"message": "API rate limit exceeded"},
-            headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(reset_time)},
+            headers={
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": str(reset_time),
+            },
         )
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -176,7 +184,9 @@ async def test_transient_500_retries_and_succeeds():
         return httpx.Response(200, json=[{"id": 1, "name": "ok"}])
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    client = GitHubApiClient("test-token", client=mock_client, max_retries=2, base_delay=0.01)
+    client = GitHubApiClient(
+        "test-token", client=mock_client, max_retries=2, base_delay=0.01
+    )
 
     repos = await client.list_repositories()
     assert len(repos) == 1
@@ -189,7 +199,9 @@ async def test_server_error_exhausts_retries():
         return httpx.Response(503, text="Service Unavailable")
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    client = GitHubApiClient("test-token", client=mock_client, max_retries=1, base_delay=0.01)
+    client = GitHubApiClient(
+        "test-token", client=mock_client, max_retries=1, base_delay=0.01
+    )
 
     with pytest.raises(GitHubServerError, match="lỗi máy chủ"):
         await client.list_repositories()
@@ -301,7 +313,9 @@ async def test_valid_github_pagination_preserves_authorization():
         return httpx.Response(
             200,
             json=[{"id": 101, "name": "repo-one"}],
-            headers={"link": ('<https://api.github.com/user/repos?page=2>; rel="next"')},
+            headers={
+                "link": ('<https://api.github.com/user/repos?page=2>; rel="next"')
+            },
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as mock_client:

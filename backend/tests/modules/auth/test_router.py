@@ -63,7 +63,9 @@ def test_github_login_redirects_to_github(client, monkeypatch):
     )
 
     assert response.status_code == 302
-    assert response.headers["location"].startswith("https://github.com/login/oauth/authorize?")
+    assert response.headers["location"].startswith(
+        "https://github.com/login/oauth/authorize?"
+    )
     assert "state=generated-state" in response.headers["location"]
     assert auth_router.OAUTH_STATE_COOKIE in response.headers["set-cookie"]
     assert auth_router.OAUTH_BROWSER_COOKIE in response.headers["set-cookie"]

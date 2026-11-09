@@ -22,7 +22,8 @@ from app.workers import enqueue as enqueue_module
 from app.workers.queues import SERIALIZER, get_queue
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_INTEGRATION") != "1", reason="cần RUN_INTEGRATION=1 và Redis đang chạy"
+    os.environ.get("RUN_INTEGRATION") != "1",
+    reason="cần RUN_INTEGRATION=1 và Redis đang chạy",
 )
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -34,7 +35,9 @@ def queue_name() -> Iterator[str]:
     yield name
     queue = get_queue(name)
     registries = (FinishedJobRegistry(queue=queue), FailedJobRegistry(queue=queue))
-    job_ids = [*queue.job_ids] + [job_id for reg in registries for job_id in reg.get_job_ids()]
+    job_ids = [*queue.job_ids] + [
+        job_id for reg in registries for job_id in reg.get_job_ids()
+    ]
     for job_id in job_ids:
         Job.fetch(job_id, connection=queue.connection, serializer=SERIALIZER).delete()
     for registry in registries:
@@ -47,6 +50,7 @@ def run_worker_process(queue_name: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "WORKER_QUEUES": queue_name}
     return subprocess.run(
         [sys.executable, "-m", "app.workers.worker", "--burst"],
+        check=False,
         cwd=BACKEND_DIR,
         env=env,
         capture_output=True,
@@ -102,6 +106,7 @@ def test_cli_enqueue_wait_and_status(queue_name):
 
     enqueued = subprocess.run(
         [*cli, "ping", "--message", "cli", "--queue", queue_name],
+        check=False,
         cwd=BACKEND_DIR, env=env, capture_output=True, text=True, timeout=30,
     )  # fmt: skip
     assert enqueued.returncode == 0, enqueued.stderr
@@ -112,6 +117,7 @@ def test_cli_enqueue_wait_and_status(queue_name):
 
     status = subprocess.run(
         [*cli, "status", job_id],
+        check=False,
         cwd=BACKEND_DIR, env=env, capture_output=True, text=True, timeout=30,
     )  # fmt: skip
     assert status.returncode == 0, status.stderr
@@ -122,5 +128,7 @@ def test_in_process_simple_worker_also_works(queue_name):
     # Cùng nguyên lý nhưng không tạo tiến trình con: dễ gỡ lỗi khi test hỏng.
     job = enqueue_module.enqueue_ping("inproc", queue_name)
     queue = get_queue(queue_name)
-    SimpleWorker([queue], connection=queue.connection, serializer=SERIALIZER).work(burst=True)
+    SimpleWorker([queue], connection=queue.connection, serializer=SERIALIZER).work(
+        burst=True
+    )
     assert enqueue_module.fetch_job(job.id).get_status(refresh=True).value == "finished"

@@ -6,11 +6,11 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-import app.modules.assessments.models  # noqa: F401
-import app.modules.auth.models  # noqa: F401
-import app.modules.cvs.models  # noqa: F401
-import app.modules.github.models  # noqa: F401
-import app.modules.roadmaps.models  # noqa: F401
+import app.modules.assessments.models
+import app.modules.auth.models
+import app.modules.cvs.models
+import app.modules.github.models
+import app.modules.roadmaps.models
 import app.modules.users.models  # noqa: F401
 from app.core.security import encrypt_token
 from app.db.base import Base
@@ -92,7 +92,9 @@ def fake_sync_redis(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_sync_user_with_zero_repositories(in_memory_db: Session, sample_user: User):
+async def test_sync_user_with_zero_repositories(
+    in_memory_db: Session, sample_user: User
+):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[])
 
@@ -109,7 +111,9 @@ async def test_sync_user_with_zero_repositories(in_memory_db: Session, sample_us
 
 
 @pytest.mark.anyio
-async def test_sync_user_with_repositories_and_languages(in_memory_db: Session, sample_user: User):
+async def test_sync_user_with_repositories_and_languages(
+    in_memory_db: Session, sample_user: User
+):
     fake_repos = [
         {
             "id": 1001,
@@ -173,7 +177,9 @@ async def test_sync_user_with_repositories_and_languages(in_memory_db: Session, 
     assert result["synced_count"] == 2
 
     # Kiểm tra bảng repositories
-    repos = in_memory_db.scalars(select(Repository).order_by(Repository.external_id)).all()
+    repos = in_memory_db.scalars(
+        select(Repository).order_by(Repository.external_id)
+    ).all()
     assert len(repos) == 2
 
     repo1 = repos[0]

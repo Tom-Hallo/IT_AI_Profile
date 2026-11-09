@@ -6,7 +6,7 @@ PBI-002 — schema ita
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 
 class Roadmap(Base):
     __tablename__ = "roadmaps"
-    __table_args__ = {
+
+    __table_args__: ClassVar[dict[str, str]] = {
         "schema": "ita",
-        "comment": "Career roadmap stored as JSONB",
+        "comment": "Application users",
     }
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

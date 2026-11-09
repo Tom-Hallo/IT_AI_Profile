@@ -38,6 +38,7 @@ def _import_app_in_clean_env(env: dict[str, str]) -> subprocess.CompletedProcess
     base["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", "import app.core.config"],
+        check=False,
         env={**base, **env},
         # thư mục không có .env để không đọc nhầm file
         cwd=Path(__file__).parent,

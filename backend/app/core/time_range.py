@@ -4,8 +4,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
 
-UTC = UTC
-
 
 def resolve_range(
     mode: str,
@@ -32,6 +30,8 @@ def resolve_range(
         while m <= 0:
             y -= 1
             m += 12
+        if y < 1:
+            raise HTTPException(422, "Preset range is out of bounds")
         d = min(now.day, monthrange(y, m)[1])
         lower = now.replace(year=y, month=m, day=d)
         upper = now
@@ -45,6 +45,8 @@ def resolve_range(
         y, m = map(int, month.split("-"))
         if y < 1:
             raise HTTPException(422, "Invalid year")
+        if y == 9999 and m == 12:
+            raise HTTPException(422, "Month is out of bounds")
         lower = datetime(y, m, 1, tzinfo=tz)
         upper = datetime(y + (m == 12), m % 12 + 1, 1, tzinfo=tz)
     elif mode == "custom":
@@ -52,6 +54,8 @@ def resolve_range(
             raise HTTPException(422, "Invalid custom parameters")
         if start_date > end_date or (end_date - start_date).days > 3660:
             raise HTTPException(422, "Invalid date range (max 3660 days)")
+        if end_date == date.max:
+            raise HTTPException(422, "End date is out of bounds")
         lower = datetime.combine(start_date, time.min, tz)
         upper = datetime.combine(end_date + timedelta(days=1), time.min, tz)
     else:

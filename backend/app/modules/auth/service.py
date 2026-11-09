@@ -2,6 +2,7 @@
 
 import secrets
 
+from cryptography.fernet import InvalidToken
 from redis import Redis
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -297,7 +298,7 @@ def get_user_github_token(
     try:
         token = decrypt_token(encrypted)
         return token, getattr(account, "scope", None)
-    except Exception:
+    except (InvalidToken, ValueError, TypeError):
         return None, None
 
 

@@ -10,7 +10,14 @@ from app.core import redis as redis_core
 from app.db import session as db_session
 from app.main import create_app
 
-SECRET_MARKERS = ["test-pass", "postgresql", "redis://", "127.0.0.1", "Traceback", "test_db"]
+SECRET_MARKERS = [
+    "test-pass",
+    "postgresql",
+    "redis://",
+    "127.0.0.1",
+    "Traceback",
+    "test_db",
+]
 
 
 @pytest.fixture
@@ -45,7 +52,9 @@ def test_health_ok_when_all_dependencies_healthy(client, monkeypatch):
         (True, True, {"database": "fail", "redis": "fail"}),
     ],
 )
-def test_health_503_when_dependency_fails(client, monkeypatch, db_fails, redis_fails, expected):
+def test_health_503_when_dependency_fails(
+    client, monkeypatch, db_fails, redis_fails, expected
+):
     def boom() -> None:
         raise RuntimeError(
             "password authentication failed for postgresql://test:test-pass@127.0.0.1/test_db"
@@ -64,7 +73,9 @@ def test_health_503_when_dependency_fails(client, monkeypatch, db_fails, redis_f
 
 def test_503_body_does_not_leak_sensitive_information(client, monkeypatch):
     def boom() -> None:
-        raise RuntimeError("could not connect postgresql://test:test-pass@127.0.0.1/test_db")
+        raise RuntimeError(
+            "could not connect postgresql://test:test-pass@127.0.0.1/test_db"
+        )
 
     monkeypatch.setattr(db_session, "check_database", boom)
     monkeypatch.setattr(redis_core, "check_redis", boom)

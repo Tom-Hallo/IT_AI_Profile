@@ -7,6 +7,7 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -83,7 +84,7 @@ async def trigger_repository_sync(
                 message="Tiến trình đồng bộ đã được đưa vào hàng đợi xử lý.",
                 job_id=job.id,
             )
-        except Exception as exc:
+        except (RedisError, OSError, TimeoutError) as exc:
             logger.warning(
                 f"Không thể đưa vào hàng đợi RQ ({exc}), chuyển sang thực thi đồng bộ trực tiếp."
             )
@@ -135,7 +136,9 @@ def list_user_repositories(
     visibility: Literal["all", "public", "private"] = Query(
         default="all", description="Lọc theo phạm vi repository"
     ),
-    search: str | None = Query(default=None, description="Tìm kiếm theo tên hoặc mô tả"),
+    search: str | None = Query(
+        default=None, description="Tìm kiếm theo tên hoặc mô tả"
+    ),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryListResponse:

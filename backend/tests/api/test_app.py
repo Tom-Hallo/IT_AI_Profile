@@ -31,7 +31,10 @@ def test_cors_allows_configured_origin():
     client = TestClient(create_app(_settings(cors_origins="http://localhost:5173")))
     response = client.options(
         "/api/v1/health",
-        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
     )
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
@@ -40,6 +43,9 @@ def test_cors_rejects_other_origin():
     client = TestClient(create_app(_settings(cors_origins="http://localhost:5173")))
     response = client.options(
         "/api/v1/health",
-        headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"},
+        headers={
+            "Origin": "http://evil.example",
+            "Access-Control-Request-Method": "GET",
+        },
     )
     assert "access-control-allow-origin" not in response.headers
