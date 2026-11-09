@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { env } from '@/shared/config/env'
 import { Button } from '@/shared/ui/Button'
 import type { Repository } from './types'
@@ -432,6 +433,26 @@ function RepositoryCard({ repo }: { repo: Repository }) {
           </div>
         </div>
       )}
+
+      <div style={{ marginTop: '0.875rem', paddingTop: '0.75rem', borderTop: '1px solid var(--color-border, #e2e8f0)' }}>
+        <Link
+          to={`/repositories/${repo.id}/activity`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            fontSize: '0.85rem',
+            borderRadius: 6,
+            background: 'var(--color-primary, #6366f1)',
+            color: '#ffffff',
+            textDecoration: 'none',
+            fontWeight: 500,
+          }}
+        >
+          📊 Phân tích hoạt động (PBI-010) →
+        </Link>
+      </div>
     </article>
   )
 }
