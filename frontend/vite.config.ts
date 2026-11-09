@@ -23,8 +23,9 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: FRONTEND_PORT,
-      strictPort: true, 
-
+      strictPort: true,
+      proxy,
+      allowedHosts: true,
       watch: watchPolling ? { usePolling: true, interval: 300 } : undefined,
     },
     build: {
@@ -40,6 +41,7 @@ export default defineConfig(({ mode }) => {
       port: FRONTEND_PORT,
       strictPort: true,
       proxy,
+      allowedHosts: true,
     },
   }
 })
