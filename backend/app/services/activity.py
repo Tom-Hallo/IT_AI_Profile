@@ -56,7 +56,9 @@ async def _collect_pull_requests_in_range(
     end: datetime,
     max_pages: int = 10,
 ) -> int:
-    """Collect PRs created in [start, end) range, terminating pagination when created_at < start."""
+    """Collect PRs created in [start, end) range, terminating pagination when created_at
+    < start.
+    """
     count = 0
     for page in range(1, max_pages + 1):
         response = await client._request(

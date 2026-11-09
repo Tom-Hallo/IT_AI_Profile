@@ -1,6 +1,7 @@
 """Kiểm thử tích hợp với PostgreSQL và Redis THẬT.
 
-Mặc định bị bỏ qua. Chạy khi có DB/Redis: RUN_INTEGRATION=1 pytest tests/api/test_integration.py
+Mặc định bị bỏ qua. Chạy khi có DB/Redis: RUN_INTEGRATION=1 pytest
+tests/api/test_integration.py
 (DATABASE_URL và REDIS_URL phải trỏ tới dịch vụ đang chạy).
 """
 

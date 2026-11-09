@@ -1,4 +1,6 @@
-"""Kiểm thử tích hợp với Redis THẬT: enqueue -> Redis lưu job -> worker nhận -> job chạy xong.
+"""Kiểm thử tích hợp với Redis THẬT:
+
+enqueue -> Redis lưu job -> worker nhận -> job chạy xong.
 
 Mặc định bị bỏ qua. Chạy: RUN_INTEGRATION=1 pytest tests/workers
 (REDIS_URL phải trỏ tới Redis đang chạy). Mỗi test dùng hàng đợi riêng và tự dọn.
@@ -81,7 +83,8 @@ def test_worker_process_executes_job_successfully(queue_name):
 
 
 def test_failing_job_goes_to_failed_registry_and_worker_survives(queue_name):
-    # operator.truediv(1, 0) -> ZeroDivisionError, không cần định nghĩa hàm lỗi trong app/.
+    # operator.truediv(1, 0) -> ZeroDivisionError, không cần định nghĩa hàm lỗi trong
+    # app/.
     job = enqueue_module.enqueue_task("operator.truediv", 1, 0, queue_name=queue_name)
 
     completed = run_worker_process(queue_name)

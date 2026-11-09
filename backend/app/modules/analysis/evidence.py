@@ -8,7 +8,7 @@ time range, timestamp, detection method, and confidence metrics.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 
-class EvidenceSource(str, Enum):
+class EvidenceSource(StrEnum):
     """Nguồn gốc của bằng chứng phát hiện được."""
 
     MANIFEST = "manifest"
@@ -26,7 +26,7 @@ class EvidenceSource(str, Enum):
     METADATA = "metadata"
 
 
-class FindingType(str, Enum):
+class FindingType(StrEnum):
     """Phân loại hạng mục phát hiện."""
 
     LANGUAGE = "language"
@@ -36,7 +36,7 @@ class FindingType(str, Enum):
     STRUCTURE = "structure"
 
 
-class DetectionMethod(str, Enum):
+class DetectionMethod(StrEnum):
     """Phương thức phân tích tĩnh được áp dụng."""
 
     MANIFEST_PARSING = "manifest_parsing"
@@ -46,7 +46,7 @@ class DetectionMethod(str, Enum):
     METADATA_EXTRACTION = "metadata_extraction"
 
 
-class ConfidenceLevel(str, Enum):
+class ConfidenceLevel(StrEnum):
     """Mức độ tin cậy của kết luận phân tích."""
 
     HIGH = "high"

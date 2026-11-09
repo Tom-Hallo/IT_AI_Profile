@@ -13,7 +13,8 @@ def _script_directory() -> ScriptDirectory:
 
 
 def test_there_is_exactly_one_head():
-    # Nhiều head = hai nhánh cùng thêm migration; phải `alembic merge heads` trước khi merge PR.
+    # Nhiều head = hai nhánh cùng thêm migration; phải `alembic merge heads` trước khi
+    # merge PR.
     assert len(_script_directory().get_heads()) == 1
 
 
@@ -22,7 +23,8 @@ def test_baseline_is_first_and_empty():
     base = script.get_revision(script.get_base())
     assert base.down_revision is None
     source = Path(base.path).read_text(encoding="utf-8")
-    # PBI-001 không tạo bảng nghiệp vụ (Blueprint D10): baseline không được chứa thao tác schema.
+    # PBI-001 không tạo bảng nghiệp vụ (Blueprint D10): baseline không được chứa thao
+    # tác schema.
     for forbidden in ("create_table", "add_column", "execute("):
         assert forbidden not in source
 
@@ -55,7 +57,8 @@ def test_offline_sql_generation_works_without_database(alembic_cli):
 
 
 def test_unreachable_database_fails_without_leaking_password(alembic_cli):
-    # Cổng 1 không có dịch vụ nào: kết nối bị từ chối ngay, không cần PostgreSQL đang chạy.
+    # Cổng 1 không có dịch vụ nào: kết nối bị từ chối ngay, không cần PostgreSQL đang
+    # chạy.
     bad_url = "postgresql+psycopg://ita:SuperSecret123@127.0.0.1:1/it_ai_profile"
     result = alembic_cli("upgrade", "head", database_url=bad_url)
     assert result.returncode != 0
@@ -63,9 +66,11 @@ def test_unreachable_database_fails_without_leaking_password(alembic_cli):
 
 
 def test_alembic_ini_and_template_are_ascii_only():
-    """Alembic doc `alembic.ini` bang bang ma mac dinh cua he dieu hanh (cp1252 tren Windows).
+    """Alembic doc `alembic.ini` bang bang ma mac dinh
+    cua he dieu hanh (cp1252 tren Windows).
 
-    Ky tu co dau trong file nay lam MOI lenh `alembic` bi UnicodeDecodeError tren Windows.
+    Ky tu co dau trong file nay lam MOI lenh `alembic` bi UnicodeDecodeError tren
+    Windows.
     """
     for path in (
         BACKEND_DIR / "alembic.ini",

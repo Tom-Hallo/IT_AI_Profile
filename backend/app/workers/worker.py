@@ -2,12 +2,15 @@
 
 Chạy (trong thư mục backend/):
     python -m app.workers.worker            # chạy liên tục
-    python -m app.workers.worker --burst    # xử lý hết job đang chờ rồi thoát (dùng khi test)
+    python -m app.workers.worker --burst    # xử lý hết job đang chờ rồi thoát (dùng khi
+    test)
 
 Quy tắc:
 - Cấu hình (Redis URL, tên hàng đợi, mức log) chỉ lấy từ `app.core.config.settings`.
-- Tiến trình worker cha KHÔNG truy cập DB (rủi ro fork). RQ chạy mỗi job trong tiến trình con;
-  job cần DB tự mở session bằng `session_scope()` bên trong hàm job. Ngoại lệ: trên Windows gốc
+- Tiến trình worker cha KHÔNG truy cập DB (rủi ro fork). RQ chạy mỗi job trong tiến
+trình con;
+  job cần DB tự mở session bằng `session_scope()` bên trong hàm job. Ngoại lệ: trên
+  Windows gốc
   dùng SimpleWorker nên job chạy ngay trong tiến trình worker (chỉ để phát triển).
 - Log đi qua `configure_logging` (có RedactingFilter), nên không lộ mật khẩu trong URL.
 """
@@ -38,10 +41,13 @@ def _is_windows() -> bool:
 def get_worker_class() -> type[Worker] | type[SimpleWorker]:
     """Chọn lớp worker theo hệ điều hành.
 
-    - Docker/Linux/macOS: `Worker` mặc định của RQ, mỗi job chạy trong tiến trình con (fork).
+    - Docker/Linux/macOS: `Worker` mặc định của RQ, mỗi job chạy trong tiến trình con
+    (fork).
     - Windows gốc: os.fork() không tồn tại, và tiến trình con của `SpawnWorker` còn gọi
-      os.setpgrp() (chỉ có trên POSIX) nên không dùng được. Dùng `SimpleWorker`: chạy job
-      ngay trong tiến trình worker, chỉ phù hợp để phát triển. Môi trường chuẩn là Docker.
+      os.setpgrp() (chỉ có trên POSIX) nên không dùng được. Dùng `SimpleWorker`: chạy
+      job
+      ngay trong tiến trình worker, chỉ phù hợp để phát triển. Môi trường chuẩn là
+      Docker.
     """
     return SimpleWorker if _is_windows() else Worker
 
@@ -56,7 +62,8 @@ def log_job_failure(
 
     Không log nội dung exception hay traceback vì có thể chứa dữ liệu nhạy cảm
     (RedactingFilter chỉ che thông điệp, không che traceback).
-    RQ vẫn tự chuyển job vào FailedJobRegistry; trả về True để RQ chạy tiếp các bước còn lại.
+    RQ vẫn tự chuyển job vào FailedJobRegistry; trả về True để RQ chạy tiếp các bước còn
+    lại.
     """
     logger.error("Job %s (%s) loi: %s", job.id, job.func_name, exc_type.__name__)
     return True

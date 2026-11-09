@@ -10,7 +10,8 @@ CHECK_TIMEOUT_SECONDS = 3
 def get_redis_connection() -> Redis:
     """Trả về kết nối Redis.
 
-    KHÔNG bật `decode_responses`: RQ lưu dữ liệu dạng bytes và sẽ lỗi nếu bị giải mã sẵn.
+    KHÔNG bật `decode_responses`: RQ lưu dữ liệu dạng bytes và sẽ lỗi nếu bị giải mã
+    sẵn.
     """
     return Redis.from_url(settings.redis_url.get_secret_value())
 

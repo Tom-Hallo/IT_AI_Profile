@@ -225,7 +225,8 @@ def test_dotnet_csproj_parser():
     csproj_content = """<Project Sdk="Microsoft.NET.Sdk.Web">
       <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer"
+        Version="8.0.0" />
       </ItemGroup>
     </Project>
     """

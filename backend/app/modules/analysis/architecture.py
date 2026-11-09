@@ -90,7 +90,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
                 rationale=(
-                    f"Thành phần Frontend tách biệt với manifest độc lập: {frontend_manifests[0]}"
+                    "Thành phần Frontend tách biệt với manifest độc lập: "
+                    f"{frontend_manifests[0]}"
                 ),
             )
             rec2 = EvidenceRecord(
@@ -104,7 +105,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
                 rationale=(
-                    f"Thành phần Backend tách biệt với manifest độc lập: {backend_manifests[0]}"
+                    "Thành phần Backend tách biệt với manifest độc lập: "
+                    f"{backend_manifests[0]}"
                 ),
             )
             if collector is not None:
@@ -117,7 +119,8 @@ class ArchitectureAnalyzer:
                     pattern="frontend_backend_separation",
                     name="Frontend/Backend Separation",
                     description=(
-                        "Dự án phân chia rõ rệt giữa Frontend và Backend thành các không gian "
+                        "Dự án phân chia rõ rệt giữa Frontend và Backend "
+                        "thành các không gian "
                         "làm việc riêng biệt với manifest quản lý phụ thuộc độc lập."
                     ),
                     confidence=ConfidenceLevel.HIGH,
@@ -178,7 +181,8 @@ class ArchitectureAnalyzer:
                     pattern="layered_architecture",
                     name="Layered Architecture",
                     description=(
-                        "Dự án áp dụng kiến trúc phân tầng (Presentation/API, Service/Business Logic, "
+                        "Dự án áp dụng kiến trúc phân tầng "
+                        "(Presentation/API, Service/Business Logic, "
                         "Data Access/Models) giúp tách biệt trách nhiệm rõ ràng."
                     ),
                     confidence=ConfidenceLevel.HIGH,
@@ -230,7 +234,8 @@ class ArchitectureAnalyzer:
                     pattern="mvc_architecture",
                     name="Model-View-Controller (MVC) Structure",
                     description=(
-                        "Dự án tổ chức mã nguồn theo mô hình MVC hoặc MTV với các thành phần "
+                        "Dự án tổ chức mã nguồn theo mô hình MVC hoặc MTV "
+                        "với các thành phần "
                         "Models, Views/Templates và Controllers."
                     ),
                     confidence=ConfidenceLevel.MEDIUM,
@@ -268,7 +273,8 @@ class ArchitectureAnalyzer:
                     pattern="api_service",
                     name="API-Oriented Architecture",
                     description=(
-                        "Dự án cung cấp giao diện lập trình ứng dụng (REST/OpenAPI API) "
+                        "Dự án cung cấp giao diện lập trình ứng dụng "
+                        "(REST/OpenAPI API) "
                         "thông qua hệ thống định tuyến tập trung."
                     ),
                     confidence=ConfidenceLevel.HIGH,
@@ -308,7 +314,8 @@ class ArchitectureAnalyzer:
                     pattern="background_workers",
                     name="Asynchronous Workers & Queue System",
                     description=(
-                        "Dự án tích hợp hệ thống xử lý tác vụ không đồng bộ (Asynchronous Workers) "
+                        "Dự án tích hợp hệ thống xử lý tác vụ không đồng bộ "
+                        "(Asynchronous Workers) "
                         "và hàng đợi thông điệp để thực thi các tác vụ nền."
                     ),
                     confidence=ConfidenceLevel.HIGH,
@@ -338,7 +345,10 @@ class ArchitectureAnalyzer:
                 detection_method=DetectionMethod.STRUCTURAL_INSPECTION,
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
-                rationale=f"Hệ thống quản lý phiên bản cơ sở dữ liệu và migration: {db_files[0]}",
+                rationale=(
+                    "Hệ thống quản lý phiên bản cơ sở dữ liệu và migration: "
+                    f"{db_files[0]}"
+                ),
             )
             if collector is not None:
                 collector.add(rec)
@@ -348,7 +358,8 @@ class ArchitectureAnalyzer:
                     pattern="database_integration",
                     name="Database Schema & Migration Management",
                     description=(
-                        "Dự án sử dụng cơ chế quản lý di chuyển cơ sở dữ liệu tự động (Database Migrations) "
+                        "Dự án sử dụng cơ chế quản lý di chuyển cơ sở dữ liệu "
+                        "tự động (Database Migrations) "
                         "và ánh xạ quan hệ đối tượng (ORM)."
                     ),
                     confidence=ConfidenceLevel.HIGH,
@@ -388,7 +399,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.90,
                 rationale=(
-                    f"Cấu hình monorepo / điều phối đa dịch vụ: {monorepo_evidence_path}"
+                    "Cấu hình monorepo / điều phối đa dịch vụ: "
+                    f"{monorepo_evidence_path}"
                 ),
             )
             if collector is not None:
@@ -399,7 +411,8 @@ class ArchitectureAnalyzer:
                     pattern="monorepo",
                     name="Monorepo Organization",
                     description=(
-                        "Dự án được cấu trúc theo dạng Monorepo điều phối nhiều ứng dụng/dịch vụ "
+                        "Dự án được cấu trúc theo dạng Monorepo "
+                        "điều phối nhiều ứng dụng/dịch vụ "
                         "trong cùng một kho lưu trữ mã nguồn duy nhất."
                     ),
                     confidence=ConfidenceLevel.HIGH,

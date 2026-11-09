@@ -4,7 +4,8 @@ Revision DAU TIEN, CO Y RONG (Blueprint D10, PBI-001).
 
 Khong tao bang nao. Muc dich duy nhat: chung minh chuoi migration chay duoc
 (`alembic upgrade head` tao bang he thong `alembic_version` va ghi revision nay vao do).
-Bang nghiep vu thuoc cac PBI khac; moi PBI them revision rieng, noi tiep sau revision nay.
+Bang nghiep vu thuoc cac PBI khac; moi PBI them revision rieng, noi tiep sau revision
+nay.
 
 Revision ID: fe534ebbefc6
 Revises:

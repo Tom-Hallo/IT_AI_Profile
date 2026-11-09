@@ -12,7 +12,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 SECRET_PASSWORD = "S3cr3t-Pa55word"
 
 
-# Các biến mà app đọc. Xóa khỏi môi trường tiến trình con để test không phụ thuộc máy chạy.
+# Các biến mà app đọc. Xóa khỏi môi trường tiến trình con để test không phụ thuộc máy
+# chạy.
 APP_VARS = (
     "APP_ENV",
     "DATABASE_URL",
@@ -34,7 +35,8 @@ def _import_app_in_clean_env(env: dict[str, str]) -> subprocess.CompletedProcess
     """
     base = {k: v for k, v in os.environ.items() if k not in APP_VARS}
     base["PYTHONPATH"] = str(BACKEND_DIR)
-    # Windows mặc định dùng bảng mã cp1252 khi ghi ra pipe, làm tiếng Việt thành mã \\uXXXX.
+    # Windows mặc định dùng bảng mã cp1252 khi ghi ra pipe, làm tiếng Việt thành mã
+    # \\uXXXX.
     base["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", "import app.core.config"],
