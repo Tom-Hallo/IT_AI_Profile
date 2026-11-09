@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -49,8 +50,8 @@ def dispatch(job, db: Session) -> None:
 def create_job(
     body: CreateRequest,
     request: Request,
-    db: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     csrf(request)
     job, created = service.create(db, user.id, body.repo_id, body.scope)
@@ -62,8 +63,8 @@ def create_job(
 @router.get("/{job_id}")
 def get_job(
     job_id: uuid.UUID,
-    db: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     return service.serialize(service.owned_job(db, user.id, job_id))
 
@@ -71,8 +72,8 @@ def get_job(
 @router.get("/{job_id}/events")
 def get_events(
     job_id: uuid.UUID,
-    db: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     service.owned_job(db, user.id, job_id)
     rows = db.scalars(
@@ -97,8 +98,8 @@ def get_events(
 def cancel_job(
     job_id: uuid.UUID,
     request: Request,
-    db: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     csrf(request)
     return service.serialize(service.cancel(db, user.id, job_id))
@@ -108,8 +109,8 @@ def cancel_job(
 def retry_job(
     job_id: uuid.UUID,
     request: Request,
-    db: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     csrf(request)
     job, created = service.retry(db, user.id, job_id)

@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import ClassVar
 
 from sqlalchemy import (
     BigInteger,
@@ -66,7 +67,7 @@ class AnalysisJob(Base):
 
 class AnalysisJobEvent(Base):
     __tablename__ = "analysis_job_events"
-    __table_args__ = {"schema": "ita"}
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "ita"}
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

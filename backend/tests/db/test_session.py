@@ -84,8 +84,8 @@ def test_business_tables_defined_in_pbi_002_and_pbi_005():
 
     actual_tables = set(Base.metadata.tables.keys())
     assert expected_tables.issubset(actual_tables), (
-    f"Missing required tables: {expected_tables - actual_tables}"
-)
+        f"Missing required tables: {expected_tables - actual_tables}"
+    )
 
 
 # --- get_session / session_scope (dùng SQLite trong bộ nhớ, không cần PostgreSQL) -----------
