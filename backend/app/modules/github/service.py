@@ -5,7 +5,8 @@ Quy tắc:
 - Định danh duy nhất theo external_id (GitHub repo ID), không dựa theo tên repo.
 - Bảo toàn quan hệ nhiều-nhiều qua bảng user_repository.
 - Không xóa nhầm dữ liệu lịch sử khi sync bị gián đoạn hoặc API lỗi giữa chừng.
-- Tối ưu hóa API: Bounded concurrency, HTTP keep-alive, bỏ qua repo rỗng hoặc không thay đổi.
+- Tối ưu hóa API: Bounded concurrency, HTTP keep-alive, bỏ qua repo rỗng
+  hoặc không có commit mới.
 """
 
 from __future__ import annotations
@@ -334,7 +335,8 @@ async def _sync_repositories_for_user_impl(
                 and current_pushed_at is not None
                 and existing_pushed_at == current_pushed_at
             ):
-                # Repo không thay đổi commit (pushed_at trùng khớp): tái sử dụng languages đã lưu
+                # Repo không thay đổi commit (pushed_at trùng khớp):
+                # tái sử dụng languages đã lưu
                 repo_languages_map[idx] = existing.languages
             elif owner_login and name:
                 lang_tasks[idx] = _fetch_languages(owner_login, name)
@@ -354,7 +356,7 @@ async def _sync_repositories_for_user_impl(
             lang_results = results[:num_lang]
             fork_results = results[num_lang:]
 
-            for i, res in zip(lang_indices, lang_results):
+            for i, res in zip(lang_indices, lang_results, strict=True):
                 if isinstance(res, (GitHubRateLimitError, GitHubTokenRevokedError)):
                     raise res
                 if isinstance(res, Exception):
@@ -363,7 +365,7 @@ async def _sync_repositories_for_user_impl(
                 else:
                     repo_languages_map[i] = res
 
-            for i, res in zip(fork_indices, fork_results):
+            for i, res in zip(fork_indices, fork_results, strict=True):
                 if isinstance(res, (GitHubRateLimitError, GitHubTokenRevokedError)):
                     raise res
                 if (

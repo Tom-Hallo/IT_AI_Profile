@@ -1,11 +1,13 @@
-"""Acceptance & regression tests for GitHub repository sync timeout optimization (PBI-009).
+"""Acceptance & regression tests for GitHub repository sync timeout
+optimization (PBI-009).
 
 Scenarios covered:
 1. User with single repository synchronization.
 2. User with 100+ repositories (verifies concurrent language fetching & performance).
 3. Repository pagination across multiple pages (RFC 5988 Link header).
 4. Simulated slow API responses within execution timeout limits.
-5. GitHub API rate limit handling (HTTP 403 / 429 raises GitHubRateLimitError, rolls back, sets status=failed).
+5. GitHub API rate limit handling (HTTP 403/429 raises GitHubRateLimitError,
+   rolls back, sets status=failed).
 6. Worker task JobTimeoutException recovery (Redis cache updated to status=failed).
 7. Database persistence and user_repository pivot associations.
 8. Idempotent synchronization (skips language fetching when pushed_at is unchanged).
@@ -264,7 +266,10 @@ async def test_sync_pagination_multi_page(
             return httpx.Response(200, json=page2)
         # Page 1 includes RFC 5988 Link header
         headers = {
-            "link": '<https://api.github.com/user/repos?page=2>; rel="next", <https://api.github.com/user/repos?page=2>; rel="last"'
+            "link": (
+                '<https://api.github.com/user/repos?page=2>; rel="next", '
+                '<https://api.github.com/user/repos?page=2>; rel="last"'
+            )
         }
         return httpx.Response(200, json=page1, headers=headers)
 
