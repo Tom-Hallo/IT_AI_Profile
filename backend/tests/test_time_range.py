@@ -1,9 +1,10 @@
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 
 import pytest
 from fastapi import HTTPException
 
 from app.core.time_range import resolve_range
+from app.modules.analysis.evidence import UTC
 
 
 def test_month_utc_boundary():

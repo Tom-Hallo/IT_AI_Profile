@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from dateutil.parser import ParserError, isoparse
@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.redis import get_redis_connection
+from app.modules.analysis.evidence import UTC
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
     GitHubApiClient,
