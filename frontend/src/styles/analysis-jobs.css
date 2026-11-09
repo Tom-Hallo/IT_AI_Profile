@@ -1,0 +1,5 @@
+.analysis-job{padding:1.25rem;border:1px solid #64748b55;border-radius:1rem;background:var(--surface,#111827);color:var(--text,#f9fafb)}
+.analysis-job progress{display:block;width:100%;height:1rem;accent-color:#3b82f6;margin:1rem 0}
+.analysis-job button{border-radius:.5rem;padding:.6rem 1rem;margin-right:.5rem;cursor:pointer}
+.analysis-job [data-error]{color:#f87171}
+.analysis-job button[hidden]{display:none}
