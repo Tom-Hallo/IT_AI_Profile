@@ -295,6 +295,7 @@ class GitHubApiClient:
         self,
         per_page: int = 100,
         max_pages: int = 50,
+        visibility: str | None = None,
     ) -> list[dict[str, Any]]:
         """Lấy danh sách tất cả repositories có thể truy cập
         của tài khoản authenticated.

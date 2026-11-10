@@ -75,7 +75,11 @@ class AnalysisJobEvent(Base):
         Index("ix_ita_analysis_job_events_job_id", "job_id"),
         {"schema": "ita"},
     )
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("ita.analysis_jobs.id", ondelete="CASCADE"),

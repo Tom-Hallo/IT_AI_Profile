@@ -25,7 +25,11 @@ if config.config_file_name is not None:
 # Import tat ca models nghiep vu de Alembic phat hien cac bang
 # (PBI-002: them models tu day tro di)
 # ---------------------------------------------------------------------------
+import app.modules.analysis.models  # noqa: F401, E402
 import app.modules.assessments.models  # noqa: F401, E402
+import app.modules.auth.models  # noqa: F401, E402
+import app.modules.consent.cleanup_models  # noqa: F401, E402
+import app.modules.consent.models  # noqa: F401, E402
 import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
@@ -74,6 +78,10 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        compare_comments=False,
+        include_schemas=True,
+        include_name=include_name,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -87,6 +95,10 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 compare_type=True,
+                compare_comments=False,
+                include_schemas=True,
+                include_name=include_name,
+                include_object=include_object,
             )
 
             with context.begin_transaction():

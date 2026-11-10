@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import OAuthAccount
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import (
+    get_user_github_token,
+    has_private_access,
+)
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
