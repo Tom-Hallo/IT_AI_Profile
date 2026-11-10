@@ -236,7 +236,14 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
     assert mock_scalar_fn.call_count >= 6
 
     # Verifiable evidence in cache
-    cache_key = (15, "1111222233334444555566667777888899990000")
+    cache_key = (
+        15,
+        "1111222233334444555566667777888899990000",
+        "full",
+        "",
+        "",
+        "",
+    )
     assert cache_key in _ANALYSIS_CACHE
 
 

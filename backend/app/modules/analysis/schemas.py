@@ -80,6 +80,7 @@ class StructureSummary(BaseModel):
 class RepositoryAnalysisResponse(BaseModel):
     """Kết quả phân tích toàn diện repository."""
 
+    report_id: int | None = None
     repository_id: int
     commit_sha: str
     analyzed_at: str
@@ -96,6 +97,7 @@ class RepositoryAnalysisResponse(BaseModel):
 class EvidenceListResponse(BaseModel):
     """Danh sách các bản ghi bằng chứng có thể kiểm chứng độc lập."""
 
+    report_id: int | None = None
     repository_id: int
     commit_sha: str
     total: int
