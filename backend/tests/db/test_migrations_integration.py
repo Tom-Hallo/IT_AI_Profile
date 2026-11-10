@@ -203,6 +203,12 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
                     "n": "my-repo",
                     "url": "https://github.com/alice/my-repo",
                 },
+                {
+                    "oid": user_id,
+                    "eid": "gh:12345",
+                    "n": "my-repo",
+                    "url": "https://github.com/alice/my-repo",
+                },
             )
             repo_id = conn.execute(
                 _text("SELECT id FROM ita.repositories WHERE external_id = 'gh:12345'")

@@ -20,10 +20,7 @@ if TYPE_CHECKING:
 
 class CV(Base):
     __tablename__ = "cvs"
-    __table_args__ = {
-        "schema": "ita",
-        "comment": "Versioned CV data stored as JSONB",
-    }
+    __table_args__ = {"schema": "ita"}
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(

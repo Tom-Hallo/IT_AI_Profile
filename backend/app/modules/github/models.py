@@ -53,16 +53,12 @@ user_repository = Table(
         nullable=False,
     ),
     schema="ita",
-    comment="Pivot table: users ↔ repositories (many-to-many)",
 )
 
 
 class Repository(Base):
     __tablename__ = "repositories"
-    __table_args__ = {
-        "schema": "ita",
-        "comment": "GitHub repositories linked to a user",
-    }
+    __table_args__ = {"schema": "ita"}
 
     id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
