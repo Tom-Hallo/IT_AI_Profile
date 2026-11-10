@@ -108,6 +108,11 @@ class EvidenceListResponse(BaseModel):
 class VerificationRequest(BaseModel):
     """Tham số yêu cầu xác minh fork, ownership và đóng góp (PBI-013)."""
 
+    scope: Literal["all", "public", "private"] = Field(
+        default="all",
+        description="Phạm vi dữ liệu được phép xác minh",
+    )
+
     branch: str | None = Field(default=None, description="Tên nhánh Git cần xác minh")
     mode: Literal["preset", "month", "year", "custom"] | None = Field(
         default=None, description="Chế độ chọn khoảng thời gian"

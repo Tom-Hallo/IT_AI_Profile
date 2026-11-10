@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -123,6 +124,7 @@ async def verify_repository_contributions(
     client: GitHubApiClient | None = None,
     job_id: str | None = None,
     report_id: int | None = None,
+    persist: bool = True,
 ) -> RepositoryVerificationResponse:
     """Xác minh fork, quyền sở hữu và đóng góp thực tế từ GitHub API."""
     if request is None:
@@ -130,6 +132,19 @@ async def verify_repository_contributions(
 
     # 1. Kiểm tra quyền truy cập repository & consent
     repo = verify_repository_access(db, repository_id, user)
+
+    if request.scope == "public" and repo.private:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public scope không được truy cập repository private.",
+        )
+
+    if request.scope == "private" and not repo.private:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Private scope chỉ chấp nhận repository private.",
+        )
+
     token, scopes = get_user_github_token(db, user.id)
     verify_private_repo_consent(repo, scopes, db=db, user_id=user.id)
 
@@ -244,6 +259,11 @@ async def verify_repository_contributions(
     verified_deletions = 0
     coverage_status = "complete"
     confidence = "high"
+    collection_truncated = False
+
+    def mark_collection_truncated() -> None:
+        nonlocal collection_truncated
+        collection_truncated = True
 
     try:
         raw_commits = await api_client.list_commits(
@@ -254,6 +274,7 @@ async def verify_repository_contributions(
             sha=target_branch,
             per_page=100,
             max_pages=20,
+            on_truncated=mark_collection_truncated,
         )
 
         sem = asyncio.Semaphore(10)
@@ -334,26 +355,64 @@ async def verify_repository_contributions(
                 except Exception:
                     pass
 
-            is_fork_inherited = False
-            if is_author_verified:
+            parent_contains_commit: bool | None = None
+
+            if is_fork and parent_repo_name and "/" in parent_repo_name:
+                parent_owner, parent_name = parent_repo_name.split("/", 1)
+
+                try:
+                    async with sem:
+                        await api_client.get_commit_details(
+                            parent_owner,
+                            parent_name,
+                            sha,
+                        )
+                    parent_contains_commit = True
+
+                except GitHubNotFoundError:
+                    parent_contains_commit = False
+
+                except GitHubApiError:
+                    parent_contains_commit = None
+
+            is_fork_inherited = parent_contains_commit is True
+
+            if is_fork and parent_contains_commit is True:
+                v_status = "unverified"
+                rationale = (
+                    f"Commit {sha[:7]} được xác nhận tồn tại trong repo cha "
+                    "(kế thừa từ repo gốc theo đối chiếu SHA). "
+                    "Không tính là đóng góp mới của fork."
+                )
+
+            elif is_fork and parent_contains_commit is None:
+                v_status = "unknown"
+                rationale = (
+                    f"Chưa xác định được commit {sha[:7]} "
+                    "có kế thừa từ upstream hay không."
+                )
+
+            elif is_author_verified:
                 v_status = "verified"
-                rationale = f"Commit {sha[:7]} xác thực bởi GitHub @{author_login}."
+                rationale = (
+                    f"Commit {sha[:7]} được liên kết với tài khoản "
+                    f"GitHub @{author_login}."
+                )
+
             else:
+                v_status = "unverified"
+
                 if author_obj is None:
-                    v_status = "unverified"
-                    rationale = f"Commit {sha[:7]} thiếu liên kết GitHub; unverified."
+                    rationale = (
+                        f"Commit {sha[:7]} thiếu liên kết GitHub "
+                        "với tài khoản tác giả. "
+                        "Không thể xác minh bằng tên hoặc email."
+                    )
                 else:
-                    if is_fork:
-                        is_fork_inherited = True
-                        v_status = "unverified"
-                        rationale = (
-                            f"Commit {sha[:7]} kế thừa từ repo gốc bởi @{author_login}."
-                        )
-                    else:
-                        v_status = "unverified"
-                        rationale = (
-                            f"Commit {sha[:7]} do lập trình viên khác thực hiện."
-                        )
+                    rationale = (
+                        f"Commit {sha[:7]} có tác giả GitHub "
+                        "không khớp với người dùng hiện tại."
+                    )
 
             return VerificationEvidenceItem(
                 evidence_type="commit",
@@ -421,6 +480,7 @@ async def verify_repository_contributions(
             direction="desc",
             per_page=100,
             max_pages=10,
+            on_truncated=mark_collection_truncated,
         )
 
         for pr in raw_prs:
@@ -512,6 +572,14 @@ async def verify_repository_contributions(
         limitations.append(f"Lỗi khi thu thập Pull Requests: {type(exc).__name__}.")
 
     # 8. Xác định Verification Status và Flag Anti-Inflation
+
+    if collection_truncated:
+        coverage_status = "partial"
+        confidence = "uncertain"
+        limitations.append(
+            "Dữ liệu GitHub chưa được thu thập đầy đủ vì đã đạt giới hạn phân trang."
+        )
+
     anti_inflation_flag = False
 
     if is_fork:
@@ -522,15 +590,26 @@ async def verify_repository_contributions(
                 f"({verified_commits_count} commits, {verified_prs_count} PRs)."
             )
         else:
-            verification_status = "no_contribution"
             anti_inflation_flag = True
-            rationale_summary = (
-                "Fork do lập trình viên sở hữu nhưng chưa có commit/PR "
-                "được xác minh. Toàn bộ mã nguồn là kế thừa từ upstream."
-            )
+
+            if coverage_status != "complete":
+                verification_status = "unknown"
+                rationale_summary = (
+                    "Chưa thể xác định đóng góp cá nhân vì dữ liệu "
+                    "GitHub được thu thập chưa đầy đủ."
+                )
+            else:
+                verification_status = "no_contribution"
+                rationale_summary = (
+                    "Không quan sát thấy commit hoặc Pull Request "
+                    "được xác minh của người dùng trong phạm vi "
+                    "dữ liệu đã kiểm tra."
+                )
+
             limitations.append(
-                "Fork không chứa commit được xác minh của lập trình viên. "
-                "Không tính điểm đóng góp cá nhân."
+                "Chưa có đóng góp cá nhân được xác minh để tính điểm. "
+                "Không được suy luận toàn bộ mã nguồn đều kế thừa "
+                "từ upstream chỉ dựa vào số commit hoặc Pull Request."
             )
     else:
         if verified_commits_count > 0 or verified_prs_count > 0:
@@ -549,6 +628,18 @@ async def verify_repository_contributions(
             rationale_summary = (
                 "Repository có hoạt động nhưng không có commit/PR của lập trình viên."
             )
+
+    if (
+        coverage_status != "complete"
+        and verified_commits_count == 0
+        and verified_prs_count == 0
+    ):
+        verification_status = "unknown"
+        confidence = "uncertain"
+        rationale_summary = (
+            "Chưa đủ dữ liệu GitHub để kết luận về đóng góp "
+            "cá nhân trong phạm vi phân tích."
+        )
 
     if parent_metadata_status == "unknown" and is_fork:
         if verification_status != "verified":
@@ -594,86 +685,10 @@ async def verify_repository_contributions(
         "total_prs": verified_prs_count + unverified_prs_count,
     }
 
-    # 9. Lưu trữ nguyên tử (Idempotent Persistence)
-    existing_verif = db.scalar(
-        select(RepositoryVerification).where(
-            RepositoryVerification.repository_id == repo.id,
-            RepositoryVerification.user_id == user.id,
-        )
-    )
+    # 9. Tạo kết quả xác minh
 
-    if existing_verif is None:
-        verif_obj = RepositoryVerification(
-            repository_id=repo.id,
-            user_id=user.id,
-        )
-        db.add(verif_obj)
-    else:
-        verif_obj = existing_verif
-
-    verif_obj.job_id = None if not job_id else job_id
-    verif_obj.report_id = report_id
-    verif_obj.provenance_type = provenance_type
-    verif_obj.ownership_status = ownership_status
-    verif_obj.is_fork = is_fork
-    verif_obj.parent_repo_name = parent_repo_name
-    verif_obj.parent_repo_url = parent_repo_url
-    verif_obj.parent_metadata_status = parent_metadata_status
-    verif_obj.verification_status = verification_status
-    verif_obj.coverage_status = coverage_status
-    verif_obj.confidence = confidence
-    verif_obj.verified_commits_count = verified_commits_count
-    verif_obj.unverified_commits_count = unverified_commits_count
-    verif_obj.verified_prs_count = verified_prs_count
-    verif_obj.unverified_prs_count = unverified_prs_count
-    verif_obj.verified_additions = verified_additions
-    verif_obj.verified_deletions = verified_deletions
-    verif_obj.time_range = time_range_info
-    verif_obj.limitations = limitations
-    verif_obj.summary_data = summary_data
-    verif_obj.verified_at = verified_at
-    verif_obj.updated_at = verified_at
-
-    db.flush()
-
-    db.execute(
-        delete(VerificationEvidence).where(
-            VerificationEvidence.verification_id == verif_obj.id
-        )
-    )
-
-    for item in evidence_list:
-        ev_row = VerificationEvidence(
-            verification_id=verif_obj.id,
-            repository_id=repo.id,
-            user_id=user.id,
-            evidence_type=item.evidence_type,
-            target_identifier=item.target_identifier,
-            verification_status=item.verification_status,
-            actor_login=item.actor_login,
-            actor_id=item.actor_id,
-            actor_type=item.actor_type,
-            html_url=item.html_url,
-            title_or_message=item.title_or_message,
-            is_merge=item.is_merge,
-            is_bot=item.is_bot,
-            is_fork_inherited=item.is_fork_inherited,
-            additions=item.additions,
-            deletions=item.deletions,
-            pr_state=item.pr_state,
-            pr_merged=item.pr_merged,
-            source_repo=item.source_repo,
-            target_repo=item.target_repo,
-            recorded_at=_parse_timestamp(item.recorded_at),
-            rationale=item.rationale,
-            metadata_=item.metadata,
-        )
-        db.add(ev_row)
-
-    db.commit()
-
-    return RepositoryVerificationResponse(
-        id=verif_obj.id,
+    response = RepositoryVerificationResponse(
+        id=None,
         repository_id=repo.id,
         repository_name=repo.name,
         repository_full_name=repo.full_name or repo.name,
@@ -702,6 +717,11 @@ async def verify_repository_contributions(
         verified_at=verified_at.isoformat(),
         evidence=evidence_list,
     )
+
+    if persist:
+        persist_verification_result(db, response)
+
+    return response
 
 
 def get_stored_verification(
@@ -844,4 +864,104 @@ def get_verification_summary(
         verified_deletions=verif.verified_deletions,
         anti_inflation_flag=anti_inflation_flag,
         rationale=rationale,
+        verified_at=verif.verified_at,
     )
+
+
+def persist_verification_result(
+    db: Session,
+    result: RepositoryVerificationResponse,
+    *,
+    commit: bool = True,
+) -> RepositoryVerification:
+    """Lưu kết quả verification đã tính toán, không gọi GitHub API."""
+
+    existing = db.scalar(
+        select(RepositoryVerification).where(
+            RepositoryVerification.repository_id == result.repository_id,
+            RepositoryVerification.user_id == result.user_id,
+        )
+    )
+
+    if existing is None:
+        verif = RepositoryVerification(
+            repository_id=result.repository_id,
+            user_id=result.user_id,
+        )
+        db.add(verif)
+    else:
+        verif = existing
+
+    verified_at = (
+        datetime.fromisoformat(result.verified_at)
+        if isinstance(result.verified_at, str)
+        else result.verified_at
+    )
+
+    verif.job_id = uuid.UUID(result.job_id) if result.job_id else None
+    verif.report_id = result.report_id
+    verif.provenance_type = result.provenance_type
+    verif.ownership_status = result.ownership_status
+    verif.is_fork = result.is_fork
+    verif.parent_repo_name = result.parent_repo_name
+    verif.parent_repo_url = result.parent_repo_url
+    verif.parent_metadata_status = result.parent_metadata_status
+    verif.verification_status = result.verification_status
+    verif.coverage_status = result.coverage_status
+    verif.confidence = result.confidence
+    verif.verified_commits_count = result.verified_commits_count
+    verif.unverified_commits_count = result.unverified_commits_count
+    verif.verified_prs_count = result.verified_prs_count
+    verif.unverified_prs_count = result.unverified_prs_count
+    verif.verified_additions = result.verified_additions
+    verif.verified_deletions = result.verified_deletions
+    verif.time_range = result.time_range
+    verif.limitations = result.limitations
+    verif.summary_data = result.summary_data
+    verif.verified_at = verified_at
+    verif.updated_at = verified_at
+
+    db.flush()
+
+    db.execute(
+        delete(VerificationEvidence).where(
+            VerificationEvidence.verification_id == verif.id
+        )
+    )
+
+    for item in result.evidence:
+        db.add(
+            VerificationEvidence(
+                verification_id=verif.id,
+                repository_id=result.repository_id,
+                user_id=result.user_id,
+                evidence_type=item.evidence_type,
+                target_identifier=item.target_identifier,
+                verification_status=item.verification_status,
+                actor_login=item.actor_login,
+                actor_id=item.actor_id,
+                actor_type=item.actor_type,
+                html_url=item.html_url,
+                title_or_message=item.title_or_message,
+                is_merge=item.is_merge,
+                is_bot=item.is_bot,
+                is_fork_inherited=item.is_fork_inherited,
+                additions=item.additions,
+                deletions=item.deletions,
+                pr_state=item.pr_state,
+                pr_merged=item.pr_merged,
+                source_repo=item.source_repo,
+                target_repo=item.target_repo,
+                recorded_at=_parse_timestamp(item.recorded_at),
+                rationale=item.rationale,
+                metadata_=item.metadata,
+            )
+        )
+
+    db.flush()
+
+    if commit:
+        db.commit()
+
+    result.id = verif.id
+    return verif

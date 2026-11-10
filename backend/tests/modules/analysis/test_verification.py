@@ -2,6 +2,7 @@
 Covers the entire 24-point Mandatory Test Matrix.
 """
 
+import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -24,6 +25,7 @@ from app.modules.analysis.schemas import (
     VerificationRequest,
 )
 from app.modules.analysis.verification_service import (
+    persist_verification_result,
     verify_private_repo_consent,
     verify_repository_access,
     verify_repository_contributions,
@@ -31,6 +33,7 @@ from app.modules.analysis.verification_service import (
 from app.modules.auth.models import OAuthAccount
 from app.modules.github.client import (
     GitHubApiClient,
+    GitHubNotFoundError,
     GitHubRateLimitError,
     GitHubTokenRevokedError,
 )
@@ -276,6 +279,19 @@ async def test_03_fork_with_verified_developer_commit(monkeypatch):
     )
 
     mock_client = MagicMock(spec=GitHubApiClient)
+
+    async def mock_commit_details(owner, repo_name, sha):
+        if owner == "upstream" and repo_name == "core":
+            if sha == "user123":
+                raise GitHubNotFoundError("Developer commit is not present in upstream")
+
+            if sha == "upstream111":
+                return {"sha": sha}
+
+        raise AssertionError(f"Unexpected commit lookup: {owner}/{repo_name}/{sha}")
+
+    mock_client.get_commit_details = AsyncMock(side_effect=mock_commit_details)
+
     mock_client.get_authenticated_user = AsyncMock(
         return_value={"id": 12345, "login": "mydev"}
     )
@@ -1375,3 +1391,332 @@ def test_24_no_regression_in_analysis_pipeline():
     assert dumped["verification"] is not None
     assert dumped["verification"]["provenance_type"] == "original"
     assert dumped["verification"]["verified_commits_count"] == 3
+
+
+@pytest.mark.anyio
+async def test_public_scope_rejects_private_repo_before_github_call(
+    monkeypatch,
+):
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=30, private=True)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.verify_repository_access",
+        lambda _db, _repo_id, _user: repo,
+    )
+
+    github_called = False
+
+    def fake_get_token(_db, _user_id):
+        nonlocal github_called
+        github_called = True
+        return "fake-token", "repo"
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.get_user_github_token",
+        fake_get_token,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await verify_repository_contributions(
+            db=MagicMock(),
+            repository_id=repo.id,
+            user=user,
+            request=VerificationRequest(scope="public"),
+        )
+
+    assert exc.value.status_code == 403
+    assert github_called is False
+
+
+def test_get_verification_without_result_returns_404(monkeypatch):
+    from app.modules.analysis import verification_router as router_module
+
+    app = create_app()
+    user = _create_mock_user(user_id=1)
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_session] = lambda: MagicMock()
+
+    monkeypatch.setattr(
+        router_module,
+        "get_stored_verification",
+        lambda *args, **kwargs: None,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/repositories/30/verification")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == ("Chưa có kết quả xác minh cho repository này.")
+
+
+@pytest.mark.anyio
+async def test_fork_collaborator_commit_is_not_inherited(monkeypatch):
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(
+        repo_id=31,
+        owner_id=1,
+        full_name="mydev/team-fork",
+        is_fork=True,
+    )
+    mock_db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+    mock_client.get_repository_details = AsyncMock(
+        return_value={
+            "full_name": "mydev/team-fork",
+            "fork": True,
+            "parent": {"full_name": "original-org/base-repo"},
+        }
+    )
+    mock_client.list_commits = AsyncMock(
+        return_value=[
+            {
+                "sha": "collaborator123",
+                "author": {"id": 99999, "login": "teammate"},
+                "commit": {
+                    "message": "New feature on fork",
+                    "author": {"date": "2026-10-20T10:00:00Z"},
+                },
+                "stats": {"additions": 20, "deletions": 2},
+            }
+        ]
+    )
+    mock_client.list_pull_requests = AsyncMock(return_value=[])
+
+    mock_client.get_commit_details = AsyncMock(
+        side_effect=GitHubNotFoundError("Commit not present in upstream")
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.GitHubApiClient",
+        lambda *args, **kwargs: mock_client,
+    )
+
+    result = await verify_repository_contributions(
+        mock_db,
+        repo.id,
+        user,
+        VerificationRequest(),
+    )
+
+    commit = next(
+        item for item in result.evidence if item.target_identifier == "collaborator123"
+    )
+
+    assert commit.is_fork_inherited is False
+    assert commit.verification_status == "unverified"
+    assert result.verified_commits_count == 0
+    assert result.unverified_commits_count == 1
+
+
+@pytest.mark.anyio
+async def test_fork_partial_coverage_does_not_claim_no_contribution(
+    monkeypatch,
+):
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(
+        repo_id=32,
+        owner_id=1,
+        full_name="mydev/rate-limited-fork",
+        is_fork=True,
+    )
+    mock_db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+    mock_client.get_repository_details = AsyncMock(
+        return_value={
+            "full_name": "mydev/rate-limited-fork",
+            "fork": True,
+            "parent": {
+                "full_name": "upstream-org/original-project",
+            },
+        }
+    )
+
+    # GitHub không trả đủ dữ liệu commit.
+    mock_client.list_commits = AsyncMock(
+        side_effect=GitHubRateLimitError("GitHub rate limit exceeded")
+    )
+    mock_client.list_pull_requests = AsyncMock(return_value=[])
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.GitHubApiClient",
+        lambda *args, **kwargs: mock_client,
+    )
+
+    result = await verify_repository_contributions(
+        mock_db,
+        repo.id,
+        user,
+        VerificationRequest(),
+    )
+
+    assert result.coverage_status == "partial"
+    assert result.verification_status == "unknown"
+    assert result.confidence == "uncertain"
+    assert result.verified_commits_count == 0
+    assert result.anti_inflation_flag is True
+
+    assert "chưa đủ dữ liệu" in result.summary_data["rationale_summary"].lower()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("truncated_api", ["commits", "prs"])
+async def test_verification_marks_truncated_pagination_as_partial(
+    monkeypatch,
+    truncated_api,
+):
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(
+        repo_id=33,
+        owner_id=1,
+        full_name="mydev/pagination-limited",
+        is_fork=True,
+    )
+    mock_db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+
+    mock_client.get_repository_details = AsyncMock(
+        return_value={
+            "full_name": "mydev/pagination-limited",
+            "fork": True,
+            "parent": {"full_name": "upstream-org/original-project"},
+        }
+    )
+
+    async def mock_list_commits(**kwargs):
+        if truncated_api == "commits":
+            kwargs["on_truncated"]()
+        return []
+
+    async def mock_list_prs(**kwargs):
+        if truncated_api == "prs":
+            kwargs["on_truncated"]()
+        return []
+
+    mock_client.list_commits = AsyncMock(side_effect=mock_list_commits)
+    mock_client.list_pull_requests = AsyncMock(side_effect=mock_list_prs)
+
+    result = await verify_repository_contributions(
+        mock_db,
+        repo.id,
+        user,
+        VerificationRequest(),
+        client=mock_client,
+    )
+
+    assert result.coverage_status == "partial"
+    assert result.verification_status == "unknown"
+    assert result.confidence == "uncertain"
+    assert result.verified_commits_count == 0
+    assert result.anti_inflation_flag is True
+
+    assert any(
+        "giới hạn phân trang" in limitation.lower() for limitation in result.limitations
+    )
+
+
+@pytest.mark.anyio
+async def test_verification_persist_false_does_not_write_database(
+    monkeypatch,
+):
+    user = _create_mock_user(user_id=1)
+
+    repo = _create_mock_repo(
+        repo_id=50,
+        owner_id=1,
+        full_name="mydev/no-persistence",
+        is_fork=False,
+    )
+
+    mock_db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+
+    mock_client.get_repository_details = AsyncMock(
+        return_value={
+            "full_name": "mydev/no-persistence",
+            "fork": False,
+        }
+    )
+
+    mock_client.list_commits = AsyncMock(return_value=[])
+    mock_client.list_pull_requests = AsyncMock(return_value=[])
+
+    result = await verify_repository_contributions(
+        db=mock_db,
+        repository_id=repo.id,
+        user=user,
+        client=mock_client,
+        persist=False,
+    )
+
+    assert result.id is None
+    assert result.repository_id == repo.id
+    assert result.coverage_status == "complete"
+
+    # Giai đoạn 1: Chỉ xác minh, tuyệt đối không ghi database.
+    mock_db.add.assert_not_called()
+    mock_db.flush.assert_not_called()
+    mock_db.execute.assert_not_called()
+    mock_db.commit.assert_not_called()
+
+    # Kiểm tra bước lưu với commit=False.
+    result.job_id = str(uuid.uuid4())
+
+    persist_verification_result(
+        db=mock_db,
+        result=result,
+        commit=False,
+    )
+
+    mock_db.add.assert_called()
+    mock_db.flush.assert_called()
+    mock_db.execute.assert_called()
+    mock_db.commit.assert_not_called()
+
+    saved_verifications = [
+        call.args[0]
+        for call in mock_db.add.call_args_list
+        if isinstance(call.args[0], RepositoryVerification)
+    ]
+
+    assert len(saved_verifications) == 1
+    assert saved_verifications[0].job_id == uuid.UUID(result.job_id)

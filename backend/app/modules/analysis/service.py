@@ -64,6 +64,11 @@ def _analysis_cache_key(
     )
 
 
+def cache_analysis_result(result: dict[str, Any]) -> None:
+    """Cập nhật cache sau khi transaction đã commit thành công."""
+    _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+
+
 def clear_user_analysis_cache(db: Session, user_id: int) -> None:
     """Xóa toàn bộ bản ghi cache trong bộ nhớ liên quan đến các repo của user."""
     repo_ids = set(
@@ -474,7 +479,12 @@ async def analyze_repository(
     return result
 
 
-def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport | None:
+def save_analysis_result(
+    db: Session,
+    result: dict[str, Any],
+    *,
+    commit: bool = True,
+) -> AnalysisReport | None:
     """Save an analysis result and its verifiable evidence records to PostgreSQL and L1
     cache.
     """
@@ -525,10 +535,15 @@ def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport 
             )
             db.add(ev_rec)
 
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
 
         result["report_id"] = report.id
-        _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+
+        if commit:
+            _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
 
         return report
 

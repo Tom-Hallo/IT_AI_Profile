@@ -14,6 +14,7 @@ import base64
 import logging
 import random
 import re
+from collections.abc import Callable
 from datetime import datetime
 from types import TracebackType
 from typing import Any, Self
@@ -448,6 +449,7 @@ class GitHubApiClient:
         sha: str | None = None,
         per_page: int = 100,
         max_pages: int = 50,
+        on_truncated: Callable[[], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Lấy danh sách commit trong khoảng thời gian có hỗ trợ phân trang."""
         params: dict[str, Any] = {
@@ -488,6 +490,11 @@ class GitHubApiClient:
                         commits.append(item)
 
             next_url = _parse_next_link(response.headers.get("link"))
+
+            if next_url and page_count >= max_pages:
+                if on_truncated is not None:
+                    on_truncated()
+
             if next_url:
                 url_or_endpoint = next_url
                 params = None
@@ -522,6 +529,7 @@ class GitHubApiClient:
         direction: str = "desc",
         per_page: int = 100,
         max_pages: int = 50,
+        on_truncated: Callable[[], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Lấy danh sách pull requests của repository có hỗ trợ phân trang."""
         params: dict[str, Any] = {
@@ -558,6 +566,11 @@ class GitHubApiClient:
                         prs.append(item)
 
             next_url = _parse_next_link(response.headers.get("link"))
+
+            if next_url and page_count >= max_pages:
+                if on_truncated is not None:
+                    on_truncated()
+
             if next_url:
                 url_or_endpoint = next_url
                 params = None

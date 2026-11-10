@@ -76,13 +76,12 @@ async def get_verification(
         repository_id=repository_id,
         user=current_user,
     )
-    if not result:
-        # Nếu chưa có kết quả lưu trữ, tự động chạy xác minh lần đầu
-        result = await verify_repository_contributions(
-            db=db,
-            repository_id=repository_id,
-            user=current_user,
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chưa có kết quả xác minh cho repository này.",
         )
+
     return result
 
 

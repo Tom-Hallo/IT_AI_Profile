@@ -211,12 +211,15 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
     # Dynamic return sequence: call 1 = initial job, call 2 = repo record, calls >= 3 =
     # job checkpoints
     def mock_scalar_fn(stmt=None):
-        if not hasattr(mock_scalar_fn, "call_count"):
-            mock_scalar_fn.call_count = 0
-        mock_scalar_fn.call_count += 1
-        if mock_scalar_fn.call_count == 2:
+        entity = stmt.column_descriptions[0].get("entity") if stmt is not None else None
+
+        if entity is Repository:
             return repo_record
-        return job_record
+
+        if entity is AnalysisJob:
+            return job_record
+
+    return None
 
     mock_db.scalar.side_effect = mock_scalar_fn
 

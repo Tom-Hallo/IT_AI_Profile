@@ -21,6 +21,7 @@ from app.modules.analysis.limits import AnalysisLimits
 from app.modules.analysis.models import AnalysisJob
 from app.modules.analysis.service import (
     GitHubRepositoryContentSource,
+    cache_analysis_result,
     event,
     save_analysis_result,
 )
@@ -134,7 +135,6 @@ def run_analysis(
             full_name = repo.full_name or repo.name
             default_branch = repo.default_branch or "main"
             repo_languages = dict(repo.languages) if repo.languages else {}
-            repo_is_private = bool(repo.private)
 
         checkpoint(job_uuid, token, "metadata_loaded", 25)
 
@@ -185,9 +185,12 @@ def run_analysis(
 
         checkpoint(job_uuid, token, "verifying_fork_and_authorship", 75)
 
-        # 4. Xác minh fork, ownership & đóng góp thực tế (PBI-013)
+        # 4. Thu thập verification, chưa ghi database.
+        verification_result = None
+
         if custom_source is None and access_token:
             try:
+                from app.modules.analysis.schemas import VerificationRequest
                 from app.modules.analysis.verification_service import (
                     verify_repository_contributions,
                 )
@@ -197,61 +200,125 @@ def run_analysis(
                     user_record = verif_db.scalar(
                         select(User).where(User.id == user_id)
                     )
-                    if user_record:
-                        asyncio.run(
-                            verify_repository_contributions(
-                                db=verif_db,
-                                repository_id=repo_id,
-                                user=user_record,
-                                job_id=str(job_uuid),
-                            )
+
+                    if user_record is None:
+                        raise PermissionError("User no longer exists")
+
+                    verification_result = asyncio.run(
+                        verify_repository_contributions(
+                            db=verif_db,
+                            repository_id=repo_id,
+                            user=user_record,
+                            request=VerificationRequest(scope=scope),
+                            job_id=str(job_uuid),
+                            persist=False,
                         )
+                    )
+
             except Exception as ve:
                 logger.warning(
-                    "Xác minh đóng góp thất bại trong background job: %s", ve
+                    "Verification collection failed for job %s: %s",
+                    job_uuid,
+                    ve,
                 )
 
         checkpoint(job_uuid, token, "finalizing_evidence", 85)
 
-        # 4 & 5. Bảo toàn kết quả và cập nhật trạng thái trong một giao dịch nguyên tử
+        # 5. Lưu analysis, verification và job state trong một transaction.
         with session_scope() as db:
-            # Khóa job record để đồng bộ hóa với disconnect/cancel đồng thời
             job = db.scalar(
                 select(AnalysisJob).where(AnalysisJob.id == job_uuid).with_for_update()
             )
+
             if job is None or job.execution_token != token:
                 raise Cancelled()
+
+            if job.status == "cancel_requested":
+                job.status = "cancelled"
+                job.finished_at = datetime.now(UTC)
+                event(db, job, "cancelled")
+                return None
+
             if job.status != "running":
-                if job.status == "cancel_requested":
-                    job.status = "cancelled"
-                    job.finished_at = datetime.now(UTC)
-                    event(db, job, "cancelled")
                 raise Cancelled()
 
-            # Tái xác thực quyền riêng tư và sự đồng thuận trước khi lưu kết quả
-            if repo_is_private:
-                from app.modules.auth.service import has_private_access
-                from app.modules.consent.guards import require_private_access_consent
+            # Khóa repository để đồng bộ với thao tác thu hồi consent.
+            repo = db.scalar(
+                select(Repository)
+                .join(
+                    user_repository,
+                    Repository.id == user_repository.c.repository_id,
+                )
+                .where(
+                    Repository.id == repo_id,
+                    user_repository.c.user_id == user_id,
+                )
+                .with_for_update(of=Repository)
+            )
+
+            if repo is None:
+                raise PermissionError("Repository access was revoked")
+
+            # Kiểm tra lại token tại thời điểm lưu.
+            current_token, current_scope = get_user_github_token(db, user_id)
+
+            if not current_token:
+                raise PermissionError("GitHub access was revoked")
+
+            if repo.private:
+                from app.modules.auth.service import (
+                    has_private_access,
+                    has_repo_scope,
+                )
+                from app.modules.consent.guards import (
+                    require_private_access_consent,
+                )
+
+                if not has_repo_scope(current_scope):
+                    raise PermissionError("Private repository OAuth scope revoked")
 
                 if not has_private_access(db, user_id):
-                    raise PermissionError(
-                        "Private repository access was revoked during analysis"
-                    )
-                try:
-                    require_private_access_consent(db, user_id, repo_id)
-                except Exception as ce:
-                    detail = getattr(ce, "detail", str(ce))
-                    raise PermissionError(
-                        f"Private repository consent revoked: {detail}"
-                    ) from ce
+                    raise PermissionError("Private repository access was revoked")
 
-            save_analysis_result(db, analysis_result)
+                require_private_access_consent(
+                    db,
+                    user_id,
+                    repo_id,
+                )
+
+            # Không commit ở đây.
+            report = save_analysis_result(
+                db,
+                analysis_result,
+                commit=False,
+            )
+
+            if report is None:
+                raise RuntimeError("Analysis report was not saved")
+
+            # Verification chỉ được ghi sau khi quyền đã được kiểm tra.
+            if verification_result is not None:
+                from app.modules.analysis.verification_service import (
+                    persist_verification_result,
+                )
+
+                verification_result.report_id = report.id
+
+                persist_verification_result(
+                    db,
+                    verification_result,
+                    commit=False,
+                )
 
             job.status = "succeeded"
             job.progress = 100
             job.step = "completed"
             job.finished_at = datetime.now(UTC)
+
             event(db, job, "succeeded")
+
+        # Đã ra khỏi session_scope: transaction commit thành công.
+        cache_analysis_result(analysis_result)
 
         return analysis_result
 
