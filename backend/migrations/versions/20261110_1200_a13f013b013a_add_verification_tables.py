@@ -269,3 +269,4 @@ def downgrade() -> None:
         schema=SCHEMA,
     )
     op.drop_table("repository_verifications", schema=SCHEMA)
+
