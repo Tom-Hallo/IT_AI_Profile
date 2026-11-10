@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.modules.analysis.evidence import EvidenceRecord
 
@@ -13,19 +13,35 @@ from app.modules.analysis.evidence import EvidenceRecord
 class RepositoryAnalysisRequest(BaseModel):
     """Tham số yêu cầu phân tích repository tĩnh."""
 
-    mode: Literal["preset", "month", "custom"] | None = Field(
+    branch: str | None = Field(
+        default=None,
+        description="Tên nhánh Git cần phân tích (mặc định: default_branch)",
+    )
+    mode: Literal["preset", "month", "year", "custom"] | None = Field(
         default=None, description="Chế độ chọn khoảng thời gian (PBI-010)"
     )
-    preset: Literal["1m", "3m", "6m", "1y"] | None = Field(
+    preset: Literal["1m", "3m", "6m", "1y", "all"] | None = Field(
         default=None, description="Khoảng thời gian mẫu"
     )
     month: str | None = Field(default=None, description="Tháng dạng YYYY-MM")
+    year: int | str | None = Field(default=None, description="Năm dạng YYYY")
     start_date: date | None = Field(default=None, description="Ngày bắt đầu")
     end_date: date | None = Field(default=None, description="Ngày kết thúc")
     timezone: str = Field(default="UTC", description="Múi giờ IANA")
-    scope: Literal["all", "public", "private"] = Field(
+    scope: Literal["all", "public", "private", "full"] = Field(
         default="all", description="Phạm vi phân tích repository"
     )
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def normalize_scope(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            clean = v.strip().lower()
+            if clean in ("all", "all code in repo"):
+                return "all"
+            if clean in ("full", "public", "private"):
+                return clean
+        return v
 
 
 class LanguageSummary(BaseModel):

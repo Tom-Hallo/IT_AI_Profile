@@ -29,7 +29,7 @@ from app.modules.analysis.models import (
     AnalysisReport,
 )
 from app.modules.analysis.schemas import RepositoryAnalysisRequest
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -46,6 +46,20 @@ logger = logging.getLogger(__name__)
 _ANALYSIS_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
 
 
+def clear_user_analysis_cache(db: Session, user_id: int) -> None:
+    """Xóa toàn bộ bản ghi cache trong bộ nhớ liên quan đến các repo của user."""
+    repo_ids = set(
+        db.scalars(
+            select(user_repository.c.repository_id).where(
+                user_repository.c.user_id == user_id
+            )
+        ).all()
+    )
+    keys_to_delete = [k for k in _ANALYSIS_CACHE if k[0] in repo_ids]
+    for k in keys_to_delete:
+        _ANALYSIS_CACHE.pop(k, None)
+
+
 def now() -> datetime:
     """Return current UTC timestamp."""
     return datetime.now(UTC)
@@ -58,13 +72,17 @@ def now() -> datetime:
 
 def require_access(db: Session, user_id: int, repo_id: int) -> None:
     """Verify user ownership/access of repository and active GitHub token."""
-    owned = db.scalar(
-        select(user_repository.c.repository_id).where(
+    repo = db.scalar(
+        select(Repository)
+        .join(user_repository, Repository.id == user_repository.c.repository_id)
+        .where(
             user_repository.c.user_id == user_id,
             user_repository.c.repository_id == repo_id,
         )
     )
-    if owned is None:
+    if repo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found")
+    if getattr(repo, "private", False) and not has_private_access(db, user_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found")
     token, _ = get_user_github_token(db, user_id)
     if not token:
@@ -127,8 +145,10 @@ def create(
         return existing, False
     job = AnalysisJob(user_id=user_id, repo_id=repo_id, scope=scope, retry_of=retry_of)
     db.add(job)
-    event(db, job, "created")
+
     try:
+        db.flush()
+        event(db, job, "created")
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -136,6 +156,7 @@ def create(
         if existing:
             return existing, False
         raise
+
     db.refresh(job)
     return job, True
 
@@ -235,7 +256,8 @@ def verify_repository_access(
     """Kiểm tra quyền truy cập của người dùng đối với repository.
 
     Chỉ cho phép truy cập nếu repository thuộc sở hữu của user hoặc được liên kết
-    qua bảng phân quyền user_repository.
+    qua bảng phân quyền user_repository, và thỏa mãn server-authoritative private
+    access.
     """
     stmt = (
         select(Repository)
@@ -254,21 +276,44 @@ def verify_repository_access(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
         )
+    if repo.private and not has_private_access(db, user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
+        )
     return repo
 
 
-def verify_private_repo_consent(repo: Repository, scope: str | None) -> None:
+def verify_private_repo_consent(
+    repo: Repository,
+    scope: str | None,
+    db: Session | None = None,
+    user_id: int | None = None,
+) -> None:
     """Xác thực quyền và sự đồng thuận của người dùng đối với repository riêng tư."""
     if repo.private:
-        has_private_scope = bool(scope and "repo" in scope)
-        if not has_private_scope:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Phân tích repository riêng tư yêu cầu quyền truy cập scope 'repo' "
-                    "và sự đồng thuận của người dùng."
-                ),
-            )
+        if db is not None and user_id is not None:
+            if not has_private_access(db, user_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Phân tích repository riêng tư yêu cầu quyền truy cập private "
+                        "đã được kích hoạt và token có scope 'repo'."
+                    ),
+                )
+            from app.modules.consent.guards import require_private_access_consent
+
+            require_private_access_consent(db, user_id, repo.id)
+        else:
+            has_private_scope = bool(scope and "repo" in scope)
+            if not has_private_scope:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Phân tích repository riêng tư yêu cầu quyền truy cập scope "
+                        "'repo' và sự đồng thuận của người dùng."
+                    ),
+                )
 
 
 async def analyze_repository(
@@ -304,7 +349,7 @@ async def analyze_repository(
 
     # 3. Kiểm tra token và quyền scope private
     token, scope = get_user_github_token(db, user.id)
-    verify_private_repo_consent(repo, scope)
+    verify_private_repo_consent(repo, scope, db=db, user_id=user.id)
 
     # 4. Xử lý khoảng thời gian (PBI-010) nếu có
     time_range_info = None
@@ -314,6 +359,7 @@ async def analyze_repository(
             mode=request.mode,
             preset=request.preset,
             month=request.month,
+            year=request.year,
             start_date=request.start_date,
             end_date=request.end_date,
             timezone_name=request.timezone,
@@ -335,10 +381,11 @@ async def analyze_repository(
 
         api_client = client or GitHubApiClient(access_token=token)
         try:
+            target_branch = request.branch or repo.default_branch or "main"
             latest_sha = await api_client.get_latest_commit_sha(
                 owner=owner,
                 repo=repo_name,
-                branch=repo.default_branch or "main",
+                branch_or_ref=target_branch,
                 until=target_until,
             )
             if latest_sha:

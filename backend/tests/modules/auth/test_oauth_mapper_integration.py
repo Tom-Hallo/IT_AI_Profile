@@ -128,6 +128,7 @@ def isolated_db_session():
                 provider_user_id VARCHAR(255) NOT NULL,
                 encrypted_access_token TEXT,
                 scope VARCHAR(255),
+                access_mode VARCHAR(20) NOT NULL DEFAULT 'public_only',
                 token_updated_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT uq_user_oauth_accounts_provider_provider_user_id

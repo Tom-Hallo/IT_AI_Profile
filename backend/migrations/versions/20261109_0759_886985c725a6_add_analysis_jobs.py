@@ -112,25 +112,6 @@ def upgrade() -> None:
         schema="ita",
     )
 
-    op.create_table_comment(
-        "cvs",
-        "Application users",
-        existing_comment="Versioned CV data stored as JSONB",
-        schema="ita",
-    )
-    op.create_table_comment(
-        "repositories",
-        "Application users",
-        existing_comment="GitHub repositories linked to a user",
-        schema="ita",
-    )
-    op.create_table_comment(
-        "roadmaps",
-        "Application users",
-        existing_comment="Career roadmap stored as JSONB",
-        schema="ita",
-    )
-
 
 def downgrade() -> None:
     """Downgrade schema."""
@@ -146,22 +127,3 @@ def downgrade() -> None:
         schema="ita",
     )
     op.drop_table("analysis_jobs", schema="ita")
-
-    op.create_table_comment(
-        "roadmaps",
-        "Career roadmap stored as JSONB",
-        existing_comment="Application users",
-        schema="ita",
-    )
-    op.create_table_comment(
-        "repositories",
-        "GitHub repositories linked to a user",
-        existing_comment="Application users",
-        schema="ita",
-    )
-    op.create_table_comment(
-        "cvs",
-        "Versioned CV data stored as JSONB",
-        existing_comment="Application users",
-        schema="ita",
-    )

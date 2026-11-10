@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.db.session import get_session
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.github.client import (
     GitHubApiError,
     GitHubPermissionError,
@@ -150,6 +150,8 @@ def list_user_repositories(
 ) -> RepositoryListResponse:
     """Lấy danh sách repositories đã đồng bộ thuộc quyền truy cập của người dùng."""
 
+    can_access_private = has_private_access(db, current_user.id)
+
     base_query = (
         select(Repository)
         .join(
@@ -159,10 +161,20 @@ def list_user_repositories(
         .where(user_repository.c.user_id == current_user.id)
     )
 
-    if visibility == "public":
-        base_query = base_query.where(Repository.private.is_(False))
-    elif visibility == "private":
-        base_query = base_query.where(Repository.private.is_(True))
+    if not can_access_private:
+        # Khi không có quyền private, nếu yêu cầu 'private' trả về rỗng;
+        # ngược lại chỉ hiển thị public
+        if visibility == "private":
+            base_query = base_query.where(
+                Repository.private.is_(True), Repository.private.is_(False)
+            )
+        else:
+            base_query = base_query.where(Repository.private.is_(False))
+    else:
+        if visibility == "public":
+            base_query = base_query.where(Repository.private.is_(False))
+        elif visibility == "private":
+            base_query = base_query.where(Repository.private.is_(True))
 
     if search and search.strip():
         search_pattern = f"%{search.strip()}%"
@@ -226,6 +238,12 @@ def get_user_repository(
 
     repo = db.scalar(stmt)
     if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
+        )
+
+    if repo.private and not has_private_access(db, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",

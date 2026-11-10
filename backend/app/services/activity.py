@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import OAuthAccount
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import (
+    get_user_github_token,
+    has_private_access,
+)
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -160,14 +163,24 @@ async def analyze(
         raise HTTPException(401, "Connect your GitHub account")
 
     if repo.private:
-        has_repo_scope = bool(
-            scopes and "repo" in set((scopes or "").replace(",", " ").split())
-        )
-        if not has_repo_scope:
+        from app.modules.auth.service import has_repo_scope
+
+        if not has_repo_scope(scopes):
             raise HTTPException(
                 403,
                 "Private repository analysis requires 'repo' OAuth scope consent",
             )
+        if not has_private_access(db, user_id):
+            raise HTTPException(
+                403,
+                "Private repository analysis requires active private authorization",
+            )
+        try:
+            from app.modules.consent.guards import require_private_access_consent
+
+            require_private_access_consent(db, user_id, repository_id)
+        except AttributeError:
+            raise HTTPException(403, "Private repository consent required") from None
 
     if not repo.full_name or len(repo.full_name.split("/")) != 2:
         raise HTTPException(422, "Invalid repository full name")

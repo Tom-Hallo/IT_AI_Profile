@@ -1,6 +1,8 @@
 """Redis services for GitHub OAuth state and application sessions."""
 
+import logging
 import secrets
+from datetime import UTC, datetime
 
 from cryptography.fernet import InvalidToken
 from redis import Redis
@@ -14,6 +16,8 @@ from app.modules.auth.github import GitHubIdentity
 from app.modules.auth.models import OAuthAccount
 from app.modules.users.models import User
 
+logger = logging.getLogger(__name__)
+
 # OAuth state tồn tại 5 phút.
 OAUTH_STATE_TTL_SECONDS = 300
 
@@ -21,6 +25,7 @@ OAUTH_STATE_TTL_SECONDS = 300
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 
 OAUTH_STATE_PREFIX = "ita:auth:oauth:github:state:"
+OAUTH_ACCESS_MODE_PREFIX = "ita:auth:oauth:github:access_mode:"
 SESSION_PREFIX = "ita:auth:session:"
 
 
@@ -29,7 +34,7 @@ def _get_redis() -> Redis:
     return get_redis_connection()
 
 
-def create_oauth_state(browser_binding: str) -> str:
+def create_oauth_state(browser_binding: str, access_mode: str | None = None) -> str:
     """Tạo OAuth state và liên kết với trình duyệt khởi tạo đăng nhập."""
     if not browser_binding:
         raise ValueError("browser_binding không được rỗng")
@@ -41,6 +46,13 @@ def create_oauth_state(browser_binding: str) -> str:
         browser_binding,
         ex=OAUTH_STATE_TTL_SECONDS,
     )
+
+    if access_mode in ("public_only", "private_enabled"):
+        _get_redis().set(
+            f"{OAUTH_ACCESS_MODE_PREFIX}{state}",
+            access_mode,
+            ex=OAUTH_STATE_TTL_SECONDS,
+        )
 
     return state
 
@@ -59,6 +71,21 @@ def consume_oauth_state(state: str, browser_binding: str) -> bool:
         result = result.decode("utf-8")
 
     return secrets.compare_digest(result, browser_binding)
+
+
+def consume_oauth_access_mode(state: str) -> str:
+    """Tiêu thụ access_mode một lần từ Redis; mặc định là 'public_only'."""
+    if not state:
+        return "public_only"
+
+    result = _get_redis().getdel(f"{OAUTH_ACCESS_MODE_PREFIX}{state}")
+    if result is None:
+        return "public_only"
+
+    if isinstance(result, bytes):
+        result = result.decode("utf-8")
+
+    return result if result in ("public_only", "private_enabled") else "public_only"
 
 
 def create_session(user_id: int) -> str:
@@ -109,11 +136,13 @@ def _update_github_oauth_token(
     db: Session,
     oauth_account: OAuthAccount,
     identity: GitHubIdentity,
+    access_mode: str = "public_only",
 ) -> None:
     """
     Cập nhật GitHub OAuth token an toàn.
 
     - Mã hóa token trước khi lưu.
+    - Cập nhật access_mode độc lập với scope GitHub.
     - Rollback nếu mã hóa hoặc commit thất bại.
     - Không bỏ qua lỗi.
     - Không đưa token thật vào thông báo lỗi.
@@ -127,6 +156,11 @@ def _update_github_oauth_token(
 
         oauth_account.encrypted_access_token = encrypted_token
         oauth_account.scope = identity.scope
+        oauth_account.access_mode = (
+            access_mode
+            if access_mode in ("public_only", "private_enabled")
+            else "public_only"
+        )
         oauth_account.token_updated_at = func.now()
 
         db.commit()
@@ -139,6 +173,7 @@ def _update_github_oauth_token(
 def get_or_create_github_user(
     db: Session,
     identity: GitHubIdentity,
+    access_mode: str = "public_only",
 ) -> User:
     """
     Tìm hoặc tạo User từ danh tính GitHub đã xác minh.
@@ -146,6 +181,7 @@ def get_or_create_github_user(
     Security:
     - Không tự động liên kết email đã thuộc tài khoản khác.
     - Mã hóa GitHub access token trước khi lưu.
+    - Lưu access_mode do người dùng chọn ('public_only' hoặc 'private_enabled').
     - Không bỏ qua lỗi mã hóa hoặc database.
     - Rollback khi transaction thất bại.
     - Xử lý race condition khi tạo OAuth account.
@@ -185,6 +221,7 @@ def get_or_create_github_user(
             db=db,
             oauth_account=oauth_account,
             identity=identity,
+            access_mode=access_mode,
         )
 
         return oauth_account.user
@@ -231,6 +268,11 @@ def get_or_create_github_user(
             provider_user_id=identity.provider_user_id,
             encrypted_access_token=encrypted_token,
             scope=identity.scope,
+            access_mode=(
+                access_mode
+                if access_mode in ("public_only", "private_enabled")
+                else "public_only"
+            ),
             token_updated_at=(func.now() if encrypted_token else None),
         )
 
@@ -264,6 +306,7 @@ def get_or_create_github_user(
                 db=db,
                 oauth_account=oauth_account,
                 identity=identity,
+                access_mode=access_mode,
             )
 
             return oauth_account.user
@@ -279,6 +322,39 @@ def get_or_create_github_user(
     except Exception:
         db.rollback()
         raise
+
+
+def has_repo_scope(scope_str: str | None) -> bool:
+    """Kiểm tra xem chuỗi scope trả về từ GitHub có chứa scope 'repo' hay không."""
+    if not scope_str:
+        return False
+    scopes = {s.strip() for s in scope_str.replace(",", " ").split() if s.strip()}
+    return "repo" in scopes
+
+
+def has_private_access(db: Session, user_id: int) -> bool:
+    """Xác thực người dùng có quyền truy cập private repository hay không.
+
+    Fail-closed policy:
+    1. OAuthAccount tồn tại với provider='github'.
+    2. Token mã hóa tồn tại (người dùng đang liên kết GitHub).
+    3. Ứng dụng được cấp quyền truy cập private (access_mode == 'private_enabled').
+    4. Token thực tế từ GitHub có chứa scope 'repo'.
+    """
+    stmt = select(OAuthAccount).where(
+        OAuthAccount.user_id == user_id,
+        OAuthAccount.provider == "github",
+    )
+    account = db.scalar(stmt)
+    if (
+        not account
+        or not hasattr(account, "encrypted_access_token")
+        or not account.encrypted_access_token
+    ):
+        return False
+    if getattr(account, "access_mode", "public_only") != "private_enabled":
+        return False
+    return has_repo_scope(getattr(account, "scope", None))
 
 
 def get_user_github_token(
@@ -303,7 +379,7 @@ def get_user_github_token(
 
 
 def disconnect_github(db: Session, user_id: int) -> bool:
-    """Xóa token và hủy liên kết GitHub của người dùng."""
+    """Xóa token, hủy liên kết GitHub, reset access_mode và thu hồi quyền riêng tư."""
     stmt = select(OAuthAccount).where(
         OAuthAccount.user_id == user_id,
         OAuthAccount.provider == "github",
@@ -312,8 +388,70 @@ def disconnect_github(db: Session, user_id: int) -> bool:
     if not account:
         return False
 
-    account.encrypted_access_token = None
-    account.scope = None
-    account.token_updated_at = None
-    db.commit()
+    now_utc = datetime.now(UTC)
+    try:
+        account.encrypted_access_token = None
+        account.scope = None
+        account.token_updated_at = None
+        account.access_mode = "public_only"
+
+        # 1. Thu hồi các bản ghi PrivateConsent đang hoạt động của người dùng
+        from app.modules.consent.models import PrivateConsent
+
+        consents = db.scalars(
+            select(PrivateConsent)
+            .where(
+                PrivateConsent.user_id == user_id,
+                PrivateConsent.revoked_at.is_(None),
+            )
+            .with_for_update()
+        ).all()
+        for c in consents:
+            c.granted = False
+            c.revoked_at = now_utc
+
+        # 2. Yêu cầu hủy các tiến trình phân tích repo riêng tư đang hoạt động
+        from app.modules.analysis.models import ACTIVE, AnalysisJob
+        from app.modules.github.models import Repository
+
+        active_jobs = db.scalars(
+            select(AnalysisJob)
+            .join(Repository, AnalysisJob.repo_id == Repository.id)
+            .where(
+                AnalysisJob.user_id == user_id,
+                AnalysisJob.status.in_(ACTIVE),
+                Repository.private.is_(True),
+            )
+            .with_for_update()
+        ).all()
+        for aj in active_jobs:
+            aj.status = "cancel_requested"
+
+        # Thực hiện commit nguyên tử cho tất cả thay đổi trên cơ sở dữ liệu
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "Lỗi giao dịch khi ngắt kết nối GitHub cho user %s: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
+        raise
+
+    # 3. Xóa cache trạng thái sync trên Redis (best-effort)
+    try:
+        redis = _get_redis()
+        redis.delete(f"ita:github:sync:{user_id}")
+    except Exception as exc:
+        logger.warning("Lỗi xóa cache sync khi ngắt kết nối GitHub: %s", exc)
+
+    # 4. Xóa in-memory analysis cache cho các repo của user (best-effort)
+    try:
+        from app.modules.analysis.service import clear_user_analysis_cache
+
+        clear_user_analysis_cache(db, user_id)
+    except Exception as exc:
+        logger.warning("Lỗi xóa analysis cache khi ngắt kết nối GitHub: %s", exc)
+
     return True

@@ -116,6 +116,15 @@ async def test_sync_user_with_zero_repositories(
 async def test_sync_user_with_repositories_and_languages(
     in_memory_db: Session, sample_user: User
 ):
+    # Cấu hình user có quyền private hợp lệ để test sync cả public và private repo
+    oauth = in_memory_db.scalars(
+        select(OAuthAccount).where(OAuthAccount.user_id == sample_user.id)
+    ).first()
+    assert oauth is not None
+    oauth.access_mode = "private_enabled"
+    oauth.scope = "read:user user:email repo"
+    in_memory_db.commit()
+
     fake_repos = [
         {
             "id": 1001,
@@ -207,6 +216,94 @@ async def test_sync_user_with_repositories_and_languages(
     pivots = in_memory_db.execute(select(user_repository)).all()
     assert len(pivots) == 2
     assert all(p.user_id == sample_user.id for p in pivots)
+
+
+@pytest.mark.anyio
+async def test_sync_with_injected_client_in_public_only_mode_drops_private_repos(
+    in_memory_db: Session, sample_user: User
+):
+    """Đảm bảo injected client không thể bypass public_only mode.
+
+    Private repos trả về từ mock client phải bị loại bỏ và không được lưu DB.
+    """
+    oauth = in_memory_db.scalars(
+        select(OAuthAccount).where(OAuthAccount.user_id == sample_user.id)
+    ).first()
+    assert oauth is not None
+    oauth.access_mode = "public_only"
+    oauth.scope = "read:user user:email"
+    in_memory_db.commit()
+
+    fake_repos = [
+        {
+            "id": 3001,
+            "name": "public-repo",
+            "full_name": "developer/public-repo",
+            "html_url": "https://github.com/developer/public-repo",
+            "description": "Public repo description",
+            "private": False,
+            "default_branch": "main",
+            "fork": False,
+            "language": "Python",
+            "stargazers_count": 5,
+            "forks_count": 1,
+            "open_issues_count": 0,
+            "size": 512,
+            "archived": False,
+            "disabled": False,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-11-01T00:00:00Z",
+            "pushed_at": "2026-11-08T00:00:00Z",
+            "owner": {"login": "developer"},
+        },
+        {
+            "id": 3002,
+            "name": "private-secret-repo",
+            "full_name": "developer/private-secret-repo",
+            "html_url": "https://github.com/developer/private-secret-repo",
+            "description": "Private secret repo",
+            "private": True,
+            "default_branch": "main",
+            "fork": False,
+            "language": "TypeScript",
+            "stargazers_count": 0,
+            "forks_count": 0,
+            "open_issues_count": 0,
+            "size": 1024,
+            "archived": False,
+            "disabled": False,
+            "created_at": "2026-02-01T00:00:00Z",
+            "updated_at": "2026-11-01T00:00:00Z",
+            "pushed_at": "2026-11-08T00:00:00Z",
+            "owner": {"login": "developer"},
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "/languages" in url_str:
+            return httpx.Response(200, json={"Python": 1000})
+        return httpx.Response(200, json=fake_repos)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    result = await sync_repositories_for_user(in_memory_db, sample_user, client=client)
+
+    assert result["status"] == "completed"
+    assert result["synced_count"] == 1
+
+    # Kiểm tra DB: chỉ public-repo được lưu, không lưu private-secret-repo
+    repos = in_memory_db.scalars(select(Repository)).all()
+    assert len(repos) == 1
+    assert repos[0].external_id == "3001"
+    assert repos[0].name == "public-repo"
+    assert repos[0].private is False
+
+    # Pivot table cũng chỉ trỏ tới public-repo
+    pivots = in_memory_db.execute(select(user_repository)).all()
+    assert len(pivots) == 1
+    assert pivots[0].repository_id == repos[0].id
 
 
 @pytest.mark.anyio

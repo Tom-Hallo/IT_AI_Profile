@@ -38,6 +38,7 @@ user_repository = Table(
         BigInteger,
         ForeignKey("ita.users.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
     sa.Column(
         "repository_id",

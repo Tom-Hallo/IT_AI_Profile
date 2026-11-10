@@ -97,8 +97,11 @@ def test_private_repository_with_valid_permission():
 
 
 @pytest.mark.anyio
-async def test_scope_mismatch_raises_400():
+async def test_scope_mismatch_raises_400(monkeypatch):
     """Requirement 5.15: Scope propagation and validation."""
+    monkeypatch.setattr(
+        "app.modules.analysis.service.has_private_access", lambda _db, _uid: True
+    )
     mock_db = MagicMock()
     public_repo = _create_mock_repo(repo_id=1, private=False)
     private_repo = _create_mock_repo(repo_id=2, private=True)
@@ -414,3 +417,191 @@ def test_get_latest_analysis_loads_from_database_on_cache_miss():
     assert res["evidence"][0]["classification"] == "Python"
     # Cached for subsequent calls
     assert (99, mock_report.commit_sha) in _ANALYSIS_CACHE
+
+
+# --------------------------------------------------------------------------
+# Regression Tests: Scenario Verification & Validation Rules
+# --------------------------------------------------------------------------
+
+
+def test_regression_scenario_without_and_with_time_range(monkeypatch):
+    """Verify analysis request handling with and without PBI-010 time-range
+    filtering.
+    """
+    app = create_app()
+    user = _create_mock_user(user_id=1)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_session] = lambda: MagicMock()
+
+    from app.modules.analysis import router as analysis_router_mod
+
+    mock_analyze = AsyncMock(
+        return_value={
+            "repository_id": 1,
+            "commit_sha": "1234567890abcdef1234567890abcdef12345678",
+            "analyzed_at": "2026-11-10T00:00:00+00:00",
+            "scope": "all",
+            "time_range": {
+                "start_utc": "2026-11-08T17:00:00+00:00",
+                "end_utc": "2026-11-10T17:00:00+00:00",
+                "timezone": "Asia/Ho_Chi_Minh",
+            },
+            "structure": {"total_files": 10, "inspected_files": 5, "ignored_files": 5},
+            "languages": [],
+            "frameworks": [],
+            "architecture": [],
+            "evidence": [],
+            "budget": {
+                "inspected_files": 5,
+                "inspected_bytes": 500,
+                "skipped_oversized_files": 0,
+                "limit_reached": False,
+            },
+        }
+    )
+    monkeypatch.setattr(analysis_router_mod, "analyze_repository", mock_analyze)
+
+    with TestClient(app) as client:
+        # 1. Without time-range filtering
+        res_no_timerange = client.post(
+            "/api/v1/repositories/1/analyze",
+            json={"scope": "all", "branch": "master"},
+        )
+        assert res_no_timerange.status_code == 200
+
+        # 2. With valid PBI-010 time-range filtering (Current Scenario)
+        scenario_payload = {
+            "branch": "master",
+            "scope": "all",
+            "mode": "custom",
+            "start_date": "2026-11-09",
+            "end_date": "2026-11-10",
+            "timezone": "Asia/Ho_Chi_Minh",
+        }
+        res_with_timerange = client.post(
+            "/api/v1/repositories/1/analyze",
+            json=scenario_payload,
+        )
+        assert res_with_timerange.status_code == 200
+        call_req = mock_analyze.call_args.kwargs["request"]
+        assert call_req.branch == "master"
+        assert call_req.scope == "all"
+        assert call_req.mode == "custom"
+        assert call_req.timezone == "Asia/Ho_Chi_Minh"
+
+        # 3. Normalized scope "All code in repo"
+        res_normalized_scope = client.post(
+            "/api/v1/repositories/1/analyze",
+            json={"scope": "All code in repo", "branch": "master"},
+        )
+        assert res_normalized_scope.status_code == 200
+
+        # 4. Invalid scope value returns 422
+        res_invalid_scope = client.post(
+            "/api/v1/repositories/1/analyze",
+            json={"scope": "unsupported_scope"},
+        )
+        assert res_invalid_scope.status_code == 422
+        assert "scope" in res_invalid_scope.text
+
+        # 5. Invalid date range (start_date > end_date) returns 422
+        monkeypatch.setattr(
+            analysis_router_mod,
+            "analyze_repository",
+            analyze_repository,  # call real service function
+        )
+        # Mock repository access and token for service call
+        mock_db = MagicMock()
+        mock_repo = _create_mock_repo(repo_id=1, private=False)
+        mock_db.scalar.return_value = mock_repo
+        app.dependency_overrides[get_session] = lambda: mock_db
+        monkeypatch.setattr(
+            "app.modules.analysis.service.get_user_github_token",
+            lambda _db, _uid: ("fake_token", "read:user"),
+        )
+
+        res_invalid_date = client.post(
+            "/api/v1/repositories/1/analyze",
+            json={
+                "scope": "all",
+                "mode": "custom",
+                "start_date": "2026-11-10",
+                "end_date": "2026-11-09",
+                "timezone": "Asia/Ho_Chi_Minh",
+            },
+        )
+        assert res_invalid_date.status_code == 422
+        assert "Invalid date range" in res_invalid_date.text
+
+        # 6. Invalid timezone returns 422
+        res_invalid_tz = client.post(
+            "/api/v1/repositories/1/analyze",
+            json={
+                "scope": "all",
+                "mode": "preset",
+                "preset": "1m",
+                "timezone": "Invalid/Timezone_Name",
+            },
+        )
+        assert res_invalid_tz.status_code == 422
+        assert "Invalid IANA timezone" in res_invalid_tz.text
+
+
+def test_regression_background_jobs_scenario(monkeypatch):
+    """Verify background job creation with scenario parameters."""
+    app = create_app()
+    user = _create_mock_user(user_id=1)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_session] = lambda: MagicMock()
+
+    from app.modules.analysis import router as analysis_router_mod
+
+    fake_job = MagicMock()
+    fake_job.id = "11111111-2222-3333-4444-555555555555"
+    fake_job.repo_id = 1
+    fake_job.scope = "full"
+    fake_job.status = "queued"
+    fake_job.progress = 0
+    fake_job.step = "queued"
+    fake_job.error_code = None
+    fake_job.retry_of = None
+
+    monkeypatch.setattr(
+        analysis_router_mod.service,
+        "create",
+        MagicMock(return_value=(fake_job, True)),
+    )
+    monkeypatch.setattr(analysis_router_mod, "dispatch", MagicMock())
+
+    with TestClient(app) as client:
+        # Background job with repo_id and normalized scope
+        res_job = client.post(
+            "/api/v1/analysis/jobs",
+            headers={"Origin": "http://localhost:5173"},
+            json={
+                "repo_id": 1,
+                "scope": "all",
+                "branch": "master",
+                "mode": "custom",
+                "start_date": "2026-11-09",
+                "end_date": "2026-11-10",
+                "timezone": "Asia/Ho_Chi_Minh",
+            },
+        )
+        assert res_job.status_code == 202
+
+        # Background job with repository_id alias
+        res_alias = client.post(
+            "/api/v1/analysis/jobs",
+            headers={"Origin": "http://localhost:5173"},
+            json={"repository_id": 1, "scope": "full"},
+        )
+        assert res_alias.status_code == 202
+
+        # Background job without repo identifier returns 422
+        res_missing_repo = client.post(
+            "/api/v1/analysis/jobs",
+            headers={"Origin": "http://localhost:5173"},
+            json={"scope": "full"},
+        )
+        assert res_missing_repo.status_code == 422

@@ -212,6 +212,21 @@ async def test_sync_large_repository_count_concurrent(
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = GitHubApiClient("test-token", client=mock_client)
 
+    oauth_account = in_memory_db.scalar(
+        select(OAuthAccount).where(OAuthAccount.user_id == sample_user.id)
+    )
+    assert oauth_account is not None
+
+    oauth_account.access_mode = "private_enabled"
+    oauth_account.scope = "read:user user:email repo"
+    in_memory_db.commit()
+
+    from app.modules.auth.service import has_private_access
+
+    assert has_private_access(in_memory_db, sample_user.id), (
+        "Test account must have explicit private repository consent"
+    )
+
     result = await sync_repositories_for_user(in_memory_db, sample_user, client=client)
 
     assert result["status"] == "completed"

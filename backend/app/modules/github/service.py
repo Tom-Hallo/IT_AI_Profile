@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.redis import get_redis_connection
 from app.modules.analysis.evidence import UTC
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -111,11 +111,12 @@ def set_sync_status_cache(
 
 def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
     """Lấy trạng thái tổng hợp của tiến trình đồng bộ GitHub cho user."""
-    token, scope = get_user_github_token(db, user_id)
+    token, _ = get_user_github_token(db, user_id)
     is_connected = token is not None
-    has_private_scope = bool(scope and "repo" in scope)
+    can_access_private = has_private_access(db, user_id)
+    has_private_scope = can_access_private
 
-    # Đếm số repositories hiện có trong DB của user
+    # Đếm số repositories hiện có trong DB của user thuộc phạm vi được cấp phép
     count_stmt = (
         select(func.count(Repository.id))
         .select_from(Repository)
@@ -125,6 +126,9 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
         )
         .where(user_repository.c.user_id == user_id)
     )
+    if not can_access_private:
+        count_stmt = count_stmt.where(Repository.private.is_(False))
+
     total_repos = db.scalar(count_stmt) or 0
 
     # Lấy thời điểm đồng bộ gần nhất từ DB
@@ -137,6 +141,9 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
         )
         .where(user_repository.c.user_id == user_id)
     )
+    if not can_access_private:
+        max_sync_stmt = max_sync_stmt.where(Repository.private.is_(False))
+
     last_synced_dt: datetime | None = db.scalar(max_sync_stmt)
     last_synced_at = last_synced_dt.isoformat() if last_synced_dt else None
 
@@ -233,7 +240,17 @@ async def _sync_repositories_for_user_impl(
     set_sync_status_cache(user.id, status="running")
 
     try:
-        repos_data = await client.list_repositories()
+        can_access_private = has_private_access(db, user.id)
+        if can_access_private:
+            repos_data = await client.list_repositories()
+        else:
+            try:
+                repos_data = await client.list_repositories(visibility="public")
+            except TypeError:
+                repos_data = await client.list_repositories()
+            repos_data = [
+                r for r in repos_data if not (isinstance(r, dict) and r.get("private"))
+            ]
         sync_timestamp = datetime.now(UTC)
 
         # 1. Deduplicate theo external_id
