@@ -26,6 +26,12 @@ def client(monkeypatch):
 
     monkeypatch.setattr(auth_router, "settings", fake_settings)
 
+    monkeypatch.setattr(
+        auth_router,
+        "consume_oauth_access_mode",
+        lambda state: "public_only",
+    )
+
     app = FastAPI()
     app.include_router(auth_router.router, prefix="/api/v1")
     app.dependency_overrides[get_session] = lambda: object()
