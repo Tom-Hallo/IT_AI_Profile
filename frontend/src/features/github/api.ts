@@ -6,8 +6,10 @@ import type {
   RepositoryAnalysisResult,
   RepositoryListResponse,
   RepositoryQueryParams,
+  RepositoryVerificationResult,
   SyncStatusResponse,
   SyncTriggerResponse,
+  VerificationEvidenceListResult,
 } from './types'
 
 /**
@@ -165,5 +167,71 @@ export function retryAnalysisJob(jobId: string): Promise<AnalysisJobInfo> {
   return apiFetch<AnalysisJobInfo>(`/analysis/jobs/${jobId}/retry`, {
     method: 'POST',
   })
+}
+
+/**
+ * PBI-013: Lấy kết quả xác minh fork, ownership và đóng góp thực tế gần nhất.
+ */
+export function fetchRepositoryVerification(
+  repoId: number,
+  signal?: AbortSignal,
+): Promise<RepositoryVerificationResult> {
+  return apiFetch<RepositoryVerificationResult>(`/repositories/${repoId}/verification`, { signal })
+}
+
+/**
+ * PBI-013: Kích hoạt / làm mới xác minh fork, ownership & đóng góp từ GitHub API.
+ */
+export function triggerRepositoryVerification(
+  repoId: number,
+  payload: {
+    branch?: string
+    mode?: string
+    preset?: string
+    month?: string
+    year?: string | number
+    start_date?: string
+    end_date?: string
+    timezone?: string
+    force_refresh?: boolean
+  } = {},
+  signal?: AbortSignal,
+): Promise<RepositoryVerificationResult> {
+  return apiFetch<RepositoryVerificationResult>(`/repositories/${repoId}/verification`, {
+    method: 'POST',
+    body: payload,
+    signal,
+    timeoutMs: 60000,
+  })
+}
+
+/**
+ * PBI-013: Truy xuất danh sách bằng chứng xác minh phân trang và lọc theo trạng thái/loại.
+ */
+export function fetchVerificationEvidence(
+  repoId: number,
+  params: {
+    verification_status?: string
+    evidence_type?: string
+    page?: number
+    per_page?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<VerificationEvidenceListResult> {
+  const query = new URLSearchParams()
+  if (params.verification_status && params.verification_status !== 'all') {
+    query.set('verification_status', params.verification_status)
+  }
+  if (params.evidence_type && params.evidence_type !== 'all') {
+    query.set('evidence_type', params.evidence_type)
+  }
+  if (params.page !== undefined) query.set('page', String(params.page))
+  if (params.per_page !== undefined) query.set('per_page', String(params.per_page))
+
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return apiFetch<VerificationEvidenceListResult>(
+    `/repositories/${repoId}/verification/evidence${qs}`,
+    { signal },
+  )
 }
 

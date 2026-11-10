@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -160,5 +161,161 @@ class AnalysisEvidence(Base):
     scope: Mapped[str] = mapped_column(String(40), nullable=False, default="all")
     time_range: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RepositoryVerification(Base):
+    """Xác minh fork, ownership & đóng góp thực tế của developer (PBI-013)."""
+
+    __tablename__ = "repository_verifications"
+    __table_args__ = (
+        Index("ix_repo_verif_repo_user", "repository_id", "user_id"),
+        {"schema": "ita"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    repository_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ita.analysis_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.analysis_reports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Provenance
+    provenance_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="original"
+    )
+    ownership_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="owner"
+    )
+    is_fork: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    parent_repo_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_repo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    parent_metadata_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="none"
+    )
+
+    # Verification status
+    verification_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="unknown"
+    )
+    coverage_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="complete"
+    )
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="high")
+
+    # Metrics
+    verified_commits_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    unverified_commits_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    verified_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unverified_prs_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    verified_additions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    verified_deletions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    time_range: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    summary_data: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class VerificationEvidence(Base):
+    """Bằng chứng xác thực đóng góp commit / PR / provenance (PBI-013)."""
+
+    __tablename__ = "verification_evidence"
+    __table_args__ = (
+        Index("ix_verif_ev_verif_id", "verification_id"),
+        Index("ix_verif_ev_target", "repository_id", "target_identifier"),
+        {"schema": "ita"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    verification_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.repository_verifications.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    repository_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    evidence_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actor_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    html_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title_or_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_merge: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_fork_inherited: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    additions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deletions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pr_state: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    pr_merged: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    source_repo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    target_repo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

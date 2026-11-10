@@ -1366,3 +1366,117 @@ def test_worker_revocation_race_job_cancelled_before_persistence(
         select(AnalysisReport).where(AnalysisReport.repository_id == private_repo.id)
     )
     assert report is None
+
+
+def test_f07_report_verification_evidence_rollback_together(
+    in_memory_db: Session,
+    test_user: User,
+    setup_user_repositories,
+    monkeypatch,
+):
+    """Rollback phải xóa cả report, verification và evidence chưa commit."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.session import session_scope
+    from app.modules.analysis.models import (
+        AnalysisReport,
+        RepositoryVerification,
+        VerificationEvidence,
+    )
+    from app.modules.analysis.service import (
+        _ANALYSIS_CACHE,
+        save_analysis_result,
+    )
+
+    public_repo, _ = setup_user_repositories
+    commit_sha = "f" * 40
+
+    # Dùng session thật, có commit/rollback.
+    test_session_factory = sessionmaker(
+        bind=in_memory_db.get_bind(),
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr(
+        "app.db.session.SessionLocal",
+        test_session_factory,
+    )
+
+    result = {
+        "repository_id": public_repo.id,
+        "commit_sha": commit_sha,
+        "scope": "all",
+        "structure": {},
+        "languages": [],
+        "frameworks": [],
+        "architecture": [],
+        "budget": {},
+        "evidence": [],
+    }
+
+    with pytest.raises(RuntimeError, match="forced rollback"):
+        with session_scope() as db:
+            report = save_analysis_result(
+                db,
+                result,
+                commit=False,
+            )
+
+            assert report is not None
+            assert report.id is not None
+
+            verification = RepositoryVerification(
+                repository_id=public_repo.id,
+                user_id=test_user.id,
+                report_id=report.id,
+                verification_status="unknown",
+                coverage_status="partial",
+                confidence="uncertain",
+            )
+            db.add(verification)
+            db.flush()
+
+            evidence = VerificationEvidence(
+                verification_id=verification.id,
+                repository_id=public_repo.id,
+                user_id=test_user.id,
+                evidence_type="commit",
+                target_identifier=commit_sha,
+                verification_status="unknown",
+                rationale="Test rollback",
+            )
+            db.add(evidence)
+            db.flush()
+
+            # Giả lập lỗi trước khi transaction commit.
+            raise RuntimeError("forced rollback")
+
+    with session_scope() as db:
+        assert (
+            db.scalar(
+                select(AnalysisReport).where(AnalysisReport.commit_sha == commit_sha)
+            )
+            is None
+        )
+
+        assert (
+            db.scalar(
+                select(RepositoryVerification).where(
+                    RepositoryVerification.repository_id == public_repo.id
+                )
+            )
+            is None
+        )
+
+        assert (
+            db.scalar(
+                select(VerificationEvidence).where(
+                    VerificationEvidence.target_identifier == commit_sha
+                )
+            )
+            is None
+        )
+
+    # Report thất bại cũng không được xuất hiện trong cache.
+    assert not any(
+        key[0] == public_repo.id and key[1] == commit_sha for key in _ANALYSIS_CACHE
+    )

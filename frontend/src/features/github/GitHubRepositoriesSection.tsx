@@ -350,7 +350,16 @@ function RepositoryCard({ repo }: { repo: Repository }) {
           ) : (
             <span className="badge-pill badge-pill--public">Public</span>
           )}
-          {repo.is_fork && <span className="badge-pill badge-pill--fork">Fork</span>}
+          {repo.is_fork ? (
+            <span className="badge-pill badge-pill--fork">Fork</span>
+          ) : (
+            <span
+              className="badge-pill badge-pill--original"
+              style={{ background: '#e0e7ff', color: '#3730a3' }}
+            >
+              Original
+            </span>
+          )}
           {repo.archived && <span className="badge-pill badge-pill--archived">Archived</span>}
           <span className="badge-pill badge-pill--branch">{repo.default_branch}</span>
         </div>
@@ -468,6 +477,23 @@ function RepositoryCard({ repo }: { repo: Repository }) {
           }}
         >
           🔍 Mã nguồn & Kiến trúc (PBI-012) →
+        </Link>
+        <Link
+          to={`/repositories/${repo.id}/analysis?tab=verification`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            fontSize: '0.85rem',
+            borderRadius: 6,
+            background: '#8b5cf6',
+            color: '#ffffff',
+            textDecoration: 'none',
+            fontWeight: 500,
+          }}
+        >
+          🛡️ Xác minh Fork & Đóng góp (PBI-013) →
         </Link>
       </div>
     </article>

@@ -30,6 +30,7 @@ from app.modules.analysis.service import (
     get_analysis_evidence,
     get_latest_analysis,
 )
+from app.modules.analysis.verification_router import verification_router
 from app.modules.users.models import User
 from app.workers.enqueue import enqueue_task
 
@@ -303,3 +304,4 @@ def get_repository_evidence_records(
 router = APIRouter()
 router.include_router(jobs_router)
 router.include_router(repo_router)
+router.include_router(verification_router)
