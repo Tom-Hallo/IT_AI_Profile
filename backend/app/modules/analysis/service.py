@@ -451,6 +451,26 @@ async def analyze_repository(
             detail="Không thể lưu kết quả phân tích.",
         )
 
+    try:
+        from app.modules.analysis.verification_service import (
+            get_verification_summary,
+            verify_repository_contributions,
+        )
+
+        verif_res = await verify_repository_contributions(
+            db=db,
+            repository_id=repository_id,
+            user=user,
+            client=api_client if custom_source is None else None,
+            report_id=report.id,
+        )
+        if verif_res:
+            v_summary = get_verification_summary(db, repository_id, user)
+            if v_summary:
+                result["verification"] = v_summary.model_dump()
+    except Exception as ve:
+        logger.warning("Không thể thực hiện xác minh đóng góp đồng thời: %s", ve)
+
     return result
 
 
@@ -605,6 +625,16 @@ def get_latest_analysis(
                 "evidence_count": len(evidence_list),
                 "budget": report.budget,
             }
+            try:
+                from app.modules.analysis.verification_service import (
+                    get_verification_summary,
+                )
+
+                verif_summary = get_verification_summary(db, repository_id, user)
+                if verif_summary:
+                    result["verification"] = verif_summary.model_dump()
+            except Exception:
+                pass
             result["report_id"] = report.id
             _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
             return result

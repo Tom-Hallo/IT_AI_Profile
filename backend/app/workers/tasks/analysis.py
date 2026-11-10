@@ -183,6 +183,34 @@ def run_analysis(
         # 3. Chạy phân tích tĩnh mã nguồn, framework & kiến trúc (PBI-012)
         analysis_result = asyncio.run(_execute_inspection())
 
+        checkpoint(job_uuid, token, "verifying_fork_and_authorship", 75)
+
+        # 4. Xác minh fork, ownership & đóng góp thực tế (PBI-013)
+        if custom_source is None and access_token:
+            try:
+                from app.modules.analysis.verification_service import (
+                    verify_repository_contributions,
+                )
+                from app.modules.users.models import User
+
+                with session_scope() as verif_db:
+                    user_record = verif_db.scalar(
+                        select(User).where(User.id == user_id)
+                    )
+                    if user_record:
+                        asyncio.run(
+                            verify_repository_contributions(
+                                db=verif_db,
+                                repository_id=repo_id,
+                                user=user_record,
+                                job_id=str(job_uuid),
+                            )
+                        )
+            except Exception as ve:
+                logger.warning(
+                    "Xác minh đóng góp thất bại trong background job: %s", ve
+                )
+
         checkpoint(job_uuid, token, "finalizing_evidence", 85)
 
         # 4 & 5. Bảo toàn kết quả và cập nhật trạng thái trong một giao dịch nguyên tử

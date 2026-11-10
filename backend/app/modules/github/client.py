@@ -431,6 +431,141 @@ class GitHubApiClient:
         except GitHubNotFoundError:
             return []
 
+    async def get_authenticated_user(self) -> dict[str, Any]:
+        """Lấy thông tin tài khoản GitHub của token hiện tại."""
+        response = await self._request("GET", "/user")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise GitHubApiError("Thông tin tài khoản GitHub không hợp lệ.")
+        return data
+
+    async def list_commits(
+        self,
+        owner: str,
+        repo: str,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        sha: str | None = None,
+        per_page: int = 100,
+        max_pages: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách commit trong khoảng thời gian có hỗ trợ phân trang."""
+        params: dict[str, Any] = {
+            "per_page": min(per_page, 100),
+        }
+        if sha:
+            params["sha"] = sha
+        if since:
+            params["since"] = since.isoformat()
+        if until:
+            params["until"] = until.isoformat()
+
+        commits: list[dict[str, Any]] = []
+        seen_shas: set[str] = set()
+        url_or_endpoint: str | None = (
+            f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}/commits"
+        )
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            try:
+                response = await self._request("GET", url_or_endpoint, params=params)
+            except GitHubEmptyRepositoryError:
+                return []
+            except GitHubNotFoundError:
+                return []
+
+            data = response.json()
+            if not isinstance(data, list):
+                break
+
+            for item in data:
+                if isinstance(item, dict) and "sha" in item:
+                    item_sha = item["sha"]
+                    if item_sha not in seen_shas:
+                        seen_shas.add(item_sha)
+                        commits.append(item)
+
+            next_url = _parse_next_link(response.headers.get("link"))
+            if next_url:
+                url_or_endpoint = next_url
+                params = None
+            else:
+                break
+
+        return commits
+
+    async def get_commit_details(
+        self,
+        owner: str,
+        repo: str,
+        sha: str,
+    ) -> dict[str, Any]:
+        """Lấy chi tiết một commit bao gồm stats additions/deletions."""
+        safe_sha = quote(sha, safe="")
+        response = await self._request(
+            "GET",
+            f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}/commits/{safe_sha}",
+        )
+        data = response.json()
+        if not isinstance(data, dict):
+            raise GitHubApiError("Chi tiết commit không hợp lệ.")
+        return data
+
+    async def list_pull_requests(
+        self,
+        owner: str,
+        repo: str,
+        state: str = "all",
+        sort: str = "created",
+        direction: str = "desc",
+        per_page: int = 100,
+        max_pages: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách pull requests của repository có hỗ trợ phân trang."""
+        params: dict[str, Any] = {
+            "state": state,
+            "sort": sort,
+            "direction": direction,
+            "per_page": min(per_page, 100),
+        }
+        prs: list[dict[str, Any]] = []
+        seen_numbers: set[int] = set()
+        url_or_endpoint: str | None = (
+            f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}/pulls"
+        )
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            try:
+                response = await self._request("GET", url_or_endpoint, params=params)
+            except GitHubEmptyRepositoryError:
+                return []
+            except GitHubNotFoundError:
+                return []
+
+            data = response.json()
+            if not isinstance(data, list):
+                break
+
+            for item in data:
+                if isinstance(item, dict) and "number" in item:
+                    pr_num = item["number"]
+                    if pr_num not in seen_numbers:
+                        seen_numbers.add(pr_num)
+                        prs.append(item)
+
+            next_url = _parse_next_link(response.headers.get("link"))
+            if next_url:
+                url_or_endpoint = next_url
+                params = None
+            else:
+                break
+
+        return prs
+
     async def get_file_content(
         self,
         owner: str,
