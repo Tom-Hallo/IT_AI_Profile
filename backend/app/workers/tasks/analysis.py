@@ -105,15 +105,36 @@ def run_analysis(
                 raise PermissionError("Repository access revoked or token missing")
 
             # Kiểm tra quyền và sự đồng thuận đối với private repository
-            if repo.private and (not token_scope or "repo" not in token_scope):
-                raise PermissionError(
-                    "Private repository analysis requires 'repo' OAuth scope consent"
+            if repo.private:
+                from app.modules.auth.service import (
+                    has_private_access,
+                    has_repo_scope,
                 )
+
+                if not has_repo_scope(token_scope):
+                    raise PermissionError(
+                        "Private repository analysis requires "
+                        "'repo' OAuth scope consent"
+                    )
+                if not has_private_access(db, user_id):
+                    raise PermissionError("Private repository access is not authorized")
+                from app.modules.consent.guards import (
+                    require_private_access_consent,
+                )
+
+                try:
+                    require_private_access_consent(db, user_id, repo_id)
+                except Exception as ce:
+                    detail = getattr(ce, "detail", str(ce))
+                    raise PermissionError(
+                        f"Private repository consent check failed: {detail}"
+                    ) from ce
 
             repo_name = repo.name
             full_name = repo.full_name or repo.name
             default_branch = repo.default_branch or "main"
             repo_languages = dict(repo.languages) if repo.languages else {}
+            repo_is_private = bool(repo.private)
 
         checkpoint(job_uuid, token, "metadata_loaded", 25)
 
@@ -131,7 +152,9 @@ def run_analysis(
             if content_source is None:
                 client = GitHubApiClient(access_token=access_token)
                 latest_sha = await client.get_latest_commit_sha(
-                    owner=owner, repo=r_name, branch=default_branch
+                    owner=owner,
+                    repo=r_name,
+                    branch_or_ref=default_branch,
                 )
                 if latest_sha:
                     commit_sha = latest_sha
@@ -162,21 +185,45 @@ def run_analysis(
 
         checkpoint(job_uuid, token, "finalizing_evidence", 85)
 
-        # 4. Bảo toàn kết quả và bằng chứng xác thực trong DB & cache
+        # 4 & 5. Bảo toàn kết quả và cập nhật trạng thái trong một giao dịch nguyên tử
         with session_scope() as db:
-            save_analysis_result(db, analysis_result)
-
-        # 5. Cập nhật trạng thái thành công hoàn tất (succeeded)
-        with session_scope() as db:
+            # Khóa job record để đồng bộ hóa với disconnect/cancel đồng thời
             job = db.scalar(
                 select(AnalysisJob).where(AnalysisJob.id == job_uuid).with_for_update()
             )
-            if job and job.execution_token == token and job.status == "running":
-                job.status = "succeeded"
-                job.progress = 100
-                job.step = "completed"
-                job.finished_at = datetime.now(UTC)
-                event(db, job, "succeeded")
+            if job is None or job.execution_token != token:
+                raise Cancelled()
+            if job.status != "running":
+                if job.status == "cancel_requested":
+                    job.status = "cancelled"
+                    job.finished_at = datetime.now(UTC)
+                    event(db, job, "cancelled")
+                raise Cancelled()
+
+            # Tái xác thực quyền riêng tư và sự đồng thuận trước khi lưu kết quả
+            if repo_is_private:
+                from app.modules.auth.service import has_private_access
+                from app.modules.consent.guards import require_private_access_consent
+
+                if not has_private_access(db, user_id):
+                    raise PermissionError(
+                        "Private repository access was revoked during analysis"
+                    )
+                try:
+                    require_private_access_consent(db, user_id, repo_id)
+                except Exception as ce:
+                    detail = getattr(ce, "detail", str(ce))
+                    raise PermissionError(
+                        f"Private repository consent revoked: {detail}"
+                    ) from ce
+
+            save_analysis_result(db, analysis_result)
+
+            job.status = "succeeded"
+            job.progress = 100
+            job.step = "completed"
+            job.finished_at = datetime.now(UTC)
+            event(db, job, "succeeded")
 
         return analysis_result
 
@@ -201,3 +248,30 @@ def run_analysis(
                 job.finished_at = datetime.now(UTC)
                 event(db, job, job.status)
         raise
+    finally:
+        try:
+            from app.modules.consent.cleanup import purge_job_directory
+
+            purge_job_directory(job_uuid)
+        except Exception as exc:
+            logger.error(
+                "Lỗi dọn dẹp thư mục tạm của job %s: %s",
+                job_uuid,
+                exc,
+                exc_info=True,
+            )
+            try:
+                from app.modules.consent.cleanup_service import request_cleanup
+
+                with session_scope() as db:
+                    failed_job = db.scalar(
+                        select(AnalysisJob).where(AnalysisJob.id == job_uuid)
+                    )
+                    if failed_job:
+                        request_cleanup(db, failed_job, reason="cleanup_error")
+            except Exception as outbox_exc:
+                logger.error(
+                    "Không thể ghi outbox cleanup cho job %s: %s",
+                    job_uuid,
+                    outbox_exc,
+                )

@@ -92,6 +92,7 @@ def sample_user(in_memory_db: Session) -> User:
         provider_user_id="999888",
         encrypted_access_token=encrypt_token("gho_test_valid_token"),
         scope="read:user user:email repo",
+        access_mode="private_enabled",
     )
     in_memory_db.add(oauth_account)
     in_memory_db.commit()
@@ -220,6 +221,68 @@ async def test_sync_large_repository_count_concurrent(
 
     db_repos = in_memory_db.scalars(select(Repository)).all()
     assert len(db_repos) == num_repos
+
+
+# ---------------------------------------------------------------------------
+# Test 2b: Large repository count under public_only mode filters private repos
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_sync_large_repository_count_public_only_filters_private(
+    in_memory_db: Session, sample_user: User, fake_sync_redis
+):
+    # Set user to public_only mode
+    oauth = in_memory_db.scalars(
+        select(OAuthAccount).where(OAuthAccount.user_id == sample_user.id)
+    ).first()
+    assert oauth is not None
+    oauth.access_mode = "public_only"
+    in_memory_db.commit()
+
+    num_repos = 110
+    repos_payload = []
+    for i in range(1, num_repos + 1):
+        repos_payload.append(
+            {
+                "id": 5000 + i,
+                "name": f"pub-only-repo-{i}",
+                "full_name": f"dev/pub-only-repo-{i}",
+                "html_url": f"https://github.com/dev/pub-only-repo-{i}",
+                "description": f"Repo description {i}",
+                "private": (i % 2 == 0),
+                "default_branch": "main",
+                "fork": False,
+                "language": "TypeScript" if i % 2 == 0 else "Python",
+                "size": 100 * i,
+                "pushed_at": "2026-11-05T00:00:00Z",
+                "owner": {"login": "dev"},
+            }
+        )
+
+    language_fetch_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal language_fetch_count
+        url = str(request.url)
+        if "/languages" in url:
+            language_fetch_count += 1
+            return httpx.Response(200, json={"TypeScript": 2000, "JavaScript": 500})
+        return httpx.Response(200, json=repos_payload)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    result = await sync_repositories_for_user(in_memory_db, sample_user, client=client)
+
+    expected_public_count = num_repos // 2  # 55 public repos
+    assert result["status"] == "completed"
+    assert result["synced_count"] == expected_public_count
+    assert language_fetch_count == expected_public_count
+
+    db_repos = in_memory_db.scalars(
+        select(Repository).where(Repository.name.like("pub-only-repo-%"))
+    ).all()
+    assert len(db_repos) == expected_public_count
+    assert all(r.private is False for r in db_repos)
 
 
 # ---------------------------------------------------------------------------

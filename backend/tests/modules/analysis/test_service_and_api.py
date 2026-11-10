@@ -97,8 +97,11 @@ def test_private_repository_with_valid_permission():
 
 
 @pytest.mark.anyio
-async def test_scope_mismatch_raises_400():
+async def test_scope_mismatch_raises_400(monkeypatch):
     """Requirement 5.15: Scope propagation and validation."""
+    monkeypatch.setattr(
+        "app.modules.analysis.service.has_private_access", lambda _db, _uid: True
+    )
     mock_db = MagicMock()
     public_repo = _create_mock_repo(repo_id=1, private=False)
     private_repo = _create_mock_repo(repo_id=2, private=True)

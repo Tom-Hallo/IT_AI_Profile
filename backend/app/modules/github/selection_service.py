@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.modules.auth.service import get_user_github_token
+from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -33,10 +33,10 @@ def matches_scope(repo: RepoOption, scope: Scope) -> bool:
 
 
 def credentials(db: Session, user_id: int) -> tuple[str, bool]:
-    token, scopes = get_user_github_token(db, user_id)
+    token, _ = get_user_github_token(db, user_id)
     if not token:
         raise HTTPException(401, "Vui lòng kết nối lại tài khoản GitHub.")
-    return token, "repo" in set((scopes or "").replace(",", " ").split())
+    return token, has_private_access(db, user_id)
 
 
 async def fetch_options(token: str) -> list[RepoOption]:

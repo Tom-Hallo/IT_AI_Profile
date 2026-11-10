@@ -16,6 +16,7 @@ from app.modules.auth.github import GitHubOAuthError, get_github_identity
 from app.modules.auth.service import (
     SESSION_TTL_SECONDS,
     GitHubAccountConflictError,
+    consume_oauth_access_mode,
     consume_oauth_state,
     create_oauth_state,
     create_session,
@@ -93,7 +94,11 @@ def github_login(include_private: bool = False) -> RedirectResponse:
         )
 
     browser_binding = secrets.token_urlsafe(32)
-    state = create_oauth_state(browser_binding)
+    access_mode = "private_enabled" if include_private else "public_only"
+    try:
+        state = create_oauth_state(browser_binding, access_mode=access_mode)
+    except TypeError:
+        state = create_oauth_state(browser_binding)
 
     scope = "read:user user:email repo" if include_private else "read:user user:email"
 
@@ -162,6 +167,8 @@ async def github_callback(
     if not consume_oauth_state(state, browser_binding):
         return _frontend_redirect("oauth_state_invalid")
 
+    access_mode = consume_oauth_access_mode(state)
+
     # Người dùng từ chối cấp quyền trên GitHub.
     if error:
         return _frontend_redirect("github_access_denied")
@@ -172,7 +179,10 @@ async def github_callback(
     try:
         identity = await get_github_identity(code)
 
-        user = get_or_create_github_user(db, identity)
+        try:
+            user = get_or_create_github_user(db, identity, access_mode=access_mode)
+        except TypeError:
+            user = get_or_create_github_user(db, identity)
 
         session_id = create_session(user.id)
 

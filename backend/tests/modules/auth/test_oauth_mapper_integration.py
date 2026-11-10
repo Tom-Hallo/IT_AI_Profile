@@ -128,10 +128,12 @@ def isolated_db_session():
                 provider_user_id VARCHAR(255) NOT NULL,
                 encrypted_access_token TEXT,
                 scope VARCHAR(255),
+                access_mode VARCHAR(20) NOT NULL DEFAULT 'public_only',
                 token_updated_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT uq_user_oauth_accounts_provider_provider_user_id
-                    UNIQUE (provider, provider_user_id)            );
+                    UNIQUE (provider, provider_user_id)
+            );
             """
         )
 
@@ -205,6 +207,10 @@ def test_oauth_callback_and_auth_me_integration(
     monkeypatch.setattr("app.modules.auth.service._get_redis", lambda: mock_redis)
     monkeypatch.setattr(
         "app.modules.auth.router.consume_oauth_state", lambda s, b: True
+    )
+    monkeypatch.setattr(
+        "app.modules.auth.router.consume_oauth_access_mode",
+        lambda s: "public_only",
     )
 
     async def fake_identity(code):

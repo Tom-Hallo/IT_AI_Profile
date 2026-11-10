@@ -50,6 +50,13 @@ class OAuthAccount(Base):
 
     scope: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    access_mode: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="public_only",
+        server_default="public_only",
+    )
+
     token_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
