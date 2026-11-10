@@ -1,0 +1,13 @@
+.consent-manager{border:1px solid var(--border,#d9dce3);border-radius:24px;background:var(--surface,#fff);color:var(--text,#1d1d1f);padding:28px;box-shadow:0 12px 36px #0000000a;max-width:820px}
+.consent-manager header{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.consent-manager h2{font-size:1.25rem;margin:0}
+.consent-manager h3{font-size:1rem;margin:0 0 10px}
+.consent-manager p{font-size:.9rem;color:var(--muted,#6b7280);margin:5px 0}
+.consent-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#e0e7ff;color:#4f46e5;font-size:25px}
+.consent-item{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:19px 0;border-bottom:1px solid var(--border,#e5e7eb)}
+.consent-manager button{border:0;border-radius:12px;padding:11px 18px;background:#fee2e2;color:#991b1b;cursor:pointer;font-weight:600}
+.consent-manager button:disabled{opacity:.5;cursor:not-allowed}
+.consent-cleanups{margin-top:20px;padding-top:12px}
+.consent-cleanups button{background:var(--surface-secondary,#eef2ff);color:var(--text,#1d1d1f);margin-top:10px}
+.consent-error{color:#b91c1c!important}
+@media(max-width:600px){.consent-manager{padding:18px}.consent-item{align-items:flex-start;flex-direction:column}}

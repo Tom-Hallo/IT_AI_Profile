@@ -39,6 +39,7 @@ async def get_activity_analysis(
     start_date: date | None = None,
     end_date: date | None = None,
     timezone: str = "UTC",
+    scope: Literal["personal", "repository"] = Query("personal"),
 ):
     start, end = resolve_range(
         mode=mode,
@@ -49,4 +50,4 @@ async def get_activity_analysis(
         end_date=end_date,
         timezone_name=timezone,
     )
-    return await analyze(db, repository_id, user.id, start, end)
+    return await analyze(db, repository_id, user.id, start, end, scope=scope)

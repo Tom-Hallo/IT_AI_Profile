@@ -12,7 +12,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 SECRET_PASSWORD = "S3cr3t-Pa55word"
 
 
-# Các biến mà app đọc. Xóa khỏi môi trường tiến trình con để test không phụ thuộc máy chạy.
+# Các biến mà app đọc. Xóa khỏi môi trường tiến trình con để test không phụ thuộc máy
+# chạy.
 APP_VARS = (
     "APP_ENV",
     "DATABASE_URL",
@@ -23,6 +24,8 @@ APP_VARS = (
     "GITHUB_CLIENT_ID",
     "GITHUB_CLIENT_SECRET",
     "GITHUB_REDIRECT_URI",
+    "GITHUB_SYNC_TIMEOUT_SECONDS",
+    "GITHUB_API_CONCURRENCY",
 )
 
 
@@ -34,7 +37,8 @@ def _import_app_in_clean_env(env: dict[str, str]) -> subprocess.CompletedProcess
     """
     base = {k: v for k, v in os.environ.items() if k not in APP_VARS}
     base["PYTHONPATH"] = str(BACKEND_DIR)
-    # Windows mặc định dùng bảng mã cp1252 khi ghi ra pipe, làm tiếng Việt thành mã \\uXXXX.
+    # Windows mặc định dùng bảng mã cp1252 khi ghi ra pipe, làm tiếng Việt thành mã
+    # \\uXXXX.
     base["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", "import app.core.config"],
@@ -95,6 +99,8 @@ def _make(**overrides) -> Settings:
         "app_env": "test",
         "database_url": "postgresql+psycopg://u:p@h/d",
         "redis_url": "redis://h:6379/0",
+        "github_client_id": None,
+        "github_client_secret": None,
     }
     values.update(overrides)
     return Settings(**values)
@@ -119,6 +125,8 @@ def test_defaults():
     assert s.cors_origins == ["http://localhost:5173"]
     assert s.worker_queues == ["default"]
     assert s.log_level == "INFO"
+    assert s.github_sync_timeout_seconds == 300
+    assert s.github_api_concurrency == 8
 
 
 def test_secret_is_hidden_in_repr():

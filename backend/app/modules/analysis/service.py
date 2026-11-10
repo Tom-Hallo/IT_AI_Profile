@@ -1,4 +1,6 @@
-"""Service layer for repository analysis, authorization, evidence preservation, and background job state (PBI-011 & PBI-012)."""
+"""Service layer for repository analysis, authorization, evidence preservation, and
+background job state (PBI-011 & PBI-012).
+"""
 
 from __future__ import annotations
 
@@ -286,12 +288,18 @@ async def analyze_repository(
     if request.scope == "public" and repo.private:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repository là riêng tư (private), không phù hợp với phạm vi phân tích 'public'.",
+            detail=(
+                "Repository là riêng tư (private), không phù hợp "
+                "với phạm vi phân tích 'public'."
+            ),
         )
     if request.scope == "private" and not repo.private:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repository là công khai (public), không phù hợp với phạm vi phân tích 'private'.",
+            detail=(
+                "Repository là công khai (public), không phù hợp "
+                "với phạm vi phân tích 'private'."
+            ),
         )
 
     # 3. Kiểm tra token và quyền scope private
@@ -306,6 +314,7 @@ async def analyze_repository(
             mode=request.mode,
             preset=request.preset,
             month=request.month,
+            year=request.year,
             start_date=request.start_date,
             end_date=request.end_date,
             timezone_name=request.timezone,
@@ -327,10 +336,11 @@ async def analyze_repository(
 
         api_client = client or GitHubApiClient(access_token=token)
         try:
+            target_branch = request.branch or repo.default_branch or "main"
             latest_sha = await api_client.get_latest_commit_sha(
                 owner=owner,
                 repo=repo_name,
-                branch=repo.default_branch or "main",
+                branch=target_branch,
                 until=target_until,
             )
             if latest_sha:
@@ -342,7 +352,8 @@ async def analyze_repository(
             GitHubApiError,
         ) as exc:
             logger.warning(
-                "Không thể lấy commit SHA mới nhất qua GitHub API: %s. Dùng fallback SHA.",
+                "Không thể lấy commit SHA mới nhất qua GitHub API: %s. "
+                "Dùng fallback SHA.",
                 exc,
             )
 
@@ -375,7 +386,9 @@ async def analyze_repository(
 
 
 def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport | None:
-    """Save an analysis result and its verifiable evidence records to PostgreSQL and L1 cache."""
+    """Save an analysis result and its verifiable evidence records to PostgreSQL and L1
+    cache.
+    """
     cache_key = (result["repository_id"], result["commit_sha"])
     _ANALYSIS_CACHE[cache_key] = result
 

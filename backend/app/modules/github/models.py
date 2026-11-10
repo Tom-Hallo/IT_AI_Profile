@@ -1,13 +1,12 @@
 """SQLAlchemy models: Repository + user_repository pivot.
 
 PBI-002 — schema ita
-PBI-009 — real GitHub sync metadata
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -36,13 +35,14 @@ user_repository = Table(
     Base.metadata,
     sa.Column(
         "user_id",
-        BigInteger().with_variant(Integer, "sqlite"),
+        BigInteger,
         ForeignKey("ita.users.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
     sa.Column(
         "repository_id",
-        BigInteger().with_variant(Integer, "sqlite"),
+        BigInteger,
         ForeignKey("ita.repositories.id", ondelete="CASCADE"),
         primary_key=True,
     ),
@@ -52,18 +52,16 @@ user_repository = Table(
         server_default=func.now(),
         nullable=False,
     ),
-    sa.Index("ix_user_repository_user_id", "user_id"),
     schema="ita",
-    comment="Pivot table: users <-> repositories (many-to-many)",
+    comment="Pivot table: users ↔ repositories (many-to-many)",
 )
 
 
 class Repository(Base):
     __tablename__ = "repositories"
-
-    __table_args__: ClassVar[dict[str, str]] = {
+    __table_args__ = {
         "schema": "ita",
-        "comment": "Application users",
+        "comment": "GitHub repositories linked to a user",
     }
 
     id: Mapped[int] = mapped_column(
@@ -80,15 +78,15 @@ class Repository(Base):
     external_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    html_url: Mapped[str] = mapped_column(String(512), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    private: Mapped[bool] = mapped_column(
-        Boolean, server_default=sa.text("false"), nullable=False
-    )
     default_branch: Mapped[str] = mapped_column(
         String(100), server_default="main", nullable=False
     )
     is_fork: Mapped[bool] = mapped_column(
+        Boolean, server_default=sa.text("false"), nullable=False
+    )
+    html_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    private: Mapped[bool] = mapped_column(
         Boolean, server_default=sa.text("false"), nullable=False
     )
     fork_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -140,6 +138,7 @@ class Repository(Base):
         back_populates="repositories",
         foreign_keys=[owner_id],
     )
+
     users: Mapped[list[User]] = relationship(
         "User",
         secondary=user_repository,

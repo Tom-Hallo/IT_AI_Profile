@@ -3,7 +3,8 @@
 Quy tắc (Blueprint mục 1.4 và 9.4):
 - Kết nối Redis chỉ lấy từ `app.core.redis.get_redis_connection()` (một nguồn duy nhất).
 - Tên hàng đợi lấy từ `settings.worker_queues`; không đọc biến môi trường ở đây.
-- Serializer là JSON ở CẢ hai phía: tham số job chỉ gồm kiểu JSON đơn giản (id, chuỗi, số),
+- Serializer là JSON ở CẢ hai phía: tham số job chỉ gồm kiểu JSON đơn giản (id, chuỗi,
+số),
   không dùng pickle. Bên enqueue và worker lệch serializer thì job không đọc được.
 """
 
@@ -16,7 +17,7 @@ from app.core.redis import get_redis_connection
 SERIALIZER = "json"
 
 # Thời gian tối đa một job được chạy trước khi RQ hủy nó (giây).
-JOB_TIMEOUT_SECONDS = 60
+JOB_TIMEOUT_SECONDS = 300
 # Kết quả job thành công được giữ trong Redis bao lâu (giây).
 RESULT_TTL_SECONDS = 3600
 # Job lỗi (kèm traceback) được giữ bao lâu để điều tra (giây).

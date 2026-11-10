@@ -1,48 +1,36 @@
-"""Repository static code, language, framework & architecture analysis module (PBI-012)."""
+"""Static manifest parsers package for PBI-012."""
 
-from typing import Any
-
-from app.modules.analysis.evidence import (
-    ConfidenceLevel,
-    DetectionMethod,
-    EvidenceCollector,
-    EvidenceRecord,
-    EvidenceSource,
-    EvidenceStoreProtocol,
-    FindingType,
+from app.modules.analysis.parsers.base import ManifestParserResult, ParsedDependency
+from app.modules.analysis.parsers.javascript_parser import (
+    parse_package_json,
+    verify_lockfile_health,
 )
-from app.modules.analysis.inspector import (
-    InMemoryContentSource,
-    RepositoryContentSource,
-    RepositoryInspector,
+from app.modules.analysis.parsers.other_parsers import (
+    parse_build_gradle,
+    parse_cargo_toml,
+    parse_dotnet_csproj,
+    parse_go_mod,
+    parse_pom_xml,
 )
-from app.modules.analysis.limits import AnalysisBudgetTracker, AnalysisLimits
+from app.modules.analysis.parsers.python_parser import (
+    parse_pipfile,
+    parse_pyproject_toml,
+    parse_requirements_txt,
+    parse_setup_cfg_or_py,
+)
 
 __all__ = [
-    "AnalysisBudgetTracker",
-    "AnalysisLimits",
-    "ConfidenceLevel",
-    "DetectionMethod",
-    "EvidenceCollector",
-    "EvidenceRecord",
-    "EvidenceSource",
-    "EvidenceStoreProtocol",
-    "FindingType",
-    "InMemoryContentSource",
-    "RepositoryContentSource",
-    "RepositoryInspector",
-    "analyze_repository",
-    "router",
+    "ManifestParserResult",
+    "ParsedDependency",
+    "parse_build_gradle",
+    "parse_cargo_toml",
+    "parse_dotnet_csproj",
+    "parse_go_mod",
+    "parse_package_json",
+    "parse_pipfile",
+    "parse_pom_xml",
+    "parse_pyproject_toml",
+    "parse_requirements_txt",
+    "parse_setup_cfg_or_py",
+    "verify_lockfile_health",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    if name == "router":
-        from app.modules.analysis.router import router
-
-        return router
-    if name == "analyze_repository":
-        from app.modules.analysis.service import analyze_repository
-
-        return analyze_repository
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

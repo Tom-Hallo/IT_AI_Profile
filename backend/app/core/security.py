@@ -2,7 +2,7 @@
 
 Quy tắc:
 - Token GitHub OAuth được mã hóa trước khi lưu vào DB bằng cryptography.fernet
-  (AES-128-CBC + HMAC-SHA256).
+(AES-128-CBC + HMAC-SHA256).
 - Khóa mã hóa đọc từ settings.github_token_encryption_key.
 - Không có fallback plaintext nếu thiếu khóa (ném ConfigurationError).
 - Không bao giờ log token thô hoặc đưa token vào exception hay API response.

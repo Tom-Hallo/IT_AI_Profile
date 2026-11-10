@@ -5,14 +5,17 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import app.db.models
 from app.api.router import API_PREFIX, api_router
 from app.core.config import APP_NAME, APP_VERSION, Settings, settings
 from app.core.logging import configure_logging
+from app.db.models import init_models
 
 logger = logging.getLogger(__name__)
 
 
 def create_app(config: Settings | None = None) -> FastAPI:
+    init_models()
     cfg = config or settings
     configure_logging(cfg.log_level)
 

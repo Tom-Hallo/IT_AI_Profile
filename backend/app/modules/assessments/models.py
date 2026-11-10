@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 class Assessment(Base):
     __tablename__ = "assessments"
+
     __table_args__ = (
         CheckConstraint(
             "score >= 0 AND score <= 100",
@@ -39,20 +40,32 @@ class Assessment(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
     user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("ita.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+
     type: Mapped[str] = mapped_column(String(100), nullable=False)
-    score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+
+    score: Mapped[float] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+    )
+
     taken_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     # Relationships
-    user: Mapped[User] = relationship("User", back_populates="assessments")
+    user: Mapped[User] = relationship(
+        "User",
+        back_populates="assessments",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Assessment id={self.id} type={self.type!r} score={self.score}>"

@@ -1,7 +1,8 @@
 """Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
 
 Quy tắc:
-- Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import settings`.
+- Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import
+settings`.
 - Biến bắt buộc không có giá trị mặc định: thiếu thì dừng ngay khi import.
 - Thông báo lỗi chỉ nêu TÊN biến, không bao giờ nêu giá trị.
 """
@@ -26,7 +27,8 @@ def _split_csv(value: object) -> object:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Chạy ngoài Docker: đọc backend/.env. Trong Docker, Compose truyền biến trực tiếp
+        # Chạy ngoài Docker: đọc backend/.env. Trong Docker, Compose truyền biến trực
+        # tiếp
         # và biến của tiến trình luôn được ưu tiên hơn file.
         env_file=".env",
         env_file_encoding="utf-8",
@@ -50,6 +52,9 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     github_token_encryption_key: SecretStr | None = None
     frontend_url: str = "http://localhost:5173"
+    ita_analysis_tmp_root: str = "/var/lib/ita/analysis-tmp"
+    github_sync_timeout_seconds: int = 300
+    github_api_concurrency: int = 8
 
     @field_validator(
         "github_client_id",
@@ -61,6 +66,20 @@ class Settings(BaseSettings):
     def _empty_github_credentials_as_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("github_sync_timeout_seconds")
+    @classmethod
+    def _validate_sync_timeout(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("phải lớn hơn 0")
+        return value
+
+    @field_validator("github_api_concurrency")
+    @classmethod
+    def _validate_api_concurrency(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("phải lớn hơn 0")
         return value
 
     @field_validator("github_token_encryption_key")

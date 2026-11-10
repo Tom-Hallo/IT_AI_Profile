@@ -7,11 +7,11 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.db.session import get_session
 from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
@@ -77,16 +77,22 @@ async def trigger_repository_sync(
             job = enqueue_task(
                 "app.workers.tasks.sync_repositories.sync_user_repositories_task",
                 current_user.id,
+                job_timeout=settings.github_sync_timeout_seconds,
             )
-            set_sync_status_cache(current_user.id, status="running")
+            set_sync_status_cache(
+                current_user.id,
+                status="running",
+                job_id=job.id,
+            )
             return SyncTriggerResponse(
                 status="running",
                 message="Tiến trình đồng bộ đã được đưa vào hàng đợi xử lý.",
                 job_id=job.id,
             )
-        except (RedisError, OSError, TimeoutError) as exc:
+        except Exception as exc:
             logger.warning(
-                f"Không thể đưa vào hàng đợi RQ ({exc}), chuyển sang thực thi đồng bộ trực tiếp."
+                f"Không thể đưa vào hàng đợi RQ ({exc}), "
+                "chuyển sang thực thi đồng bộ trực tiếp."
             )
 
     try:
@@ -202,7 +208,9 @@ def get_user_repository(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryItemResponse:
-    """Lấy thông tin chi tiết một repository, kiểm tra nghiêm ngặt quyền truy cập của user."""
+    """Lấy thông tin chi tiết một repository, kiểm tra nghiêm ngặt quyền truy cập của
+    user.
+    """
 
     stmt = (
         select(Repository)

@@ -8,12 +8,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import app.modules.assessments.models
-import app.modules.auth.models
-import app.modules.cvs.models
-import app.modules.github.models
-import app.modules.roadmaps.models
-import app.modules.users.models
+import app.modules.assessments.models  # noqa: F401
+import app.modules.auth.models  # noqa: F401
+import app.modules.cvs.models  # noqa: F401
+import app.modules.github.models  # noqa: F401
+import app.modules.roadmaps.models  # noqa: F401
+import app.modules.users.models  # noqa: F401
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
 from app.modules.github import router as github_router
@@ -129,7 +129,7 @@ def test_sync_trigger_background_enqueues_job(app, test_user):
         data = res.json()
         assert data["status"] == "running"
         assert data["job_id"] == "job-12345"
-        mock_cache.assert_called_once_with(1, status="running")
+        mock_cache.assert_called_once_with(1, status="running", job_id="job-12345")
 
 
 @pytest.mark.anyio

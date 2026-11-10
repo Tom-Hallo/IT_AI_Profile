@@ -1,13 +1,16 @@
-"""API routes for repository code, language, framework & architecture analysis and background jobs (PBI-011 & PBI-012)."""
+"""API routes for repository code, language, framework & architecture analysis and
+background jobs (PBI-011 & PBI-012).
+"""
 
 from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated, Any
+from datetime import date
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,8 +43,38 @@ jobs_router = APIRouter(prefix="/analysis/jobs", tags=["Analysis Jobs"])
 
 
 class CreateRequest(BaseModel):
-    repo_id: int = Field(gt=0)
-    scope: str = Field(pattern=r"^(full|activity|skills)$")
+    repo_id: int | None = Field(default=None, gt=0)
+    repository_id: int | None = Field(default=None, gt=0)
+    scope: str = Field(
+        default="full",
+        pattern=r"^(full|activity|skills|all|public|private)$",
+    )
+    branch: str | None = None
+    mode: Literal["preset", "month", "year", "custom"] | None = None
+    preset: Literal["1m", "3m", "6m", "1y", "all"] | None = None
+    month: str | None = None
+    year: int | str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    timezone: str | None = "UTC"
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def normalize_scope(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            clean = v.strip().lower()
+            if clean in ("all", "all code in repo"):
+                return "full"
+            return clean
+        return v
+
+    @model_validator(mode="after")
+    def validate_repo_identifier(self) -> CreateRequest:
+        if self.repo_id is None and self.repository_id is None:
+            raise ValueError("Phải cung cấp repo_id hoặc repository_id")
+        if self.repo_id is None:
+            self.repo_id = self.repository_id
+        return self
 
 
 def csrf(request: Request) -> None:
@@ -71,6 +104,7 @@ def create_job(
     user: Annotated[User, Depends(get_current_user)],
 ):
     csrf(request)
+    assert body.repo_id is not None
     job, created = service.create(db, user.id, body.repo_id, body.scope)
     if created:
         dispatch(job, db)
@@ -155,7 +189,9 @@ async def trigger_repository_analysis(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryAnalysisResponse:
-    """Kích hoạt tiến trình phân tích tĩnh mã nguồn, ngôn ngữ, framework và kiến trúc repository."""
+    """Kích hoạt tiến trình phân tích tĩnh mã nguồn, ngôn ngữ, framework và kiến trúc
+    repository.
+    """
     result = await analyze_repository(
         db=db,
         repository_id=repository_id,
@@ -227,7 +263,9 @@ def get_repository_evidence_records(
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> EvidenceListResponse:
-    """Truy xuất danh sách bằng chứng xác thực gắn với file path và commit SHA (PBI-012/PBI-015)."""
+    """Truy xuất danh sách bằng chứng xác thực gắn với file path và commit SHA
+    (PBI-012/PBI-015).
+    """
     evidence_items = get_analysis_evidence(
         db=db,
         repository_id=repository_id,

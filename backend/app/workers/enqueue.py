@@ -36,17 +36,21 @@ FINAL_STATUSES = {"finished", "failed", "stopped", "canceled"}
 
 
 def enqueue_task(
-    func: Callable[..., Any] | str, *args: Any, queue_name: str | None = None
+    func: Callable[..., Any] | str,
+    *args: Any,
+    queue_name: str | None = None,
+    job_timeout: int | None = None,
 ) -> Job:
     """Đưa một hàm (hoặc đường dẫn dạng chuỗi tới hàm) vào hàng đợi.
 
     `args` phải là kiểu JSON đơn giản. Đây là cách duy nhất nên dùng để enqueue,
     để thời hạn và serializer luôn nhất quán.
     """
+    timeout = job_timeout if job_timeout is not None else JOB_TIMEOUT_SECONDS
     return get_queue(queue_name).enqueue(
         func,
         *args,
-        job_timeout=JOB_TIMEOUT_SECONDS,
+        job_timeout=timeout,
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )

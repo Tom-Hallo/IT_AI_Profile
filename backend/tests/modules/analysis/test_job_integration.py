@@ -1,4 +1,6 @@
-"""Tests for PBI-011 & PBI-012 Dependency Integration: Background Analysis Jobs & Pipeline Execution."""
+"""Tests for PBI-011 & PBI-012 Dependency Integration: Background Analysis Jobs &
+Pipeline Execution.
+"""
 
 from __future__ import annotations
 
@@ -172,7 +174,7 @@ def test_retry_active_job_raises_conflict():
 
 
 def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
-    """Verify run_analysis executes RepositoryInspector, updates progress, and succeeds."""
+    """Verify analysis executes and updates job progress."""
     job_uuid = uuid.uuid4()
     job_record = _mock_job(
         job_id=job_uuid,
@@ -206,7 +208,8 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
         lambda _db, _uid: ("fake-token", "read:user"),
     )
 
-    # Dynamic return sequence: call 1 = initial job, call 2 = repo record, calls >= 3 = job checkpoints
+    # Dynamic return sequence: call 1 = initial job, call 2 = repo record, calls >= 3 =
+    # job checkpoints
     def mock_scalar_fn(stmt=None):
         if not hasattr(mock_scalar_fn, "call_count"):
             mock_scalar_fn.call_count = 0
@@ -238,7 +241,9 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
 
 
 def test_run_analysis_private_repo_without_consent_fails(monkeypatch):
-    """Verify private repository without 'repo' OAuth scope fails closed with PermissionError."""
+    """Verify private repository without 'repo' OAuth scope fails closed with
+    PermissionError.
+    """
     job_uuid = uuid.uuid4()
     job_record = _mock_job(
         job_id=job_uuid,
@@ -452,7 +457,7 @@ def test_run_analysis_cancelled_during_inspection_halts_promptly(monkeypatch):
 
 
 def test_dispatch_handles_os_error_as_503(monkeypatch):
-    """Verify dispatch catches OSError (e.g., socket refuse) and fails closed with 503."""
+    """Verify dispatch handles OSError with HTTP 503."""
     from app.modules.analysis.router import dispatch
 
     mock_job = _mock_job(status="queued")

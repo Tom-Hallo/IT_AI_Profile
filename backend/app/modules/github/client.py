@@ -3,7 +3,8 @@
 Quy tắc bảo mật:
 - Token không bao giờ được log hoặc đưa vào exception message.
 - Bounded retries: chỉ retry lỗi mạng và 5xx; không retry vô hạn hoặc retry lỗi 401/403.
-- Rate limit 403/429 được bóc tách header X-RateLimit-Reset và Retry-After để báo chính xác.
+- Rate limit 403/429 được bóc tách header X-RateLimit-Reset và Retry-After để báo chính
+xác.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ import logging
 import random
 import re
 from datetime import datetime
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -60,6 +62,10 @@ class GitHubNotFoundError(GitHubApiError):
     """Không tìm thấy tài nguyên trên GitHub (HTTP 404)."""
 
 
+class GitHubEmptyRepositoryError(GitHubApiError):
+    """Repository rỗng, chưa có commit nào (HTTP 409 Git Repository is empty)."""
+
+
 class GitHubServerError(GitHubApiError):
     """Lỗi máy chủ từ phía GitHub (HTTP 5xx)."""
 
@@ -102,6 +108,27 @@ class GitHubApiClient:
         self.max_retries = max_retries
         self.base_delay = base_delay
         self._client = client
+        self._owned_client: httpx.AsyncClient | None = None
+        self._context_depth: int = 0
+
+    async def __aenter__(self) -> Self:
+        self._context_depth += 1
+        if self._client is None and self._owned_client is None:
+            self._owned_client = httpx.AsyncClient(timeout=self.timeout)
+            self._client = self._owned_client
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self._context_depth = max(0, self._context_depth - 1)
+        if self._context_depth == 0 and self._owned_client is not None:
+            await self._owned_client.aclose()
+            self._client = None
+            self._owned_client = None
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -202,7 +229,25 @@ class GitHubApiClient:
                             "Không tìm thấy tài nguyên trên GitHub."
                         )
 
-                    # 6. 5xx Server Error (Lỗi tạm thời, có thể retry)
+                    # 6. 409 Conflict (Empty Repository hoặc conflict)
+                    if response.status_code == 409:
+                        msg = ""
+                        try:
+                            data = response.json()
+                            msg = (
+                                data.get("message", "")
+                                if isinstance(data, dict)
+                                else str(data)
+                            )
+                        except Exception:
+                            msg = response.text
+                        if "empty" in msg.lower() or "commits" in url:
+                            raise GitHubEmptyRepositoryError("Git repository is empty.")
+                        raise GitHubApiError(
+                            f"GitHub API trả về mã lỗi HTTP 409: {msg}"
+                        )
+
+                    # 7. 5xx Server Error (Lỗi tạm thời, có thể retry)
                     if response.status_code >= 500:
                         if attempt < self.max_retries:
                             delay = self.base_delay * (2**attempt) + random.uniform(
@@ -229,7 +274,8 @@ class GitHubApiClient:
                             0.1, 0.5
                         )
                         logger.warning(
-                            f"Lỗi mạng GitHub ({exc.__class__.__name__}), retry sau {delay:.2f}s"
+                            f"Lỗi mạng GitHub ({exc.__class__.__name__}), "
+                            f"retry sau {delay:.2f}s"
                         )
                         await asyncio.sleep(delay)
                         continue
@@ -248,9 +294,10 @@ class GitHubApiClient:
     async def list_repositories(
         self,
         per_page: int = 100,
-        max_pages: int = 10,
+        max_pages: int = 50,
     ) -> list[dict[str, Any]]:
-        """Lấy danh sách tất cả repositories có thể truy cập của tài khoản authenticated.
+        """Lấy danh sách tất cả repositories có thể truy cập
+        của tài khoản authenticated.
 
         Hỗ trợ phân trang chuẩn theo RFC 5988 (Link header).
         """
@@ -301,7 +348,8 @@ class GitHubApiClient:
     ) -> dict[str, int]:
         """Lấy số lượng byte theo ngôn ngữ lập trình của repository.
 
-        Giữ nguyên số byte thật từ GitHub (ví dụ: {"Python": 185000, "TypeScript": 92000}).
+        Giữ nguyên số byte thật từ GitHub (ví dụ: {"Python": 185000, "TypeScript":
+        92000}).
         """
         try:
             response = await self._request("GET", f"/repos/{owner}/{repo}/languages")
@@ -315,7 +363,7 @@ class GitHubApiClient:
                     if isinstance(v, (int, float))
                 }
             return {}
-        except GitHubNotFoundError:
+        except (GitHubNotFoundError, GitHubPermissionError):
             return {}
 
     async def get_repository_details(
@@ -408,7 +456,8 @@ class GitHubApiClient:
             size = data.get("size", 0)
             if size > max_bytes:
                 logger.warning(
-                    f"Tập tin {path} vượt quá giới hạn dung lượng ({size} > {max_bytes} bytes)."
+                    f"Tập tin {path} vượt quá giới hạn dung lượng "
+                    f"({size} > {max_bytes} bytes)."
                 )
                 return None
             content_b64 = data.get("content")

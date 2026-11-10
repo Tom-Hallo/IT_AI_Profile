@@ -40,7 +40,7 @@ addopts = "-ra"
 extend-exclude = ["build"]
 
 [tool.ruff.lint]
-ignore = ["E501", "EXE002"]
+select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

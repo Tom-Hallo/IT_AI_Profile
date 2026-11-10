@@ -82,7 +82,8 @@ def _frontend_redirect(error: str | None = None) -> RedirectResponse:
 def github_login(include_private: bool = False) -> RedirectResponse:
     """Redirect the user to GitHub OAuth authorization.
 
-    Nếu `include_private=True`, yêu cầu thêm quyền `repo` để đồng bộ private repositories.
+    Nếu `include_private=True`, yêu cầu thêm quyền `repo` để đồng bộ private
+    repositories.
     """
 
     if not settings.github_oauth_enabled:

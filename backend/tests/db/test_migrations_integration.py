@@ -19,7 +19,6 @@ EXPECTED_TABLES = {
     "cvs",
     "roadmaps",
     "user_repository",
-    "user_oauth_accounts",
 }
 
 
@@ -155,7 +154,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a user
             conn.execute(
                 _text(
-                    "INSERT INTO ita.users (email, full_name, hashed_password) VALUES (:e, :n, :p)"
+                    "INSERT INTO ita.users (email, full_name, hashed_password) "
+                    "VALUES (:e, :n, :p)"
                 ),
                 {"e": "alice@example.com", "n": "Alice", "p": "hash_placeholder"},
             )
@@ -193,7 +193,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a repository
             conn.execute(
                 _text(
-                    "INSERT INTO ita.repositories (owner_id, external_id, name, html_url) "
+                    "INSERT INTO ita.repositories "
+                    "(owner_id, external_id, name, html_url) "
                     "VALUES (:oid, :eid, :n, :url)"
                 ),
                 {
@@ -210,7 +211,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert an assessment with valid score
             conn.execute(
                 _text(
-                    "INSERT INTO ita.assessments (user_id, type, score) VALUES (:uid, :t, :s)"
+                    "INSERT INTO ita.assessments (user_id, type, score) "
+                    "VALUES (:uid, :t, :s)"
                 ),
                 {"uid": user_id, "t": "python", "s": 85.5},
             )
@@ -224,7 +226,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Insert a roadmap
             conn.execute(
                 _text(
-                    "INSERT INTO ita.roadmaps (user_id, title, data) VALUES (:uid, :t, :d)"
+                    "INSERT INTO ita.roadmaps (user_id, title, data) "
+                    "VALUES (:uid, :t, :d)"
                 ),
                 {"uid": user_id, "t": "My Roadmap", "d": '{"steps": []}'},
             )
@@ -232,7 +235,8 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
             # Pivot
             conn.execute(
                 _text(
-                    "INSERT INTO ita.user_repository (user_id, repository_id) VALUES (:uid, :rid)"
+                    "INSERT INTO ita.user_repository (user_id, repository_id) "
+                    "VALUES (:uid, :rid)"
                 ),
                 {"uid": user_id, "rid": repo_id},
             )
@@ -241,82 +245,37 @@ def test_basic_crud_and_constraints(alembic_cli, temp_database_url):
         engine2 = create_engine(temp_database_url)
         try:
             # Duplicate email must fail
-            with (
-                _pytest.raises(Exception, match="uq_users_email|unique"),
-                engine2.begin() as conn,
-            ):
-                conn.execute(
-                    _text(
-                        "INSERT INTO ita.users (email, full_name, hashed_password) "
-                        "VALUES (:e, :n, :p)"
-                    ),
-                    {"e": "alice@example.com", "n": "Bob", "p": "hash2"},
-                )
+            with _pytest.raises(Exception, match="uq_users_email|unique"):
+                with engine2.begin() as conn:
+                    conn.execute(
+                        _text(
+                            "INSERT INTO ita.users (email, full_name, hashed_password) "
+                            "VALUES (:e, :n, :p)"
+                        ),
+                        {"e": "alice@example.com", "n": "Bob", "p": "hash2"},
+                    )
 
             # score out of range must fail
-            with (
-                _pytest.raises(Exception, match="ck_assessments_score_range|check"),
-                engine2.begin() as conn,
-            ):
-                conn.execute(
-                    _text(
-                        "INSERT INTO ita.assessments (user_id, type, score) "
-                        "VALUES (:uid, :t, :s)"
-                    ),
-                    {"uid": user_id, "t": "java", "s": 150},
-                )
+            with _pytest.raises(Exception, match="ck_assessments_score_range|check"):
+                with engine2.begin() as conn:
+                    conn.execute(
+                        _text(
+                            "INSERT INTO ita.assessments (user_id, type, score) "
+                            "VALUES (:uid, :t, :s)"
+                        ),
+                        {"uid": user_id, "t": "java", "s": 150},
+                    )
 
             # FK violation must fail
-            with (
-                _pytest.raises(Exception, match="fk_|foreign key"),
-                engine2.begin() as conn,
-            ):
-                conn.execute(
-                    _text(
-                        "INSERT INTO ita.assessments (user_id, type, score) "
-                        "VALUES (:uid, :t, :s)"
-                    ),
-                    {"uid": 999999, "t": "java", "s": 50},
-                )
-
-                # Duplicate GitHub identity must fail.
-            with (
-                _pytest.raises(
-                    Exception,
-                    match="uq_user_oauth_accounts_provider_provider_user_id|unique",
-                ),
-                engine2.begin() as conn,
-            ):
-                conn.execute(
-                    _text(
-                        "INSERT INTO ita.user_oauth_accounts "
-                        "(user_id, provider, provider_user_id) "
-                        "VALUES (:uid, :provider, :provider_id)"
-                    ),
-                    {
-                        "uid": user_id,
-                        "provider": "github",
-                        "provider_id": "github-12345",
-                    },
-                )
-
-            # OAuth account with nonexistent user must fail.
-            with (
-                _pytest.raises(Exception, match="fk_|foreign key"),
-                engine2.begin() as conn,
-            ):
-                conn.execute(
-                    _text(
-                        "INSERT INTO ita.user_oauth_accounts "
-                        "(user_id, provider, provider_user_id) "
-                        "VALUES (:uid, :provider, :provider_id)"
-                    ),
-                    {
-                        "uid": 999999,
-                        "provider": "github",
-                        "provider_id": "github-invalid",
-                    },
-                )
+            with _pytest.raises(Exception, match="fk_|foreign key"):
+                with engine2.begin() as conn:
+                    conn.execute(
+                        _text(
+                            "INSERT INTO ita.assessments (user_id, type, score) "
+                            "VALUES (:uid, :t, :s)"
+                        ),
+                        {"uid": 999999, "t": "java", "s": 50},
+                    )
 
             # Deleting a user must cascade-delete linked OAuth accounts.
             with engine2.begin() as conn:

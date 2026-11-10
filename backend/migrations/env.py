@@ -1,4 +1,9 @@
-"""Alembic migration environment for IT Talent AI Profile."""
+"""Moi truong chay Alembic (Database Engineer, D1).
+
+- URL ket noi KHONG doc tu alembic.ini hay os.environ: lay tu app.core.config.settings
+  thong qua app.db.session.engine, cung engine ma Backend va Worker dung.
+- Khong in URL/mat khau ra man hinh hay log.
+"""
 
 from logging.config import fileConfig
 
@@ -6,13 +11,7 @@ from alembic import context
 from sqlalchemy import event
 
 # Register business models
-import app.modules.analysis.models
-import app.modules.assessments.models
-import app.modules.auth.models
-import app.modules.cvs.models
-import app.modules.github.models
-import app.modules.roadmaps.models
-import app.modules.users.models  # noqa: F401
+import app.db.models  # noqa: F401
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
@@ -21,6 +20,20 @@ config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
+
+# ---------------------------------------------------------------------------
+# Import tat ca models nghiep vu de Alembic phat hien cac bang
+# (PBI-002: them models tu day tro di)
+# ---------------------------------------------------------------------------
+import app.modules.analysis.models  # noqa: F401, E402
+import app.modules.assessments.models  # noqa: F401, E402
+import app.modules.auth.models  # noqa: F401, E402
+import app.modules.cvs.models  # noqa: F401, E402
+import app.modules.github.models  # noqa: F401, E402
+import app.modules.roadmaps.models  # noqa: F401, E402
+import app.modules.users.models  # noqa: F401, E402
+
+# ---------------------------------------------------------------------------
 
 target_metadata = Base.metadata
 
@@ -50,6 +63,12 @@ def include_name(name, type_, parent_names):
     return True
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table_comment":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=settings.database_url.get_secret_value(),
@@ -57,8 +76,10 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        compare_comments=False,
         include_schemas=True,
         include_name=include_name,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -72,8 +93,10 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 compare_type=True,
+                compare_comments=False,
                 include_schemas=True,
                 include_name=include_name,
+                include_object=include_object,
             )
 
             with context.begin_transaction():

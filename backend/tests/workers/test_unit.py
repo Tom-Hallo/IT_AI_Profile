@@ -1,4 +1,6 @@
-"""Test đơn vị cho Worker: KHÔNG cần Redis hay DB (Redis.from_url chỉ tạo client, chưa kết nối)."""
+"""Test đơn vị cho Worker: KHÔNG cần Redis hay DB (Redis.from_url chỉ tạo client, chưa
+kết nối).
+"""
 
 import json
 import logging

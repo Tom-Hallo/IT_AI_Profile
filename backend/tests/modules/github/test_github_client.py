@@ -8,6 +8,7 @@ import pytest
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
+    GitHubEmptyRepositoryError,
     GitHubNotFoundError,
     GitHubPermissionError,
     GitHubRateLimitError,
@@ -170,6 +171,24 @@ async def test_not_found_error_404():
 
     with pytest.raises(GitHubNotFoundError):
         await client.get_repository_details("user", "missing-repo")
+
+
+@pytest.mark.anyio
+async def test_empty_repository_error_409():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={
+                "message": "Git Repository is empty.",
+                "documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
+            },
+        )
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client, base_delay=0.01)
+
+    with pytest.raises(GitHubEmptyRepositoryError, match="empty"):
+        await client._request("GET", "/repos/owner/empty-repo/commits")
 
 
 @pytest.mark.anyio

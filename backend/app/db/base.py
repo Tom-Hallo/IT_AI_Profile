@@ -6,7 +6,8 @@ tên `Base` được giữ nguyên.
 Chưa có model hay bảng nghiệp vụ nào trong PBI-001. Mọi model sau này kế thừa `Base`.
 
 Quy ước đặt tên ràng buộc (naming convention):
-    Đặt từ bây giờ, TRƯỚC khi có bảng đầu tiên. Nếu không, PostgreSQL tự sinh tên ràng buộc
+    Đặt từ bây giờ, TRƯỚC khi có bảng đầu tiên. Nếu không, PostgreSQL tự sinh tên ràng
+    buộc
     ngẫu nhiên và các migration sau này (drop/alter constraint) sẽ không tham chiếu được
     bằng tên ổn định. Đổi quy ước khi đã có bảng là việc rất tốn công.
 """

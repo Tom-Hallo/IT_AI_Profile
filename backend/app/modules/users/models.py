@@ -6,7 +6,7 @@ PBI-002 — schema ita
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,16 +23,11 @@ if TYPE_CHECKING:
 
 class User(Base):
     __tablename__ = "users"
-
-    __table_args__: ClassVar[dict[str, str]] = {
-        "schema": "ita",
-        "comment": "Application users",
-    }
+    __table_args__ = {"schema": "ita", "comment": "Application users"}
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # GitHub OAuth users do not have an internal password.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -40,6 +35,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
     # Relationships
     repositories: Mapped[list[Repository]] = relationship(
         "Repository",
