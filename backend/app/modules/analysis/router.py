@@ -199,6 +199,7 @@ async def trigger_repository_analysis(
         request=request,
     )
     return RepositoryAnalysisResponse(
+        report_id=result.get("report_id"),
         repository_id=result["repository_id"],
         commit_sha=result["commit_sha"],
         analyzed_at=result["analyzed_at"],
@@ -224,17 +225,24 @@ def get_repository_analysis_report(
     commit_sha: str | None = Query(
         default=None, description="Lọc theo commit hash cụ thể"
     ),
+    report_id: int | None = Query(
+        default=None,
+        ge=1,
+        description="ID của lần phân tích cần truy xuất",
+    ),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryAnalysisResponse:
     """Lấy kết quả phân tích gần nhất của repository đã được thực hiện."""
     result = get_latest_analysis(
+        report_id=report_id,
         db=db,
         repository_id=repository_id,
         user=current_user,
         commit_sha=commit_sha,
     )
     return RepositoryAnalysisResponse(
+        report_id=result.get("report_id"),
         repository_id=result["repository_id"],
         commit_sha=result["commit_sha"],
         analyzed_at=result["analyzed_at"],
@@ -260,6 +268,11 @@ def get_repository_evidence_records(
     commit_sha: str | None = Query(
         default=None, description="Lọc bằng chứng theo commit SHA"
     ),
+    report_id: int | None = Query(
+        default=None,
+        ge=1,
+        description="ID của report chứa evidence cần truy xuất",
+    ),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> EvidenceListResponse:
@@ -267,6 +280,7 @@ def get_repository_evidence_records(
     (PBI-012/PBI-015).
     """
     evidence_items = get_analysis_evidence(
+        report_id=report_id,
         db=db,
         repository_id=repository_id,
         user=current_user,
@@ -274,6 +288,7 @@ def get_repository_evidence_records(
     )
     actual_sha = commit_sha or (evidence_items[0].commit_sha if evidence_items else "")
     return EvidenceListResponse(
+        report_id=report_id,
         repository_id=repository_id,
         commit_sha=actual_sha,
         total=len(evidence_items),

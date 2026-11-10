@@ -416,7 +416,15 @@ def test_get_latest_analysis_loads_from_database_on_cache_miss():
     assert len(res["evidence"]) == 1
     assert res["evidence"][0]["classification"] == "Python"
     # Cached for subsequent calls
-    assert (99, mock_report.commit_sha) in _ANALYSIS_CACHE
+    cache_key = (
+        99,
+        mock_report.commit_sha,
+        "all",
+        "",
+        "",
+        "",
+    )
+    assert cache_key in _ANALYSIS_CACHE
 
 
 # --------------------------------------------------------------------------
@@ -605,3 +613,69 @@ def test_regression_background_jobs_scenario(monkeypatch):
             json={"scope": "full"},
         )
         assert res_missing_repo.status_code == 422
+
+
+def test_cache_key_separates_analysis_ranges():
+    from app.modules.analysis.service import _analysis_cache_key
+
+    base = {
+        "repository_id": 9,
+        "commit_sha": "a" * 40,
+        "scope": "all",
+    }
+
+    october = {
+        **base,
+        "time_range": {
+            "start_utc": "2026-10-01T00:00:00+00:00",
+            "end_utc": "2026-11-01T00:00:00+00:00",
+            "timezone": "UTC",
+        },
+    }
+
+    november = {
+        **base,
+        "time_range": {
+            "start_utc": "2026-11-01T00:00:00+00:00",
+            "end_utc": "2026-12-01T00:00:00+00:00",
+            "timezone": "UTC",
+        },
+    }
+
+    assert _analysis_cache_key(october) != _analysis_cache_key(november)
+
+
+def test_failed_db_save_does_not_cache_analysis():
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.modules.analysis.service import (
+        _ANALYSIS_CACHE,
+        _analysis_cache_key,
+        save_analysis_result,
+    )
+
+    result = {
+        "repository_id": 98765,
+        "commit_sha": "f" * 40,
+        "scope": "all",
+        "time_range": None,
+        "structure": {},
+        "languages": [],
+        "frameworks": [],
+        "architecture": [],
+        "budget": {},
+        "evidence": [],
+    }
+
+    db = MagicMock()
+    db.commit.side_effect = SQLAlchemyError("Simulated failure")
+
+    key = _analysis_cache_key(result)
+    _ANALYSIS_CACHE.pop(key, None)
+
+    with pytest.raises(HTTPException) as exc:
+        save_analysis_result(db, result)
+
+    assert exc.value.status_code == 503
+    assert key not in _ANALYSIS_CACHE
+    db.rollback.assert_called_once()

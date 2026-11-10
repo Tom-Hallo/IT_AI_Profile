@@ -43,7 +43,25 @@ from app.modules.users.models import User
 logger = logging.getLogger(__name__)
 
 # Lưu trữ tạm trong bộ nhớ cho phiên làm việc / PBI-015 contract
-_ANALYSIS_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+_ANALYSIS_CACHE: dict[
+    tuple[int, str, str, str, str, str],
+    dict[str, Any],
+] = {}
+
+
+def _analysis_cache_key(
+    result: dict[str, Any],
+) -> tuple[int, str, str, str, str, str]:
+    time_range = result.get("time_range") or {}
+
+    return (
+        result["repository_id"],
+        result["commit_sha"],
+        result.get("scope", "all"),
+        time_range.get("start_utc") or "",
+        time_range.get("end_utc") or "",
+        time_range.get("timezone") or "",
+    )
 
 
 def clear_user_analysis_cache(db: Session, user_id: int) -> None:
@@ -425,7 +443,13 @@ async def analyze_repository(
     )
 
     # 7. Lưu trữ kết quả và bằng chứng xác thực vào DB và cache
-    save_analysis_result(db, result)
+    report = save_analysis_result(db, result)
+
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể lưu kết quả phân tích.",
+        )
 
     return result
 
@@ -434,8 +458,6 @@ def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport 
     """Save an analysis result and its verifiable evidence records to PostgreSQL and L1
     cache.
     """
-    cache_key = (result["repository_id"], result["commit_sha"])
-    _ANALYSIS_CACHE[cache_key] = result
 
     try:
         analyzed_at_val = result.get("analyzed_at")
@@ -484,11 +506,22 @@ def save_analysis_result(db: Session, result: dict[str, Any]) -> AnalysisReport 
             db.add(ev_rec)
 
         db.commit()
+
+        result["report_id"] = report.id
+        _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+
         return report
+
     except (SQLAlchemyError, ValueError, KeyError, TypeError) as exc:
-        logger.warning("Could not persist analysis report to database: %s", exc)
         db.rollback()
-        return None
+        logger.error(
+            "Failed to persist repository analysis report",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể lưu kết quả phân tích. Vui lòng thử lại.",
+        ) from exc
 
 
 def get_latest_analysis(
@@ -496,22 +529,24 @@ def get_latest_analysis(
     repository_id: int,
     user: User,
     commit_sha: str | None = None,
+    report_id: int | None = None,
 ) -> dict[str, Any]:
     """Lấy kết quả phân tích gần nhất đã lưu trong DB hoặc phiên."""
     verify_repository_access(db, repository_id, user)
 
     # 1. Kiểm tra bộ nhớ đệm (L1 cache)
-    if commit_sha:
-        cache_key = (repository_id, commit_sha)
-        if cache_key in _ANALYSIS_CACHE:
-            return _ANALYSIS_CACHE[cache_key]
-    else:
-        matching = [
-            res for (r_id, _), res in _ANALYSIS_CACHE.items() if r_id == repository_id
-        ]
-        if matching:
-            matching.sort(key=lambda r: r.get("analyzed_at", ""), reverse=True)
-            return matching[0]
+    matching = [
+        result
+        for key, result in _ANALYSIS_CACHE.items()
+        if key[0] == repository_id and (commit_sha is None or key[1] == commit_sha)
+    ]
+
+    if report_id is None and matching:
+        matching.sort(
+            key=lambda result: result.get("analyzed_at", ""),
+            reverse=True,
+        )
+        return matching[0]
 
     # 2. Truy vấn từ cơ sở dữ liệu PostgreSQL nếu cache chưa có
     try:
@@ -520,7 +555,14 @@ def get_latest_analysis(
         )
         if commit_sha:
             stmt = stmt.where(AnalysisReport.commit_sha == commit_sha)
-        stmt = stmt.order_by(AnalysisReport.analyzed_at.desc())
+
+        if report_id is not None:
+            stmt = stmt.where(AnalysisReport.id == report_id)
+
+        stmt = stmt.order_by(
+            AnalysisReport.analyzed_at.desc(),
+            AnalysisReport.id.desc(),
+        )
         report = db.scalar(stmt)
         if report:
             ev_stmt = select(AnalysisEvidence).where(
@@ -563,15 +605,16 @@ def get_latest_analysis(
                 "evidence_count": len(evidence_list),
                 "budget": report.budget,
             }
-            _ANALYSIS_CACHE[(report.repository_id, report.commit_sha)] = result
+            result["report_id"] = report.id
+            _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
             return result
     except (SQLAlchemyError, ValueError, KeyError, TypeError) as exc:
         logger.warning("Error fetching analysis report from database: %s", exc)
 
-    if commit_sha:
+    if commit_sha or report_id is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy kết quả phân tích cho commit SHA: {commit_sha}",
+            detail="Không tìm thấy bản phân tích được yêu cầu.",
         )
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -584,8 +627,18 @@ def get_analysis_evidence(
     repository_id: int,
     user: User,
     commit_sha: str | None = None,
+    report_id: int | None = None,
 ) -> list[EvidenceRecord]:
-    """Truy xuất danh sách bằng chứng được liên kết với commit hash chính xác."""
-    analysis = get_latest_analysis(db, repository_id, user, commit_sha=commit_sha)
+    """Truy xuất evidence của đúng repository, commit hoặc report."""
+
+    analysis = get_latest_analysis(
+        db,
+        repository_id,
+        user,
+        commit_sha=commit_sha,
+        report_id=report_id,
+    )
+
     evidence_dicts = analysis.get("evidence", [])
+
     return [EvidenceRecord.model_validate(e) for e in evidence_dicts]
