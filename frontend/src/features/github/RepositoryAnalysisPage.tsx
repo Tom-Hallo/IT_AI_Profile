@@ -7,19 +7,24 @@ import {
   createAnalysisJob,
   fetchAnalysisEvidence,
   fetchAnalysisJob,
+  fetchCollaborationEvidence,
   fetchLatestAnalysis,
+  fetchLatestCollaboration,
   fetchRepositories,
   fetchRepositoryVerification,
   fetchVerificationEvidence,
   retryAnalysisJob,
+  triggerCollaborationAnalysis,
   triggerRepositoryAnalysis,
   triggerRepositoryVerification,
 } from './api'
 import type {
   AnalysisJobInfo,
+  CollaborationEvidenceItem,
   EvidenceItem,
   Repository,
   RepositoryAnalysisResult,
+  RepositoryCollaborationResult,
   RepositoryVerificationResult,
   VerificationEvidenceItem,
 } from './types'
@@ -60,9 +65,13 @@ export function RepositoryAnalysisPage() {
   const [evidenceLoading, setEvidenceLoading] = useState(false)
   const [evidenceFilter, setEvidenceFilter] = useState<string>('all')
 
-  // Active Tab: PBI-012 vs PBI-013
-  const [activeTab, setActiveTab] = useState<'structure' | 'verification'>(
-    searchParams.get('tab') === 'verification' ? 'verification' : 'structure',
+  // Active Tab: PBI-012 vs PBI-013 vs PBI-014
+  const [activeTab, setActiveTab] = useState<'structure' | 'verification' | 'collaboration'>(
+    searchParams.get('tab') === 'collaboration'
+      ? 'collaboration'
+      : searchParams.get('tab') === 'verification'
+      ? 'verification'
+      : 'structure',
   )
 
   // Verification state (PBI-013)
@@ -72,6 +81,14 @@ export function RepositoryAnalysisPage() {
   const [verEvidenceLoading, setVerEvidenceLoading] = useState(false)
   const [verEvidenceTypeFilter, setVerEvidenceTypeFilter] = useState<string>('all')
   const [verStatusFilter, setVerStatusFilter] = useState<string>('all')
+
+  // Collaboration & CI state (PBI-014)
+  const [collaborationData, setCollaborationData] = useState<RepositoryCollaborationResult | null>(null)
+  const [collaborationLoading, setCollaborationLoading] = useState(false)
+  const [collaborationEvidence, setCollaborationEvidence] = useState<CollaborationEvidenceItem[]>([])
+  const [collabEvidenceLoading, setCollabEvidenceLoading] = useState(false)
+  const [collabEvidenceTypeFilter, setCollabEvidenceTypeFilter] = useState<string>('all')
+  const [collabStateFilter, setCollabStateFilter] = useState<string>('all')
 
   // Background Job tracking
   const [activeJob, setActiveJob] = useState<AnalysisJobInfo | null>(null)
@@ -119,7 +136,35 @@ export function RepositoryAnalysisPage() {
     }
   }
 
-  const handleTabChange = (tab: 'structure' | 'verification') => {
+  const loadCollaboration = async (repoId: number) => {
+    setCollaborationLoading(true)
+    try {
+      const collab = await fetchLatestCollaboration(repoId)
+      setCollaborationData(collab)
+      await loadCollaborationEvidence(repoId)
+    } catch {
+      setCollaborationData(null)
+      setCollaborationEvidence([])
+    } finally {
+      setCollaborationLoading(false)
+    }
+  }
+
+  const loadCollaborationEvidence = async (repoId: number) => {
+    setCollabEvidenceLoading(true)
+    try {
+      const res = await fetchCollaborationEvidence(repoId, {
+        per_page: 100,
+      })
+      setCollaborationEvidence(res.items)
+    } catch (err) {
+      console.warn('Could not load collaboration evidence', err)
+    } finally {
+      setCollabEvidenceLoading(false)
+    }
+  }
+
+  const handleTabChange = (tab: 'structure' | 'verification' | 'collaboration') => {
     setActiveTab(tab)
     const newParams = new URLSearchParams(searchParams)
     newParams.set('tab', tab)
@@ -188,6 +233,18 @@ export function RepositoryAnalysisPage() {
         setVerificationEvidence([])
       })
 
+    fetchLatestCollaboration(repoIdNum)
+      .then((collab) => {
+        if (!active) return
+        setCollaborationData(collab)
+        void loadCollaborationEvidence(repoIdNum)
+      })
+      .catch(() => {
+        if (!active) return
+        setCollaborationData(null)
+        setCollaborationEvidence([])
+      })
+
     return () => {
       active = false
     }
@@ -238,6 +295,8 @@ export function RepositoryAnalysisPage() {
     setEvidenceList([])
     setVerificationData(null)
     setVerificationEvidence([])
+    setCollaborationData(null)
+    setCollaborationEvidence([])
     setActiveJob(null)
   }
 
@@ -392,6 +451,7 @@ export function RepositoryAnalysisPage() {
       } else {
         void loadVerification(repoId)
       }
+      void loadCollaboration(repoId)
     } catch (err) {
       if (isAbortError(err)) return
       handleApiError(err)
@@ -450,6 +510,53 @@ export function RepositoryAnalysisPage() {
       handleApiError(err)
     } finally {
       setVerificationLoading(false)
+    }
+  }
+
+  const handleTriggerCollaboration = async () => {
+    if (!effectiveRepoId) return
+    setError(null)
+    setErrorCode(null)
+
+    const repoId = Number(effectiveRepoId)
+    const currentRepo = repos.find((r) => r.id === repoId)
+
+    setCollaborationLoading(true)
+    try {
+      const payload: {
+        branch?: string
+        mode?: string
+        preset?: string
+        month?: string
+        year?: string
+        start_date?: string
+        end_date?: string
+        timezone?: string
+        force_refresh?: boolean
+      } = {
+        branch: currentRepo?.default_branch || 'master',
+        force_refresh: true,
+      }
+
+      if (enableTimeRange) {
+        payload.mode = mode
+        payload.timezone = timezone
+        if (mode === 'preset') payload.preset = preset
+        if (mode === 'month') payload.month = month
+        if (mode === 'year') payload.year = year
+        if (mode === 'custom') {
+          payload.start_date = start
+          payload.end_date = end
+        }
+      }
+
+      const collab = await triggerCollaborationAnalysis(repoId, payload)
+      setCollaborationData(collab)
+      await loadCollaborationEvidence(repoId)
+    } catch (err) {
+      handleApiError(err)
+    } finally {
+      setCollaborationLoading(false)
     }
   }
 
@@ -900,6 +1007,41 @@ export function RepositoryAnalysisPage() {
               {verificationData.anti_inflation_flag
                 ? 'Anti-Inflation'
                 : verificationData.verification_status.toUpperCase()}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('collaboration')}
+          style={{
+            padding: '0.625rem 1.25rem',
+            border: 'none',
+            background: 'transparent',
+            borderBottom: activeTab === 'collaboration' ? '3px solid var(--color-primary, #2563eb)' : '3px solid transparent',
+            color: activeTab === 'collaboration' ? 'var(--color-primary, #2563eb)' : '#64748b',
+            fontWeight: activeTab === 'collaboration' ? 700 : 500,
+            fontSize: '1rem',
+            cursor: 'pointer',
+            marginBottom: -2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>🤝</span> Cộng tác, Review & CI (PBI-014)
+          {collaborationData && (
+            <span
+              style={{
+                fontSize: '0.75rem',
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontWeight: 600,
+                background: '#dbeafe',
+                color: '#1e40af',
+              }}
+            >
+              {collaborationData.total_prs_analyzed} PRs
             </span>
           )}
         </button>
@@ -1717,6 +1859,431 @@ export function RepositoryAnalysisPage() {
                   <strong>Nguyên tắc đạo đức & chống suy đoán:</strong> Hệ thống IT Talent AI Profile tuân thủ nguyên tắc xử lý thiếu dữ liệu là <em>unknown</em> thay vì suy đoán tự khẳng định. Việc sở hữu một bản fork hay repository không bao giờ được quy đồng là tác giả của toàn bộ mã nguồn.
                 </div>
               </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* PBI-014 Collaboration, Review, CI & Problem Solving View */}
+      {activeTab === 'collaboration' && (
+        <div style={{ display: 'grid', gap: '1.75rem' }}>
+          {/* Header Action Card */}
+          <section
+            className="card"
+            style={{
+              padding: '1.25rem 1.5rem',
+              background: '#ffffff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem',
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: '0 0 0.25rem',
+                  fontSize: '1.25rem',
+                  color: '#0f172a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <span>🤝</span> Phân tích Pull Request, Review, CI & Xử lý lỗi (PBI-014)
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
+                Thu thập và đánh giá hoạt động cộng tác, lịch sử code review, kết quả CI/CD và chu kỳ giải quyết vấn đề từ GitHub API thực tế.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => void handleTriggerCollaboration()}
+                disabled={Boolean(collaborationLoading || !effectiveRepoId)}
+                style={{
+                  padding: '0.625rem 1.25rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'var(--color-primary, #2563eb)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  cursor: collaborationLoading || !effectiveRepoId ? 'not-allowed' : 'pointer',
+                  opacity: collaborationLoading || !effectiveRepoId ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <span>{collaborationLoading ? '⏳' : '🔄'}</span>
+                {collaborationLoading ? 'Đang phân tích...' : 'Làm mới / Phân tích Cộng tác'}
+              </button>
+            </div>
+          </section>
+
+          {/* Objective Evaluation Non-Penalization Banner */}
+          <div
+            style={{
+              padding: '1rem 1.25rem',
+              borderRadius: '8px',
+              background: '#f0fdf4',
+              border: '1px solid #86efac',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.75rem',
+              color: '#166534',
+              fontSize: '0.875rem',
+              lineHeight: 1.5,
+            }}
+          >
+            <span style={{ fontSize: '1.25rem', marginTop: '0.1rem' }}>💡</span>
+            <div>
+              <strong>Nguyên tắc đánh giá khách quan & không suy diễn tiêu cực:</strong>
+              <div style={{ marginTop: '0.25rem' }}>
+                Hệ thống IT Talent AI Profile <strong>tuyệt đối không tự động coi các Pull Request đóng chưa merge hoặc kiểm tra CI thất bại là biểu hiện năng lực kém</strong>.
+                Trong quy trình phát triển hiện đại, kiểm tra CI thất bại là cơ chế phát hiện sớm vấn đề (fail-fast) và yêu cầu thay đổi (CHANGES_REQUESTED) là một phần tự nhiên của quy trình phản biện mã nguồn chuyên nghiệp.
+              </div>
+            </div>
+          </div>
+
+          {!collaborationData && !collaborationLoading && (
+            <section
+              className="card"
+              style={{
+                padding: '3rem 1.5rem',
+                background: '#ffffff',
+                textAlign: 'center',
+                color: '#64748b',
+              }}
+            >
+              <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🤝</div>
+              <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.125rem', color: '#1e293b' }}>
+                Chưa có dữ liệu phân tích cộng tác & CI
+              </h3>
+              <p style={{ margin: '0 0 1.25rem', fontSize: '0.875rem', maxWidth: '500px', marginInline: 'auto' }}>
+                Nhấn vào nút <strong>&quot;Làm mới / Phân tích Cộng tác&quot;</strong> phía trên để truy xuất các Pull Request, đánh giá review, kết quả CI checks và chu kỳ xử lý lỗi.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleTriggerCollaboration()}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Bắt đầu phân tích ngay
+              </button>
+            </section>
+          )}
+
+          {collaborationData && (
+            <>
+              {/* Summary Metrics Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gap: '1rem',
+                }}
+              >
+                {/* PR Metrics Card */}
+                <div className="card" style={{ padding: '1.25rem', background: '#ffffff' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginBottom: '0.5rem' }}>
+                    PULL REQUESTS ({collaborationData.total_prs_analyzed})
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Đã Merge:</span>
+                    <strong style={{ color: '#16a34a' }}>{collaborationData.merged_prs_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Đóng chưa merge:</span>
+                    <strong style={{ color: '#64748b' }}>{collaborationData.closed_unmerged_prs_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Đang mở (Open):</span>
+                    <strong style={{ color: '#2563eb' }}>{collaborationData.open_prs_count}</strong>
+                  </div>
+                  <div style={{ paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9', fontSize: '0.75rem', color: '#64748b' }}>
+                    Của bạn: {collaborationData.user_prs_count} | Cộng sự: {collaborationData.external_prs_count}
+                  </div>
+                </div>
+
+                {/* Reviews Metrics Card */}
+                <div className="card" style={{ padding: '1.25rem', background: '#ffffff' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginBottom: '0.5rem' }}>
+                    CODE REVIEWS ({collaborationData.total_reviews_analyzed})
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Phê duyệt (Approved):</span>
+                    <strong style={{ color: '#16a34a' }}>{collaborationData.approved_reviews_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Yêu cầu điều chỉnh:</span>
+                    <strong style={{ color: '#d97706' }}>{collaborationData.changes_requested_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Thảo luận (Comments):</span>
+                    <strong style={{ color: '#2563eb' }}>{collaborationData.commented_reviews_count}</strong>
+                  </div>
+                  <div style={{ paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9', fontSize: '0.75rem', color: '#64748b' }}>
+                    Bạn thực hiện: {collaborationData.user_reviews_conducted_count} | Nhận được: {collaborationData.user_reviews_received_count}
+                  </div>
+                </div>
+
+                {/* CI & Checks Metrics Card */}
+                <div className="card" style={{ padding: '1.25rem', background: '#ffffff' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginBottom: '0.5rem' }}>
+                    KIỂM TRA CI / CHECKS ({collaborationData.total_checks_analyzed})
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Thành công (Passed):</span>
+                    <strong style={{ color: '#16a34a' }}>{collaborationData.successful_checks_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Thất bại (Fail-fast):</span>
+                    <strong style={{ color: '#dc2626' }}>{collaborationData.failed_checks_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#334155' }}>Đang chạy / Khác:</span>
+                    <strong style={{ color: '#64748b' }}>{collaborationData.pending_checks_count + collaborationData.other_checks_count}</strong>
+                  </div>
+                  <div style={{ paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9', fontSize: '0.75rem', color: '#64748b' }}>
+                    Độ tin cậy: {collaborationData.confidence.toUpperCase()} | Bao phủ: {collaborationData.coverage_status}
+                  </div>
+                </div>
+
+                {/* Problem-Solving Cycles Card */}
+                <div className="card" style={{ padding: '1.25rem', background: '#ffffff' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginBottom: '0.5rem' }}>
+                    XỬ LÝ LỖI & PHẢN HỒI LẶP
+                  </div>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary, #2563eb)', margin: '0.25rem 0' }}>
+                    {collaborationData.problem_solving_sequences_count}
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: 1.4 }}>
+                    Chu kỳ ghi nhận bằng chứng về tiếp thu review hoặc giải quyết lỗi CI qua các commit điều chỉnh.
+                  </p>
+                </div>
+              </div>
+
+              {/* Problem-Solving Sequences Section */}
+              {collaborationData.problem_solving_sequences && collaborationData.problem_solving_sequences.length > 0 && (
+                <section className="card" style={{ padding: '1.5rem', background: '#ffffff' }}>
+                  <h3 style={{ margin: '0 0 1rem', fontSize: '1.125rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>🔄</span> Chu kỳ giải quyết vấn đề & phản hồi lặp được xác minh
+                  </h3>
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    {collaborationData.problem_solving_sequences.map((seq) => (
+                      <div
+                        key={seq.sequence_id}
+                        style={{
+                          padding: '1rem',
+                          borderRadius: '8px',
+                          border: '1px solid #e2e8f0',
+                          background: '#f8fafc',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.9rem' }}>
+                            {seq.sequence_id} {seq.pr_number ? `(PR #${seq.pr_number})` : ''}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: 999, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>
+                            Chu kỳ hoàn tất
+                          </span>
+                        </div>
+                        <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#334155' }}>
+                          {seq.explanation}
+                        </p>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.75rem', color: '#64748b' }}>
+                          <span><strong>Khởi phát:</strong> {String(seq.trigger_event?.type || '')}</span>
+                          <span>&rarr;</span>
+                          <span><strong>Điều chỉnh:</strong> Commit hiệu chỉnh</span>
+                          <span>&rarr;</span>
+                          <span><strong>Kết quả:</strong> {String(seq.resolution_or_outcome?.type || '')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Contextual Collaboration Observations */}
+              {collaborationData.collaboration_observations && collaborationData.collaboration_observations.length > 0 && (
+                <section className="card" style={{ padding: '1.5rem', background: '#ffffff' }}>
+                  <h3 style={{ margin: '0 0 1rem', fontSize: '1.125rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>🔍</span> Quan sát hợp tác & phản biện dựa trên bằng chứng
+                  </h3>
+                  <div style={{ display: 'grid', gap: '0.75rem' }}>
+                    {collaborationData.collaboration_observations.map((obs, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '0.875rem 1rem',
+                          borderRadius: '6px',
+                          borderLeft: '4px solid var(--color-primary, #2563eb)',
+                          background: '#f8fafc',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                          <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{obs.title}</strong>
+                          <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: 4, background: '#e2e8f0', color: '#475569', textTransform: 'uppercase' }}>
+                            {obs.evidence_level}
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: 1.5 }}>
+                          {obs.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Verifiable Collaboration Evidence Table */}
+              <section className="card" style={{ padding: '1.5rem', background: '#ffffff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.125rem', color: '#0f172a' }}>
+                      📋 Nhật ký bằng chứng chi tiết (Audit Trail)
+                    </h3>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                      Toàn bộ bản ghi PR, Review, CI check và chu kỳ giải quyết vấn đề gắn với định danh GitHub.
+                    </p>
+                  </div>
+
+                  {/* Filters */}
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <select
+                      value={collabEvidenceTypeFilter}
+                      onChange={(e) => setCollabEvidenceTypeFilter(e.target.value)}
+                      style={{ padding: '0.375rem 0.625rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    >
+                      <option value="all">Tất cả loại bằng chứng</option>
+                      <option value="pull_request">Pull Request</option>
+                      <option value="review">Code Review</option>
+                      <option value="check_run">Check Run (Checks API)</option>
+                      <option value="commit_status">Commit Status (Status API)</option>
+                      <option value="problem_solving_sequence">Chu kỳ xử lý lỗi</option>
+                    </select>
+
+                    <select
+                      value={collabStateFilter}
+                      onChange={(e) => setCollabStateFilter(e.target.value)}
+                      style={{ padding: '0.375rem 0.625rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="merged">Merged</option>
+                      <option value="closed_unmerged">Closed unmerged</option>
+                      <option value="open">Open</option>
+                      <option value="APPROVED">Approved</option>
+                      <option value="CHANGES_REQUESTED">Changes Requested</option>
+                      <option value="success">Success / Completed</option>
+                      <option value="failure">Failure / Fail-fast</option>
+                    </select>
+                  </div>
+                </div>
+
+                {collabEvidenceLoading ? (
+                  <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Đang tải danh sách bằng chứng...</p>
+                ) : collaborationEvidence.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Không có bằng chứng nào phù hợp với bộ lọc.</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Loại</th>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Định danh đối tượng</th>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Trạng thái</th>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Tác giả / Diễn viên</th>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Giải trình khách quan</th>
+                          <th style={{ padding: '0.625rem 0.75rem', fontWeight: 600 }}>Thời gian</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {collaborationEvidence
+                          .filter((ev) => {
+                            if (collabEvidenceTypeFilter !== 'all' && ev.evidence_type !== collabEvidenceTypeFilter) return false
+                            if (collabStateFilter !== 'all' && ev.state !== collabStateFilter && ev.conclusion !== collabStateFilter) return false
+                            return true
+                          })
+                          .slice(0, 50)
+                          .map((ev, idx) => (
+                            <tr key={`${ev.evidence_type}:${ev.target_identifier}:${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.625rem 0.75rem', textTransform: 'capitalize', fontWeight: 500 }}>
+                                {ev.evidence_type === 'pull_request' ? 'PR' : ev.evidence_type}
+                              </td>
+                              <td style={{ padding: '0.625rem 0.75rem' }}>
+                                {ev.html_url ? (
+                                  <a
+                                    href={ev.html_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ color: 'var(--color-primary, #2563eb)', textDecoration: 'none', fontWeight: 600 }}
+                                  >
+                                    {ev.target_identifier} ↗
+                                  </a>
+                                ) : (
+                                  <span style={{ fontWeight: 600 }}>{ev.target_identifier}</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '0.625rem 0.75rem' }}>
+                                <span
+                                  style={{
+                                    padding: '2px 8px',
+                                    borderRadius: 999,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    background:
+                                      ev.state === 'merged' || ev.conclusion === 'success' || ev.state === 'APPROVED'
+                                        ? '#dcfce7'
+                                        : ev.state === 'closed_unmerged' || ev.state === 'CHANGES_REQUESTED'
+                                          ? '#fef3c7'
+                                          : ev.conclusion === 'failure' || ev.state === 'failure'
+                                            ? '#fee2e2'
+                                            : '#f1f5f9',
+                                    color:
+                                      ev.state === 'merged' || ev.conclusion === 'success' || ev.state === 'APPROVED'
+                                        ? '#166534'
+                                        : ev.state === 'closed_unmerged' || ev.state === 'CHANGES_REQUESTED'
+                                          ? '#92400e'
+                                          : ev.conclusion === 'failure' || ev.state === 'failure'
+                                            ? '#991b1b'
+                                            : '#475569',
+                                  }}
+                                >
+                                  {ev.conclusion || ev.state || 'N/A'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.625rem 0.75rem', color: '#475569' }}>
+                                {ev.actor_login ? `@${ev.actor_login}` : '—'}
+                                {ev.is_profile_owner && (
+                                  <span style={{ marginLeft: 4, fontSize: '0.7rem', padding: '1px 4px', background: '#e0e7ff', color: '#3730a3', borderRadius: 4 }}>
+                                    Bạn
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '0.625rem 0.75rem', color: '#334155', maxWidth: '350px' }}>
+                                {ev.rationale}
+                              </td>
+                              <td style={{ padding: '0.625rem 0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                {ev.recorded_at ? new Date(ev.recorded_at).toLocaleDateString('vi-VN') : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             </>
           )}
         </div>

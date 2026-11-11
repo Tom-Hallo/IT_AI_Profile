@@ -579,6 +579,189 @@ class GitHubApiClient:
 
         return prs
 
+    async def list_pull_request_reviews(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
+        per_page: int = 100,
+        max_pages: int = 20,
+        on_truncated: Callable[[], None] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách code reviews của một Pull Request có hỗ trợ phân trang
+        (PBI-014).
+        """
+        params: dict[str, Any] = {
+            "per_page": min(per_page, 100),
+        }
+        reviews: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        safe_owner = quote(owner, safe="")
+        safe_repo = quote(repo, safe="")
+        url_or_endpoint: str | None = (
+            f"/repos/{safe_owner}/{safe_repo}/pulls/{pull_number}/reviews"
+        )
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            try:
+                response = await self._request("GET", url_or_endpoint, params=params)
+            except GitHubEmptyRepositoryError:
+                return []
+            except GitHubNotFoundError:
+                return []
+
+            data = response.json()
+            if not isinstance(data, list):
+                break
+
+            for item in data:
+                if isinstance(item, dict) and "id" in item:
+                    rev_id = item["id"]
+                    if rev_id not in seen_ids:
+                        seen_ids.add(rev_id)
+                        reviews.append(item)
+
+            next_url = _parse_next_link(response.headers.get("link"))
+
+            if next_url and page_count >= max_pages:
+                if on_truncated is not None:
+                    on_truncated()
+
+            if next_url:
+                url_or_endpoint = next_url
+                params = None
+            else:
+                break
+
+        return reviews
+
+    async def list_check_runs_for_ref(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+        per_page: int = 100,
+        max_pages: int = 20,
+        on_truncated: Callable[[], None] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách GitHub Check Runs gắn với commit ref có hỗ trợ phân trang
+        (Checks API) (PBI-014).
+        """
+        params: dict[str, Any] = {
+            "per_page": min(per_page, 100),
+        }
+        check_runs: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        safe_owner = quote(owner, safe="")
+        safe_repo = quote(repo, safe="")
+        safe_ref = quote(ref, safe="")
+        url_or_endpoint: str | None = (
+            f"/repos/{safe_owner}/{safe_repo}/commits/{safe_ref}/check-runs"
+        )
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            try:
+                response = await self._request("GET", url_or_endpoint, params=params)
+            except GitHubEmptyRepositoryError:
+                return []
+            except GitHubNotFoundError:
+                return []
+
+            data = response.json()
+            items: list[Any] = []
+            if (
+                isinstance(data, dict)
+                and "check_runs" in data
+                and isinstance(data["check_runs"], list)
+            ):
+                items = data["check_runs"]
+            elif isinstance(data, list):
+                items = data
+
+            for item in items:
+                if isinstance(item, dict) and "id" in item:
+                    run_id = item["id"]
+                    if run_id not in seen_ids:
+                        seen_ids.add(run_id)
+                        check_runs.append(item)
+
+            next_url = _parse_next_link(response.headers.get("link"))
+
+            if next_url and page_count >= max_pages:
+                if on_truncated is not None:
+                    on_truncated()
+
+            if next_url:
+                url_or_endpoint = next_url
+                params = None
+            else:
+                break
+
+        return check_runs
+
+    async def list_commit_statuses_for_ref(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+        per_page: int = 100,
+        max_pages: int = 20,
+        on_truncated: Callable[[], None] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lấy danh sách commit statuses gắn với commit ref có hỗ trợ phân trang
+        (Status API) (PBI-014).
+        """
+        params: dict[str, Any] = {
+            "per_page": min(per_page, 100),
+        }
+        statuses: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        safe_owner = quote(owner, safe="")
+        safe_repo = quote(repo, safe="")
+        safe_ref = quote(ref, safe="")
+        url_or_endpoint: str | None = (
+            f"/repos/{safe_owner}/{safe_repo}/commits/{safe_ref}/statuses"
+        )
+        page_count = 0
+
+        while url_or_endpoint and page_count < max_pages:
+            page_count += 1
+            try:
+                response = await self._request("GET", url_or_endpoint, params=params)
+            except GitHubEmptyRepositoryError:
+                return []
+            except GitHubNotFoundError:
+                return []
+
+            data = response.json()
+            if not isinstance(data, list):
+                break
+
+            for item in data:
+                if isinstance(item, dict) and "id" in item:
+                    st_id = item["id"]
+                    if st_id not in seen_ids:
+                        seen_ids.add(st_id)
+                        statuses.append(item)
+
+            next_url = _parse_next_link(response.headers.get("link"))
+
+            if next_url and page_count >= max_pages:
+                if on_truncated is not None:
+                    on_truncated()
+
+            if next_url:
+                url_or_endpoint = next_url
+                params = None
+            else:
+                break
+
+        return statuses
+
     async def get_file_content(
         self,
         owner: str,
