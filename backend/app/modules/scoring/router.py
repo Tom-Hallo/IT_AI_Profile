@@ -2,6 +2,7 @@
 
 Never score unverified static detections as proficiency.
 """
+
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
