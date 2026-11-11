@@ -150,12 +150,12 @@ class RepositoryInspector:
         # 2. Lọc và kiểm tra an toàn đường dẫn (Chống Path Traversal & loại bỏ
         # vendor/binaries)
         for item in raw_tree:
+            if item.get("mode") in ("120000", "160000") or item.get("type") == "commit":
+                ignored_count += 1
+                continue
             path = item.get("path", "")
             if not is_safe_path(path):
-                logger.warning(
-                    "Bỏ qua đường dẫn không an toàn hoặc cố tình "
-                    f"path traversal: {path!r}"
-                )
+                logger.warning("Bỏ qua đường dẫn không an toàn trong Git tree.")
                 continue
 
             norm_path = normalize_posix_path(path)
@@ -179,7 +179,7 @@ class RepositoryInspector:
         # 3. Phân tích các tập tin manifest để bóc tách dependencies
         manifest_results: list[ManifestParserResult] = []
         total_m = len(manifest_paths)
-        for idx, m_path in enumerate(manifest_paths, 1):
+        for idx, m_path in enumerate(sorted(manifest_paths), 1):
             fsize = file_sizes.get(m_path, 0)
             if fsize > self.limits.max_file_size_bytes:
                 self.budget.record_oversized_skipped()

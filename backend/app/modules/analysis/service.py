@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import OrderedDict
+from contextlib import AsyncExitStack
 from datetime import datetime
+from threading import Lock
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -44,11 +47,14 @@ from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
 
-# Lưu trữ tạm trong bộ nhớ cho phiên làm việc / PBI-015 contract
-_ANALYSIS_CACHE: dict[
+
+# Cached evidence is used only after the database resolves the exact report.
+_ANALYSIS_CACHE_LIMIT = 32
+_ANALYSIS_CACHE_LOCK = Lock()
+_ANALYSIS_CACHE: OrderedDict[
     tuple[int, str, str, str, str, str],
     dict[str, Any],
-] = {}
+] = OrderedDict()
 
 
 def _analysis_cache_key(
@@ -68,7 +74,15 @@ def _analysis_cache_key(
 
 def cache_analysis_result(result: dict[str, Any]) -> None:
     """Cập nhật cache sau khi transaction đã commit thành công."""
-    _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+    key = _analysis_cache_key(result)
+    with _ANALYSIS_CACHE_LOCK:
+        _ANALYSIS_CACHE[key] = {
+            "report_id": result["report_id"],
+            "evidence": result["evidence"],
+        }
+        _ANALYSIS_CACHE.move_to_end(key)
+        if len(_ANALYSIS_CACHE) > _ANALYSIS_CACHE_LIMIT:
+            _ANALYSIS_CACHE.popitem(last=False)
 
 
 def clear_user_analysis_cache(db: Session, user_id: int) -> None:
@@ -80,9 +94,10 @@ def clear_user_analysis_cache(db: Session, user_id: int) -> None:
             )
         ).all()
     )
-    keys_to_delete = [k for k in _ANALYSIS_CACHE if k[0] in repo_ids]
-    for k in keys_to_delete:
-        _ANALYSIS_CACHE.pop(k, None)
+    with _ANALYSIS_CACHE_LOCK:
+        keys_to_delete = [k for k in _ANALYSIS_CACHE if k[0] in repo_ids]
+        for key in keys_to_delete:
+            _ANALYSIS_CACHE.pop(key, None)
 
 
 def now() -> datetime:
@@ -111,7 +126,11 @@ def require_access(db: Session, user_id: int, repo_id: int) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found")
     token, _ = get_user_github_token(db, user_id)
     if not token:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "GitHub access not connected")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "GitHub access not connected")
+    if getattr(repo, "private", False):
+        from app.modules.consent.guards import require_private_access_consent
+
+        require_private_access_consent(db, user_id, repo_id)
 
 
 def event(db: Session, job: AnalysisJob, code: str) -> None:
@@ -420,48 +439,53 @@ async def analyze_repository(
     content_source = custom_source
 
     try:
-        if content_source is None:
-            if not token and client is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Vui lòng liên kết lại tài khoản GitHub để phân tích.",
+        async with AsyncExitStack() as resources:
+            if content_source is None:
+                if not token and client is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Vui lòng liên kết lại tài khoản GitHub để phân tích.",
+                    )
+
+                owner, _, repo_name = repo.full_name.partition("/")
+                repo_name = repo_name or repo.name
+                api_client = client
+                if api_client is None:
+                    api_client = await resources.enter_async_context(
+                        GitHubApiClient(access_token=token)
+                    )
+                target_branch = request.branch or repo.default_branch or "main"
+                latest_sha = await api_client.get_latest_commit_sha(
+                    owner=owner,
+                    repo=repo_name,
+                    branch_or_ref=target_branch,
+                    until=target_until,
+                )
+                if not latest_sha:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Không tìm thấy commit trên nhánh trong khoảng đã chọn.",
+                    )
+
+                commit_sha = latest_sha
+                content_source = GitHubRepositoryContentSource(
+                    client=api_client,
+                    owner=owner,
+                    repo=repo_name,
+                    commit_sha=commit_sha,
                 )
 
-            owner, _, repo_name = repo.full_name.partition("/")
-            repo_name = repo_name or repo.name
-            api_client = client or GitHubApiClient(access_token=token)
-            target_branch = request.branch or repo.default_branch or "main"
-            latest_sha = await api_client.get_latest_commit_sha(
-                owner=owner,
-                repo=repo_name,
-                branch_or_ref=target_branch,
-                until=target_until,
-            )
-            if not latest_sha:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Không tìm thấy commit trên nhánh trong khoảng đã chọn.",
-                )
-
-            commit_sha = latest_sha
-            content_source = GitHubRepositoryContentSource(
-                client=api_client,
-                owner=owner,
-                repo=repo_name,
+            inspector = RepositoryInspector(
+                repository_id=repo.id,
                 commit_sha=commit_sha,
+                limits=AnalysisLimits(),
+                scope=request.scope,
+                time_range=time_range_info,
             )
-
-        inspector = RepositoryInspector(
-            repository_id=repo.id,
-            commit_sha=commit_sha,
-            limits=AnalysisLimits(),
-            scope=request.scope,
-            time_range=time_range_info,
-        )
-        result = await inspector.inspect(
-            source=content_source,
-            github_languages=repo.languages,
-        )
+            result = await inspector.inspect(
+                source=content_source,
+                github_languages=repo.languages,
+            )
     except GitHubTokenRevokedError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -489,6 +513,10 @@ async def analyze_repository(
         ) from exc
 
     # 7. Lưu trữ kết quả và bằng chứng xác thực vào DB và cache
+    if repo.private:
+        db.scalar(select(Repository).where(Repository.id == repo.id).with_for_update())
+        verify_private_repo_consent(repo, scope, db=db, user_id=user.id)
+        redact_private_evidence(result)
     report = save_analysis_result(db, result)
 
     if report is None:
@@ -498,6 +526,7 @@ async def analyze_repository(
         )
 
     try:
+        from app.modules.analysis.schemas import VerificationRequest
         from app.modules.analysis.verification_service import (
             get_verification_summary,
             verify_repository_contributions,
@@ -509,15 +538,29 @@ async def analyze_repository(
             user=user,
             client=api_client if custom_source is None else None,
             report_id=report.id,
+            request=VerificationRequest(
+                scope=request.scope
+                if request.scope in ("public", "private")
+                else "all",
+                **request.model_dump(exclude={"scope"}),
+            ),
         )
         if verif_res:
-            v_summary = get_verification_summary(db, repository_id, user)
+            v_summary = get_verification_summary(
+                db, repository_id, user, report_id=report.id
+            )
             if v_summary:
                 result["verification"] = v_summary.model_dump()
     except Exception as ve:
-        logger.warning("Không thể thực hiện xác minh đóng góp đồng thời: %s", ve)
+        logger.warning("Không thể xác minh đóng góp: %s", type(ve).__name__)
 
     return result
+
+
+def redact_private_evidence(result: dict[str, Any]) -> None:
+    """Drop source excerpts before a private report is persisted."""
+    for evidence in result.get("evidence", []):
+        evidence["matched_content"] = None
 
 
 def save_analysis_result(
@@ -587,9 +630,8 @@ def save_analysis_result(
             db.flush()
 
         result["report_id"] = report.id
-
-        if commit:
-            _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+        if commit and "evidence" in result:
+            cache_analysis_result(result)
 
         return report
 
@@ -597,7 +639,7 @@ def save_analysis_result(
         db.rollback()
         logger.error(
             "Failed to persist repository analysis report",
-            exc_info=True,
+            extra={"error_type": type(exc).__name__},
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -611,25 +653,13 @@ def get_latest_analysis(
     user: User,
     commit_sha: str | None = None,
     report_id: int | None = None,
+    *,
+    include_evidence: bool = True,
 ) -> dict[str, Any]:
-    """Lấy kết quả phân tích gần nhất đã lưu trong DB hoặc phiên."""
-    verify_repository_access(db, repository_id, user)
+    """Resolve the latest snapshot in PostgreSQL, then load its evidence."""
+    repo = verify_repository_access(db, repository_id, user)
+    verify_private_repo_consent(repo, None, db=db, user_id=user.id)
 
-    # 1. Kiểm tra bộ nhớ đệm (L1 cache)
-    matching = [
-        result
-        for key, result in _ANALYSIS_CACHE.items()
-        if key[0] == repository_id and (commit_sha is None or key[1] == commit_sha)
-    ]
-
-    if report_id is None and matching:
-        matching.sort(
-            key=lambda result: result.get("analyzed_at", ""),
-            reverse=True,
-        )
-        return matching[0]
-
-    # 2. Truy vấn từ cơ sở dữ liệu PostgreSQL nếu cache chưa có
     try:
         stmt = select(AnalysisReport).where(
             AnalysisReport.repository_id == repository_id
@@ -644,12 +674,31 @@ def get_latest_analysis(
             AnalysisReport.analyzed_at.desc(),
             AnalysisReport.id.desc(),
         )
-        report = db.scalar(stmt)
+        report = db.scalar(stmt.limit(1))
         if report:
             ev_stmt = select(AnalysisEvidence).where(
                 AnalysisEvidence.report_id == report.id
             )
-            ev_rows = db.scalars(ev_stmt).all()
+            key = _analysis_cache_key(
+                {
+                    "repository_id": repository_id,
+                    "commit_sha": report.commit_sha,
+                    "scope": report.scope,
+                    "time_range": report.time_range,
+                }
+            )
+            with _ANALYSIS_CACHE_LOCK:
+                cached = _ANALYSIS_CACHE.get(key)
+            cached_evidence = (
+                cached["evidence"]
+                if include_evidence and cached and cached["report_id"] == report.id
+                else None
+            )
+            ev_rows = (
+                db.scalars(ev_stmt.order_by(AnalysisEvidence.id)).all()
+                if include_evidence and cached_evidence is None
+                else []
+            )
             evidence_list = [
                 {
                     "repository_id": ev.repository_id,
@@ -663,13 +712,18 @@ def get_latest_analysis(
                     "confidence_score": ev.confidence_score,
                     "rationale": ev.rationale,
                     "line_number": ev.line_number,
-                    "matched_content": ev.matched_content,
+                    "matched_content": None if repo.private else ev.matched_content,
                     "scope": ev.scope,
                     "time_range": ev.time_range,
                     "timestamp": ev.timestamp.isoformat() if ev.timestamp else None,
                 }
                 for ev in ev_rows
             ]
+            if cached_evidence is not None:
+                evidence_list = [dict(item) for item in cached_evidence]
+            if repo.private:
+                for item in evidence_list:
+                    item["matched_content"] = None
             result = {
                 "repository_id": report.repository_id,
                 "commit_sha": report.commit_sha,
@@ -683,7 +737,11 @@ def get_latest_analysis(
                 "frameworks": report.frameworks,
                 "architecture": report.architecture,
                 "evidence": evidence_list,
-                "evidence_count": len(evidence_list),
+                "evidence_count": (
+                    len(evidence_list)
+                    if include_evidence
+                    else db.scalar(select(func.count()).select_from(ev_stmt.subquery()))
+                ),
                 "budget": report.budget,
             }
             try:
@@ -691,16 +749,20 @@ def get_latest_analysis(
                     get_verification_summary,
                 )
 
-                verif_summary = get_verification_summary(db, repository_id, user)
+                verif_summary = get_verification_summary(
+                    db, repository_id, user, report_id=report.id
+                )
                 if verif_summary:
                     result["verification"] = verif_summary.model_dump()
             except Exception:
                 pass
             result["report_id"] = report.id
-            _ANALYSIS_CACHE[_analysis_cache_key(result)] = result
+            if include_evidence and cached_evidence is None:
+                cache_analysis_result(result)
             return result
     except (SQLAlchemyError, ValueError, KeyError, TypeError) as exc:
-        logger.warning("Error fetching analysis report from database: %s", exc)
+        logger.warning("Error fetching analysis report: %s", type(exc).__name__)
+        raise HTTPException(503, "Không thể đọc báo cáo phân tích.") from exc
 
     if commit_sha or report_id is not None:
         raise HTTPException(

@@ -6,7 +6,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -26,6 +26,7 @@ from app.modules.analysis.verification_service import (
     verify_repository_access,
     verify_repository_contributions,
 )
+from app.modules.consent.guards import require_private_access_consent
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,9 @@ def get_verification_evidence(
     db: Session = Depends(get_session),  # noqa: B008
 ) -> VerificationEvidenceListResponse:
     """Truy xuất bằng chứng xác minh commit/PR/provenance có phân trang và lọc."""
-    verify_repository_access(db, repository_id, current_user)
+    repo = verify_repository_access(db, repository_id, current_user)
+    if repo.private:
+        require_private_access_consent(db, current_user.id, repo.id)
 
     verif = db.scalar(
         select(RepositoryVerification)
@@ -137,14 +140,12 @@ def get_verification_evidence(
     if evidence_type != "all":
         stmt = stmt.where(VerificationEvidence.evidence_type == evidence_type)
 
-    stmt = stmt.order_by(VerificationEvidence.id.asc())
-
-    all_items = db.scalars(stmt).all()
-    total = len(all_items)
-
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    paged_rows = all_items[start_idx:end_idx]
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    paged_rows = db.scalars(
+        stmt.order_by(VerificationEvidence.id)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    ).all()
 
     items = [
         VerificationEvidenceItem(

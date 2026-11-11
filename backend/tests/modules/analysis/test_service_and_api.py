@@ -194,7 +194,19 @@ async def test_time_range_propagation(monkeypatch):
 @pytest.mark.anyio
 async def test_reanalysis_preserves_evidence_identity(monkeypatch):
     """Requirement 5.14: Reanalysis preserving evidence identity."""
+    from sqlalchemy.dialects import postgresql
+
+    from app.modules.analysis.models import AnalysisReport
+
     mock_db = MagicMock()
+    reports = {}
+
+    def record_report(item):
+        if isinstance(item, AnalysisReport):
+            item.id = len(reports) + 1
+            reports[item.commit_sha] = item
+
+    mock_db.add.side_effect = record_report
     repo = _create_mock_repo(repo_id=8, private=False)
     mock_db.scalar.return_value = repo
     user = _create_mock_user()
@@ -237,6 +249,15 @@ async def test_reanalysis_preserves_evidence_identity(monkeypatch):
         custom_commit_sha=commit_b_sha,
     )
     assert res_b["commit_sha"] == commit_b_sha
+
+    def select_report(stmt):
+        entity = stmt.column_descriptions[0]["entity"]
+        if entity is AnalysisReport:
+            params = stmt.compile(dialect=postgresql.dialect()).params
+            return next(reports[value] for value in params.values() if value in reports)
+        return repo if entity is Repository else None
+
+    mock_db.scalar.side_effect = select_report
 
     # 3. Lấy lại kết quả phân tích theo commit_sha và xác minh bằng chứng không bị đè
     evidence_a = get_analysis_evidence(mock_db, 8, user, commit_sha=commit_a_sha)
@@ -374,6 +395,21 @@ def test_api_trigger_and_get_analysis(monkeypatch):
     app.dependency_overrides.clear()
 
 
+def test_stored_private_evidence_requires_current_consent(monkeypatch):
+    mock_db = MagicMock()
+    repo = _create_mock_repo(repo_id=8, private=True)
+    mock_db.scalar.side_effect = [repo, repo, None]
+    monkeypatch.setattr(
+        "app.modules.analysis.service.has_private_access", lambda *_: True
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_analysis_evidence(mock_db, 8, _create_mock_user())
+
+    assert exc_info.value.status_code == 403
+    mock_db.scalars.assert_not_called()
+
+
 def test_get_latest_analysis_loads_from_database_on_cache_miss():
     """Verify get_latest_analysis fetches and reconstructs report from DB when not in L1
     cache.
@@ -455,6 +491,14 @@ def test_get_latest_analysis_loads_from_database_on_cache_miss():
         "",
     )
     assert cache_key in _ANALYSIS_CACHE
+
+    mock_db.reset_mock()
+    mock_db.scalar.side_effect = [mock_repo, mock_report, 1, None]
+    summary = get_latest_analysis(mock_db, 99, user, include_evidence=False)
+
+    assert summary["evidence_count"] == 1
+    assert summary["evidence"] == []
+    mock_db.scalars.assert_not_called()
 
 
 # --------------------------------------------------------------------------

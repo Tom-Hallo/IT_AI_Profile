@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, desc, or_, select
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.types import JSON
 
@@ -1269,12 +1269,12 @@ def get_collaboration_evidence_list(
     if pr_number is not None:
         stmt = stmt.where(CollaborationEvidence.pr_number == pr_number)
 
-    all_rows = db.scalars(stmt.order_by(CollaborationEvidence.id.asc())).all()
-    total = len(all_rows)
-
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = all_rows[start:end]
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    paginated = db.scalars(
+        stmt.order_by(CollaborationEvidence.id)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    ).all()
 
     items = [
         CollaborationEvidenceItem(

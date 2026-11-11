@@ -25,6 +25,7 @@ from app.modules.analysis.service import (
     GitHubRepositoryContentSource,
     cache_analysis_result,
     event,
+    redact_private_evidence,
     save_analysis_result,
 )
 from app.modules.github.client import GitHubApiClient, GitHubNotFoundError
@@ -75,6 +76,7 @@ def run_analysis(
     from app.modules.github.models import Repository, user_repository
 
     job_uuid = uuid.UUID(job_id)
+    cancelled_before_start = False
     token = uuid.uuid4()
     with session_scope() as db:
         job = db.scalar(
@@ -86,16 +88,19 @@ def run_analysis(
             job.status = "cancelled"
             job.finished_at = datetime.now(UTC)
             event(db, job, "cancelled")
-            return None
-        job.status = "running"
-        job.execution_token = token
-        job.heartbeat_at = datetime.now(UTC)
-        event(db, job, "started")
+            cancelled_before_start = True
+        else:
+            job.status = "running"
+            job.execution_token = token
+            job.heartbeat_at = datetime.now(UTC)
+            event(db, job, "started")
         user_id, repo_id = job.user_id, job.repo_id
         scope = job.scope
         request_options = job.request_options or {}
 
     try:
+        if cancelled_before_start:
+            return None
         verification_request = VerificationRequest(
             scope=scope if scope in ("public", "private") else "all",
             **request_options,
@@ -129,6 +134,11 @@ def run_analysis(
             access_token, token_scope = get_user_github_token(db, user_id)
             if repo is None or not access_token:
                 raise PermissionError("Repository access revoked or token missing")
+
+            if (scope == "public" and repo.private) or (
+                scope == "private" and not repo.private
+            ):
+                raise PermissionError("Repository visibility does not match job scope")
 
             # Kiểm tra quyền và sự đồng thuận đối với private repository
             if repo.private:
@@ -315,6 +325,9 @@ def run_analysis(
                     repo_id,
                 )
 
+            if repo.private:
+                redact_private_evidence(analysis_result)
+
             # Không commit ở đây.
             report = save_analysis_result(
                 db,
@@ -346,9 +359,7 @@ def run_analysis(
 
             event(db, job, "succeeded")
 
-        # Đã ra khỏi session_scope: transaction commit thành công.
         cache_analysis_result(analysis_result)
-
         return analysis_result
 
     except Cancelled:
@@ -377,12 +388,15 @@ def run_analysis(
             from app.modules.consent.cleanup import purge_job_directory
 
             purge_job_directory(job_uuid)
+            from app.modules.consent.cleanup_service import finish_cleanup
+
+            with session_scope() as db:
+                finish_cleanup(db, job_uuid)
         except Exception as exc:
             logger.error(
                 "Lỗi dọn dẹp thư mục tạm của job %s: %s",
                 job_uuid,
-                exc,
-                exc_info=True,
+                type(exc).__name__,
             )
             try:
                 from app.modules.consent.cleanup_service import request_cleanup
@@ -397,5 +411,5 @@ def run_analysis(
                 logger.error(
                     "Không thể ghi outbox cleanup cho job %s: %s",
                     job_uuid,
-                    outbox_exc,
+                    type(outbox_exc).__name__,
                 )

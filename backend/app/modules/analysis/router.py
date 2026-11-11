@@ -230,7 +230,8 @@ async def trigger_repository_analysis(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 
@@ -261,6 +262,7 @@ def get_repository_analysis_report(
         repository_id=repository_id,
         user=current_user,
         commit_sha=commit_sha,
+        include_evidence=False,
     )
     return RepositoryAnalysisResponse(
         report_id=result.get("report_id"),
@@ -273,7 +275,8 @@ def get_repository_analysis_report(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 

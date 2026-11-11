@@ -5,13 +5,16 @@ Never score unverified static detections as proficiency.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
-from app.modules.github.models import Repository
+from app.modules.analysis.service import (
+    verify_private_repo_consent,
+    verify_repository_access,
+)
 from app.modules.users.models import User
 
 from .models import SkillScore
@@ -25,14 +28,11 @@ def get_scores(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_session)],
     kind: Literal["language", "framework"] | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    repo = db.scalar(
-        select(Repository).where(
-            Repository.id == repository_id, Repository.owner_user_id == user.id
-        )
-    )
-    if repo is None:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = verify_repository_access(db, repository_id, user)
+    verify_private_repo_consent(repo, None, db=db, user_id=user.id)
     query = select(SkillScore).where(
         SkillScore.repository_id == repository_id, SkillScore.user_id == user.id
     )
@@ -40,6 +40,8 @@ def get_scores(
         query = query.where(SkillScore.kind == kind)
     scores = db.scalars(
         query.order_by(SkillScore.created_at.desc(), SkillScore.id.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
     return [
         {

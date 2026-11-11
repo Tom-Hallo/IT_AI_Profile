@@ -36,6 +36,7 @@ from app.modules.analysis.schemas import (
 )
 from app.modules.auth.models import OAuthAccount
 from app.modules.auth.service import get_user_github_token, has_private_access
+from app.modules.consent.guards import require_private_access_consent
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -112,8 +113,6 @@ def verify_private_repo_consent(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Phân tích repository riêng tư yêu cầu token có scope 'repo'.",
         )
-    from app.modules.consent.guards import require_private_access_consent
-
     require_private_access_consent(db, user_id, repo.id)
 
 
@@ -752,7 +751,9 @@ def get_stored_verification(
     user: User,
 ) -> RepositoryVerificationResponse | None:
     """Truy xuất bản ghi xác minh gần nhất đã lưu trong cơ sở dữ liệu."""
-    verify_repository_access(db, repository_id, user)
+    repo = verify_repository_access(db, repository_id, user)
+    if repo.private:
+        require_private_access_consent(db, user.id, repo.id)
 
     verif = db.scalar(
         select(RepositoryVerification)
@@ -760,14 +761,16 @@ def get_stored_verification(
             RepositoryVerification.repository_id == repository_id,
             RepositoryVerification.user_id == user.id,
         )
-        .order_by(desc(RepositoryVerification.verified_at))
+        .order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        )
+        .limit(1)
     )
     if not verif:
         return None
 
-    repo = db.scalar(select(Repository).where(Repository.id == repository_id))
-    repo_name = repo.name if repo else "unknown"
-    repo_full_name = repo.full_name or repo_name if repo else "unknown"
+    repo_name = repo.name
+    repo_full_name = repo.full_name or repo_name
 
     ev_rows = db.scalars(
         select(VerificationEvidence)
@@ -844,15 +847,21 @@ def get_verification_summary(
     db: Session,
     repository_id: int,
     user: User,
+    *,
+    report_id: int,
 ) -> RepositoryVerificationSummary | None:
-    """Lấy bản tóm tắt xác minh để nhúng vào báo cáo phân tích mã nguồn."""
+    """Return the caller's verification for this exact report."""
     verif = db.scalar(
         select(RepositoryVerification)
         .where(
             RepositoryVerification.repository_id == repository_id,
             RepositoryVerification.user_id == user.id,
+            RepositoryVerification.report_id == report_id,
         )
-        .order_by(desc(RepositoryVerification.verified_at))
+        .order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        )
+        .limit(1)
     )
     if not verif:
         return None
@@ -902,6 +911,7 @@ def persist_verification_result(
         select(RepositoryVerification).where(
             RepositoryVerification.repository_id == result.repository_id,
             RepositoryVerification.user_id == result.user_id,
+            RepositoryVerification.report_id == result.report_id,
         )
     )
 

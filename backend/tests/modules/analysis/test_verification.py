@@ -1272,7 +1272,7 @@ def test_22_backend_api_router_integration(monkeypatch):
     # For evidence endpoint
     mock_ver_orm = MagicMock(spec=RepositoryVerification)
     mock_ver_orm.id = 50
-    mock_db.scalar.return_value = mock_ver_orm
+    mock_db.scalar.side_effect = [mock_ver_orm, 1]
 
     mock_ev_orm = MagicMock(spec=VerificationEvidence)
     mock_ev_orm.id = 1
