@@ -132,7 +132,7 @@ class GitHubApiClient:
             self._owned_client = None
 
     @property
-    def _headers(self) -> dict[str, str]: #asda
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self._access_token}",
             "Accept": "application/vnd.github+json",
@@ -415,22 +415,15 @@ class GitHubApiClient:
         params: dict[str, Any] = {}
         if recursive:
             params["recursive"] = 1
-        try:
-            response = await self._request(
-                "GET",
-                f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
-                params=params,
-            )
-            data = response.json()
-            if (
-                isinstance(data, dict)
-                and "tree" in data
-                and isinstance(data["tree"], list)
-            ):
-                return data["tree"]
-            return []
-        except GitHubNotFoundError:
-            return []
+        response = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
+            params=params,
+        )
+        data = response.json()
+        if isinstance(data, dict) and isinstance(data.get("tree"), list):
+            return data["tree"]
+        raise GitHubApiError("GitHub trả về cây thư mục không hợp lệ.")
 
     async def get_authenticated_user(self) -> dict[str, Any]:
         """Lấy thông tin tài khoản GitHub của token hiện tại."""

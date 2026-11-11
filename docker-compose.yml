@@ -46,6 +46,22 @@ services:
 
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: ./backend
+    working_dir: /app
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   # ========================================
   # 3. BACKEND - FASTAPI
   # ========================================
@@ -86,6 +102,8 @@ services:
       - ./backend:/app
 
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -133,6 +151,8 @@ services:
       - ./backend:/app
 
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

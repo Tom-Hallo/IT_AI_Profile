@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
+from app.core.time_range import resolve_range
 from app.db.session import get_session
 from app.modules.analysis import service
 from app.modules.analysis.collaboration_router import collaboration_router
@@ -108,7 +109,24 @@ def create_job(
 ):
     csrf(request)
     assert body.repo_id is not None
-    job, created = service.create(db, user.id, body.repo_id, body.scope)
+    options = body.model_dump(
+        mode="json", exclude={"repo_id", "repository_id", "scope"}, exclude_none=True
+    )
+    if body.mode:
+        resolve_range(
+            mode=body.mode,
+            preset=body.preset,
+            month=body.month,
+            year=body.year,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            timezone_name=body.timezone or "UTC",
+        )
+    else:
+        options = {"branch": body.branch} if body.branch else {}
+    job, created = service.create(
+        db, user.id, body.repo_id, body.scope, request_options=options or None
+    )
     if created:
         dispatch(job, db)
     return service.serialize(job)

@@ -392,7 +392,9 @@ async def analyze(
                 evidence_prs = pr_records
 
     except GitHubTokenRevokedError as exc:
-        raise HTTPException(401, str(exc)) from None
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại tài khoản GitHub."
+        ) from exc
     except GitHubPermissionError as exc:
         raise HTTPException(403, str(exc)) from None
     except GitHubNotFoundError as exc:

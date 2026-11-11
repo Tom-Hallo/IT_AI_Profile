@@ -20,6 +20,7 @@ from app.modules.analysis.service import (
     verify_private_repo_consent,
     verify_repository_access,
 )
+from app.modules.github.client import GitHubApiClient, GitHubTokenRevokedError
 from app.modules.github.models import Repository
 from app.modules.users.models import User
 
@@ -122,6 +123,35 @@ async def test_scope_mismatch_raises_400(monkeypatch):
         await analyze_repository(mock_db, 2, user, req_public)
     assert exc_info.value.status_code == 400
     assert "không phù hợp với phạm vi phân tích 'public'" in exc_info.value.detail
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("revoked_during_tree_read", [False, True])
+async def test_revoked_github_token_returns_401(monkeypatch, revoked_during_tree_read):
+    db = MagicMock()
+    db.scalar.return_value = _create_mock_repo()
+    client = AsyncMock(spec=GitHubApiClient)
+    error = GitHubTokenRevokedError("Bad credentials")
+    if revoked_during_tree_read:
+        client.get_latest_commit_sha.return_value = "a" * 40
+        client.get_tree.side_effect = error
+    else:
+        client.get_latest_commit_sha.side_effect = error
+    monkeypatch.setattr(
+        "app.modules.analysis.service.get_user_github_token",
+        lambda _db, _uid: ("fake-token", "read:user"),
+    )
+    save = MagicMock()
+    monkeypatch.setattr("app.modules.analysis.service.save_analysis_result", save)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await analyze_repository(
+            db, 10, _create_mock_user(), RepositoryAnalysisRequest(), client=client
+        )
+
+    assert exc_info.value.status_code == 401
+    assert client.get_tree.await_count == int(revoked_during_tree_read)
+    save.assert_not_called()
 
 
 @pytest.mark.anyio

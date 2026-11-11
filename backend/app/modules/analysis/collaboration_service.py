@@ -90,8 +90,12 @@ async def analyze_repository_collaboration(
     """Thực hiện thu thập và phân tích Pull Request, Review, CI & xử lý lỗi."""
 
     repo = verify_repository_access(db, repository_id, user)
-    owner = repo.owner_login or (repo.full_name.split("/")[0] if repo.full_name else "")
-    repo_name = repo.name
+    owner, _, repo_name = (repo.full_name or "").partition("/")
+    if not owner or not repo_name or "/" in repo_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Tên đầy đủ của repository GitHub không hợp lệ.",
+        )
 
     # Hàm này trả về tuple: (token, OAuth scopes).
     token, scopes = get_user_github_token(db, user.id)

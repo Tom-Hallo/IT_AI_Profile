@@ -73,6 +73,7 @@ def _mock_job(
     j.step = step
     j.error_code = None
     j.retry_of = None
+    j.request_options = None
     j.execution_token = None
     j.created_at = None
     j.heartbeat_at = None
@@ -141,6 +142,7 @@ def test_cancel_terminal_job_raises_conflict():
 def test_retry_job_service_success(monkeypatch):
     mock_db = MagicMock()
     failed_job = _mock_job(status="failed", repo_id=10, scope="full")
+    failed_job.request_options = {"branch": "release"}
     mock_db.scalar.side_effect = [
         failed_job,  # 1. owned_job
         1,  # 2. require_access in retry
@@ -156,6 +158,7 @@ def test_retry_job_service_success(monkeypatch):
     new_job, created = retry(mock_db, user_id=1, job_id=failed_job.id)
     assert created is True
     assert new_job.retry_of == failed_job.id
+    assert new_job.request_options == {"branch": "release"}
 
 
 def test_retry_active_job_raises_conflict():
@@ -183,6 +186,7 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
         scope="full",
         status="queued",
     )
+    job_record.request_options = {"mode": "month", "month": "2026-10"}
     repo_record = _mock_repo(repo_id=15, name="my-project", private=False)
 
     fake_source = InMemoryContentSource(
@@ -231,6 +235,7 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
 
     assert result is not None
     assert result["repository_id"] == 15
+    assert result["time_range"]["end_utc"] == "2026-11-01T00:00:00+00:00"
     assert len(result["frameworks"]) >= 1
     assert any(f["name"] == "FastAPI" for f in result["frameworks"])
     assert job_record.status == "succeeded"
@@ -243,9 +248,9 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
         15,
         "1111222233334444555566667777888899990000",
         "full",
-        "",
-        "",
-        "",
+        "2026-10-01T00:00:00+00:00",
+        "2026-11-01T00:00:00+00:00",
+        "UTC",
     )
     assert cache_key in _ANALYSIS_CACHE
 
@@ -378,9 +383,23 @@ def test_api_jobs_crud_and_csrf(monkeypatch):
         res = client.post(
             "/api/v1/analysis/jobs",
             headers={"Origin": "http://localhost:5173"},
-            json={"repo_id": 5, "scope": "full"},
+            json={
+                "repo_id": 5,
+                "scope": "full",
+                "branch": "release",
+                "mode": "month",
+                "month": "2026-10",
+            },
         )
         assert res.status_code == 202
+        assert analysis_router_mod.service.create.call_args.kwargs[
+            "request_options"
+        ] == {
+            "branch": "release",
+            "mode": "month",
+            "month": "2026-10",
+            "timezone": "UTC",
+        }
         data = res.json()
         assert data["id"] == str(fake_job_uuid)
         assert data["repo_id"] == 5

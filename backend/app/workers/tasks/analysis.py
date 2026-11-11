@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.core.time_range import resolve_range
 from app.modules.analysis.evidence import UTC
 from app.modules.analysis.inspector import (
     RepositoryContentSource,
@@ -19,13 +20,14 @@ from app.modules.analysis.inspector import (
 )
 from app.modules.analysis.limits import AnalysisLimits
 from app.modules.analysis.models import AnalysisJob
+from app.modules.analysis.schemas import VerificationRequest
 from app.modules.analysis.service import (
     GitHubRepositoryContentSource,
     cache_analysis_result,
     event,
     save_analysis_result,
 )
-from app.modules.github.client import GitHubApiClient
+from app.modules.github.client import GitHubApiClient, GitHubNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +93,31 @@ def run_analysis(
         event(db, job, "started")
         user_id, repo_id = job.user_id, job.repo_id
         scope = job.scope
+        request_options = job.request_options or {}
 
     try:
+        verification_request = VerificationRequest(
+            scope=scope if scope in ("public", "private") else "all",
+            **request_options,
+        )
+        end_utc = None
+        time_range = None
+        if verification_request.mode:
+            start_utc, end_utc = resolve_range(
+                mode=verification_request.mode,
+                preset=verification_request.preset,
+                month=verification_request.month,
+                year=verification_request.year,
+                start_date=verification_request.start_date,
+                end_date=verification_request.end_date,
+                timezone_name=verification_request.timezone,
+            )
+            time_range = {
+                "start_utc": start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+                "timezone": verification_request.timezone,
+            }
+
         # 1. Tải và kiểm tra tính hợp lệ của repository & quyền truy cập GitHub token
         # (PBI-009/PBI-011)
         with session_scope() as db:
@@ -154,10 +179,14 @@ def run_analysis(
                 latest_sha = await client.get_latest_commit_sha(
                     owner=owner,
                     repo=r_name,
-                    branch_or_ref=default_branch,
+                    branch_or_ref=verification_request.branch or default_branch,
+                    until=end_utc,
                 )
-                if latest_sha:
-                    commit_sha = latest_sha
+                if not latest_sha:
+                    raise GitHubNotFoundError(
+                        "Không tìm thấy commit trên nhánh trong khoảng đã chọn."
+                    )
+                commit_sha = latest_sha
                 content_source = GitHubRepositoryContentSource(
                     client=client,
                     owner=owner,
@@ -171,6 +200,7 @@ def run_analysis(
                 commit_sha=commit_sha,
                 limits=limits,
                 scope=scope,
+                time_range=time_range,
             )
             return await inspector.inspect(
                 source=content_source,
@@ -190,7 +220,6 @@ def run_analysis(
 
         if custom_source is None and access_token:
             try:
-                from app.modules.analysis.schemas import VerificationRequest
                 from app.modules.analysis.verification_service import (
                     verify_repository_contributions,
                 )
@@ -209,7 +238,7 @@ def run_analysis(
                             db=verif_db,
                             repository_id=repo_id,
                             user=user_record,
-                            request=VerificationRequest(scope=scope),
+                            request=verification_request,
                             job_id=str(job_uuid),
                             persist=False,
                         )

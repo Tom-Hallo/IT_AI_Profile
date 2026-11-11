@@ -44,6 +44,7 @@ from app.modules.github.client import (
     GitHubPermissionError,
     GitHubRateLimitError,
     GitHubServerError,
+    GitHubTokenRevokedError,
 )
 from app.modules.github.models import Repository, user_repository
 from app.modules.users.models import User
@@ -159,8 +160,9 @@ async def verify_repository_contributions(
     auth_github_user_id = str(p_uid) if p_uid is not None else None
     auth_github_login: str | None = None
 
-    # Khởi tạo client
-    api_client = client or GitHubApiClient(access_token=token or "")
+    if not token and client is None:
+        raise HTTPException(401, "Vui lòng liên kết lại tài khoản GitHub để xác minh.")
+    api_client = client or GitHubApiClient(access_token=token)
 
     try:
         if token or client:
@@ -169,6 +171,10 @@ async def verify_repository_contributions(
                 auth_github_login = user_profile.get("login")
                 if user_profile.get("id"):
                     auth_github_user_id = str(user_profile.get("id"))
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubApiError:
         pass
 
@@ -206,6 +212,10 @@ async def verify_repository_contributions(
                     limitations.append(
                         "Không thể lấy metadata repository gốc từ GitHub API."
                     )
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except (GitHubNotFoundError, GitHubPermissionError, GitHubApiError) as exc:
         if is_fork:
             parent_repo_name = repo.fork_source
@@ -352,6 +362,8 @@ async def verify_repository_contributions(
                         stats = details.get("stats") or {}
                         additions = int(stats.get("additions", 0))
                         deletions = int(stats.get("deletions", 0))
+                except GitHubTokenRevokedError:
+                    raise
                 except Exception:
                     pass
 
@@ -372,6 +384,8 @@ async def verify_repository_contributions(
                 except GitHubNotFoundError:
                     parent_contains_commit = False
 
+                except GitHubTokenRevokedError:
+                    raise
                 except GitHubApiError:
                     parent_contains_commit = None
 
@@ -453,6 +467,10 @@ async def verify_repository_contributions(
                     else:
                         unverified_commits_count += 1
 
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubRateLimitError:
         coverage_status = "partial"
         confidence = "uncertain"
@@ -558,6 +576,10 @@ async def verify_repository_contributions(
                 )
             )
 
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubRateLimitError:
         coverage_status = "partial"
         confidence = "uncertain"

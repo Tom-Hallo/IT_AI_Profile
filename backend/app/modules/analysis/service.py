@@ -33,6 +33,8 @@ from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
+    GitHubEmptyRepositoryError,
+    GitHubNotFoundError,
     GitHubPermissionError,
     GitHubRateLimitError,
     GitHubTokenRevokedError,
@@ -160,13 +162,30 @@ def create(
     repo_id: int,
     scope: str,
     retry_of: uuid.UUID | None = None,
+    *,
+    request_options: dict[str, Any] | None = None,
 ) -> tuple[AnalysisJob, bool]:
     """Create a new analysis job if one is not already active."""
     require_access(db, user_id, repo_id)
+
+    def reuse(existing: AnalysisJob) -> tuple[AnalysisJob, bool]:
+        if (existing.request_options or {}) != (request_options or {}):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Repository đang có một phân tích với bộ lọc khác.",
+            )
+        return existing, False
+
     existing = active_job(db, user_id, repo_id, scope)
     if existing:
-        return existing, False
-    job = AnalysisJob(user_id=user_id, repo_id=repo_id, scope=scope, retry_of=retry_of)
+        return reuse(existing)
+    job = AnalysisJob(
+        user_id=user_id,
+        repo_id=repo_id,
+        scope=scope,
+        retry_of=retry_of,
+        request_options=request_options,
+    )
     db.add(job)
 
     try:
@@ -177,7 +196,7 @@ def create(
         db.rollback()
         existing = active_job(db, user_id, repo_id, scope)
         if existing:
-            return existing, False
+            return reuse(existing)
         raise
 
     db.refresh(job)
@@ -205,8 +224,11 @@ def retry(db: Session, user_id: int, job_id: uuid.UUID) -> tuple[AnalysisJob, bo
         )
     require_access(db, user_id, old.repo_id)
     repo_id, scope, old_id = old.repo_id, old.scope, old.id
+    request_options = old.request_options
     db.rollback()  # release lock before create()
-    return create(db, user_id, repo_id, scope, retry_of=old_id)
+    return create(
+        db, user_id, repo_id, scope, retry_of=old_id, request_options=request_options
+    )
 
 
 def serialize(job: AnalysisJob) -> dict[str, Any]:
@@ -394,16 +416,20 @@ async def analyze_repository(
         }
         target_until = end_utc
 
-    # 5. Khởi tạo content source và xác định commit SHA
     commit_sha = custom_commit_sha or "0000000000000000000000000000000000000000"
     content_source = custom_source
 
-    if content_source is None:
-        owner = repo.full_name.split("/")[0] if "/" in repo.full_name else repo.name
-        repo_name = repo.full_name.split("/")[1] if "/" in repo.full_name else repo.name
+    try:
+        if content_source is None:
+            if not token and client is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Vui lòng liên kết lại tài khoản GitHub để phân tích.",
+                )
 
-        api_client = client or GitHubApiClient(access_token=token)
-        try:
+            owner, _, repo_name = repo.full_name.partition("/")
+            repo_name = repo_name or repo.name
+            api_client = client or GitHubApiClient(access_token=token)
             target_branch = request.branch or repo.default_branch or "main"
             latest_sha = await api_client.get_latest_commit_sha(
                 owner=owner,
@@ -411,41 +437,56 @@ async def analyze_repository(
                 branch_or_ref=target_branch,
                 until=target_until,
             )
-            if latest_sha:
-                commit_sha = latest_sha
-        except (
-            GitHubPermissionError,
-            GitHubTokenRevokedError,
-            GitHubRateLimitError,
-            GitHubApiError,
-        ) as exc:
-            logger.warning(
-                "Không thể lấy commit SHA mới nhất qua GitHub API: %s. "
-                "Dùng fallback SHA.",
-                exc,
+            if not latest_sha:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Không tìm thấy commit trên nhánh trong khoảng đã chọn.",
+                )
+
+            commit_sha = latest_sha
+            content_source = GitHubRepositoryContentSource(
+                client=api_client,
+                owner=owner,
+                repo=repo_name,
+                commit_sha=commit_sha,
             )
 
-        content_source = GitHubRepositoryContentSource(
-            client=api_client,
-            owner=owner,
-            repo=repo_name,
+        inspector = RepositoryInspector(
+            repository_id=repo.id,
             commit_sha=commit_sha,
+            limits=AnalysisLimits(),
+            scope=request.scope,
+            time_range=time_range_info,
         )
-
-    # 6. Khởi tạo và thực thi RepositoryInspector
-    limits = AnalysisLimits()
-    inspector = RepositoryInspector(
-        repository_id=repo.id,
-        commit_sha=commit_sha,
-        limits=limits,
-        scope=request.scope,
-        time_range=time_range_info,
-    )
-
-    result = await inspector.inspect(
-        source=content_source,
-        github_languages=repo.languages,
-    )
+        result = await inspector.inspect(
+            source=content_source,
+            github_languages=repo.languages,
+        )
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="GitHub từ chối token. Vui lòng liên kết lại tài khoản GitHub.",
+        ) from exc
+    except GitHubPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except GitHubRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+        ) from exc
+    except GitHubNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except GitHubEmptyRepositoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except GitHubApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
     # 7. Lưu trữ kết quả và bằng chứng xác thực vào DB và cache
     report = save_analysis_result(db, result)

@@ -81,7 +81,6 @@ def _create_mock_repo(
     r.github_repo_id = 8888 + repo_id
     r.name = name
     r.full_name = full_name
-    r.owner_login = full_name.split("/")[0]
     r.private = private
     r.owner_id = owner_id
     r.default_branch = default_branch
