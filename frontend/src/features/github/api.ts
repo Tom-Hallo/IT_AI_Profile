@@ -1,9 +1,11 @@
 import { apiFetch } from '@/shared/api/client'
 import type {
   AnalysisJobInfo,
+  CollaborationEvidenceListResult,
   EvidenceListResult,
   Repository,
   RepositoryAnalysisResult,
+  RepositoryCollaborationResult,
   RepositoryListResponse,
   RepositoryQueryParams,
   RepositoryVerificationResult,
@@ -231,6 +233,78 @@ export function fetchVerificationEvidence(
   const qs = query.toString() ? `?${query.toString()}` : ''
   return apiFetch<VerificationEvidenceListResult>(
     `/repositories/${repoId}/verification/evidence${qs}`,
+    { signal },
+  )
+}
+
+/**
+ * PBI-014: Kích hoạt / làm mới phân tích Pull Request, Review, CI & xử lý lỗi.
+ */
+export function triggerCollaborationAnalysis(
+  repoId: number,
+  payload: {
+    branch?: string
+    mode?: string
+    preset?: string
+    month?: string
+    year?: string | number
+    start_date?: string
+    end_date?: string
+    timezone?: string
+    force_refresh?: boolean
+  } = {},
+  signal?: AbortSignal,
+): Promise<RepositoryCollaborationResult> {
+  return apiFetch<RepositoryCollaborationResult>(`/repositories/${repoId}/collaboration`, {
+    method: 'POST',
+    body: payload,
+    signal,
+    timeoutMs: 60000,
+  })
+}
+
+/**
+ * PBI-014: Lấy kết quả phân tích cộng tác gần nhất đã lưu trong DB.
+ */
+export function fetchLatestCollaboration(
+  repoId: number,
+  signal?: AbortSignal,
+): Promise<RepositoryCollaborationResult> {
+  return apiFetch<RepositoryCollaborationResult>(`/repositories/${repoId}/collaboration`, {
+    signal,
+  })
+}
+
+/**
+ * PBI-014: Truy xuất danh sách bằng chứng cộng tác phân trang và lọc theo trạng thái/loại.
+ */
+export function fetchCollaborationEvidence(
+  repoId: number,
+  params: {
+    evidence_type?: string
+    state?: string
+    pr_number?: number
+    page?: number
+    per_page?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<CollaborationEvidenceListResult> {
+  const query = new URLSearchParams()
+  if (params.evidence_type && params.evidence_type !== 'all') {
+    query.set('evidence_type', params.evidence_type)
+  }
+  if (params.state && params.state !== 'all') {
+    query.set('state', params.state)
+  }
+  if (params.pr_number !== undefined) {
+    query.set('pr_number', String(params.pr_number))
+  }
+  if (params.page !== undefined) query.set('page', String(params.page))
+  if (params.per_page !== undefined) query.set('per_page', String(params.per_page))
+
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return apiFetch<CollaborationEvidenceListResult>(
+    `/repositories/${repoId}/collaboration/evidence${qs}`,
     { signal },
   )
 }
