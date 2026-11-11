@@ -1,4 +1,4 @@
-﻿"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
+"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
 
 Quy tắc:
 - Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import
@@ -80,6 +80,7 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("phải lớn hơn 0")
         return value
+
     @field_validator("ai_timeout_seconds")
     @classmethod
     def _validate_ai_timeout(cls, value: int) -> int:
