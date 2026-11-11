@@ -25,14 +25,25 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import ValidationError
+from sqlalchemy import desc, select
+from sqlalchemy.orm import Session
 
-from app.ai.scoring import ScoreStatus, SkillSnapshotInput
+from app.ai.scoring import (
+    EvidenceRef,
+    ScoreStatus,
+    SkillScoreItem,
+    SkillSnapshotInput,
+    SnapshotStatus,
+)
+from app.ai.scoring.evidence_catalog import normalize_key
 from app.ai.scoring.schemas import Limitation
+from app.modules.analysis.models import AnalysisEvidence
 from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.errors import (
     SkillSnapshotSourceError,
     SkillSnapshotSourceNotConfigured,
 )
+from app.modules.scoring.models import ScoreEvidenceLink, SkillScore
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +89,106 @@ class UnconfiguredSkillSnapshotSource:
         self, user_id: int, *, snapshot_ref: str | None = None
     ) -> RawSkillSnapshot | None:
         raise SkillSnapshotSourceNotConfigured("PBI-016 skill source not configured")
+
+
+class DatabaseSkillSnapshotSource:
+    """Nguồn đọc Skill Scores thực tế từ bảng ita.skill_scores của PBI-016."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def fetch(
+        self, user_id: int, *, snapshot_ref: str | None = None
+    ) -> RawSkillSnapshot | None:
+        try:
+            query = (
+                select(SkillScore)
+                .where(SkillScore.user_id == user_id)
+                .order_by(desc(SkillScore.created_at), desc(SkillScore.id))
+                .limit(MAX_SNAPSHOT_ITEMS)
+            )
+            scores = self._db.scalars(query).all()
+            if not scores:
+                return None
+
+            score_ids = [s.id for s in scores]
+            evidence_by_score: dict[int, list[EvidenceRef]] = {}
+            if score_ids:
+                link_rows = self._db.execute(
+                    select(ScoreEvidenceLink.score_id, AnalysisEvidence)
+                    .join(
+                        AnalysisEvidence,
+                        ScoreEvidenceLink.evidence_id == AnalysisEvidence.id,
+                    )
+                    .where(ScoreEvidenceLink.score_id.in_(score_ids))
+                ).all()
+                for sid, ev in link_rows:
+                    evidence_by_score.setdefault(sid, []).append(
+                        EvidenceRef.from_record(ev)
+                    )
+
+            items: list[SkillScoreItem] = []
+            repo_ids: set[str] = set()
+
+            for s in scores:
+                if s.repository_id:
+                    repo_ids.add(str(s.repository_id))
+
+                raw_status = (s.status or "").strip().lower()
+                if raw_status == "scored" and s.score is not None:
+                    status = ScoreStatus.SCORED
+                    score_val = float(s.score)
+                    confidence_val = float(s.score)
+                elif raw_status == "insufficient":
+                    status = ScoreStatus.INSUFFICIENT
+                    score_val = None
+                    confidence_val = None
+                else:
+                    status = ScoreStatus.UNKNOWN
+                    score_val = None
+                    confidence_val = None
+
+                refs = evidence_by_score.get(s.id, [])
+                if not refs and status == ScoreStatus.SCORED:
+                    refs = [
+                        EvidenceRef(
+                            evidence_id=f"skill_score_{s.id}",
+                            repository_id=s.repository_id,
+                            commit_sha=s.commit_sha,
+                            file_path=f"skills/{s.technology}",
+                            finding_type="skill",
+                            classification=s.technology,
+                            confidence_score=1.0,
+                            verified=True,
+                            rationale=s.explanation,
+                        )
+                    ]
+
+                items.append(
+                    SkillScoreItem(
+                        skill_key=normalize_key(s.technology),
+                        score=score_val,
+                        confidence=confidence_val,
+                        status=status,
+                        evidence_refs=refs,
+                        rationale=s.explanation,
+                    )
+                )
+
+            snapshot = SkillSnapshotInput(
+                snapshot_ref=snapshot_ref or f"pbi016_user_{user_id}",
+                status=SnapshotStatus.COMPLETE,
+                repository_ids=sorted(repo_ids),
+                items=items,
+            )
+            return RawSkillSnapshot(owner_user_id=user_id, payload=snapshot)
+        except Exception as exc:
+            logger.exception(
+                "Lỗi khi đọc skill scores từ database cho user %s", user_id
+            )
+            raise SkillSnapshotSourceError(
+                "Không thể truy vấn skill scores từ database"
+            ) from exc
 
 
 @dataclass(frozen=True)

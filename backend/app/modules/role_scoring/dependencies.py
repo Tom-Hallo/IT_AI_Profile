@@ -23,9 +23,9 @@ from app.modules.role_scoring.architecture_provider import (
 )
 from app.modules.role_scoring.service import RoleScoringService
 from app.modules.role_scoring.skill_adapter import (
+    DatabaseSkillSnapshotSource,
     SkillSnapshotAdapter,
     SkillSnapshotSource,
-    UnconfiguredSkillSnapshotSource,
 )
 from app.modules.users.models import User
 
@@ -35,8 +35,10 @@ def get_role_scoring_engine() -> RoleScoringEngine:
     return RoleScoringEngine()
 
 
-def get_skill_snapshot_source() -> SkillSnapshotSource:
-    return UnconfiguredSkillSnapshotSource()
+def get_skill_snapshot_source(
+    db: Annotated[Session, Depends(get_session)],
+) -> SkillSnapshotSource:
+    return DatabaseSkillSnapshotSource(db)
 
 
 def get_role_scoring_service(
