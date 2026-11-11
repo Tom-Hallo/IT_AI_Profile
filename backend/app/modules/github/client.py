@@ -514,6 +514,22 @@ class GitHubApiClient:
         data = response.json()
         if not isinstance(data, dict):
             raise GitHubApiError("Chi tiết commit không hợp lệ.")
+        if _parse_next_link(response.headers.get("link")):
+            data = {key: value for key, value in data.items() if key != "files"}
+        return data
+
+    async def get_pull_request_files(
+        self, owner: str, repo: str, number: int
+    ) -> list[dict[str, Any]]:
+        response = await self._request(
+            "GET",
+            f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
+            f"/pulls/{number}/files",
+            params={"per_page": 100},
+        )
+        data = response.json()
+        if not isinstance(data, list) or _parse_next_link(response.headers.get("link")):
+            raise GitHubApiError("Không có danh sách tệp PR đầy đủ.")
         return data
 
     async def list_pull_requests(

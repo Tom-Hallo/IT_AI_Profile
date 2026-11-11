@@ -1,6 +1,6 @@
 import './SkillScores.css'
 
-export type Breakdown = { criterion: string; weight: number; points: number; evidence_ids: number[] }
+export type Breakdown = { criterion: string; weight: number; points: number; evidence_ids: number[]; evidence_kind?: string }
 export type SkillScore = { id: number | null; technology: string; kind: 'language' | 'framework'; status: 'Scored' | 'Insufficient' | 'Unknown'; score: number | null; breakdown: Breakdown[]; explanation: string; rubric_id: number | null; rubric_version?: string }
 
 export function SkillScores({ scores }: { scores: SkillScore[] }) {
@@ -13,7 +13,7 @@ export function SkillScores({ scores }: { scores: SkillScore[] }) {
       {item.score !== null && <div className="skill-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.score}><div style={{ width: `${item.score}%` }} /></div>}
       <p>{item.explanation}</p>
       {item.breakdown.length > 0 && <details><summary>Chi tiết trọng số và evidence</summary>
-        {item.breakdown.map(b => <div className="skill-metric" key={b.criterion}><span>{b.criterion} ({b.weight}%)</span><strong>{b.points} điểm</strong><small>Evidence IDs: {b.evidence_ids.join(', ')}</small></div>)}
+        {item.breakdown.map(b => <div className="skill-metric" key={b.criterion}><span>{b.criterion} ({b.weight}%)</span><strong>{b.points} điểm</strong><small>{b.evidence_kind === 'verification' ? 'Mã bằng chứng xác minh' : 'Mã bằng chứng'}: {b.evidence_ids.join(', ')}</small></div>)}
       </details>}
     </article>)}
   </section>

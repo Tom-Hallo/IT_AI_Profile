@@ -52,25 +52,30 @@ def get_scores(
         query = query.where(SkillScore.report_id == report_id)
     if kind:
         query = query.where(SkillScore.kind == kind)
-    scores = db.scalars(
-        query.order_by(SkillScore.created_at.desc(), SkillScore.id.desc())
-        .offset(offset)
-        .limit(limit)
-    ).all()
-    if report is not None and not scores and offset == 0:
-        # Static detections identify technology. They cannot prove proficiency.
-        missing = calculate({})
-        technologies = dict.fromkeys(
-            (category, item["name"])
-            for category, items in (
-                ("language", report.languages),
-                ("framework", report.frameworks),
-            )
-            if kind is None or kind == category
-            for item in items
-            if item.get("name")
-        )
+    ordered = query.order_by(SkillScore.created_at.desc(), SkillScore.id.desc())
+    if report is None:
         return [
+            _serialize_score(item)
+            for item in db.scalars(ordered.offset(offset).limit(limit)).all()
+        ]
+
+    saved = {}
+    for item in db.scalars(ordered).all():
+        saved.setdefault((item.kind, item.technology), _serialize_score(item))
+    missing = calculate({})
+    technologies = dict.fromkeys(
+        (category, item["name"])
+        for category, items in (
+            ("language", report.languages),
+            ("framework", report.frameworks),
+        )
+        if kind is None or kind == category
+        for item in items
+        if item.get("name")
+    )
+    for category, name in technologies:
+        saved.setdefault(
+            (category, name),
             {
                 "id": None,
                 "technology": name,
@@ -79,21 +84,21 @@ def get_scores(
                 "report_id": report.id,
                 "commit_sha": report.commit_sha,
                 **missing,
-            }
-            for category, name in list(technologies)[:limit]
-        ]
-    return [
-        {
-            "id": s.id,
-            "technology": s.technology,
-            "kind": s.kind,
-            "status": s.status,
-            "score": s.score,
-            "rubric_id": s.rubric_id,
-            "report_id": s.report_id,
-            "commit_sha": s.commit_sha,
-            "breakdown": s.breakdown,
-            "explanation": s.explanation,
-        }
-        for s in scores
-    ]
+            },
+        )
+    return list(saved.values())[offset : offset + limit]
+
+
+def _serialize_score(score: SkillScore) -> dict:
+    return {
+        "id": score.id,
+        "technology": score.technology,
+        "kind": score.kind,
+        "status": score.status,
+        "score": score.score,
+        "rubric_id": score.rubric_id,
+        "report_id": score.report_id,
+        "commit_sha": score.commit_sha,
+        "breakdown": score.breakdown,
+        "explanation": score.explanation,
+    }

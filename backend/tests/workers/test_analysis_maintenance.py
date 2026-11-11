@@ -31,3 +31,26 @@ def test_recovery_enqueues_orphan_and_cleans_interrupted_work(monkeypatch):
     assert abandoned.status == "failed"
     assert abandoned.error_code == "WORKER_INTERRUPTED"
     cleanup.assert_called_once_with(db, abandoned, reason="worker_interrupted")
+
+
+def test_redis_outage_does_not_block_cleanup_of_abandoned_job(monkeypatch):
+    from redis.exceptions import ConnectionError
+
+    db = MagicMock()
+    queued = SimpleNamespace(id=uuid4(), status="queued", execution_token=None)
+    stale = SimpleNamespace(
+        id=uuid4(), status="running", execution_token=uuid4(), progress=35
+    )
+    db.scalars.return_value.all.return_value = [queued, stale]
+    monkeypatch.setattr(maintenance, "session_scope", lambda: nullcontext(db))
+    monkeypatch.setattr(
+        maintenance, "enqueue_task", MagicMock(side_effect=ConnectionError)
+    )
+    cleanup = MagicMock()
+    monkeypatch.setattr(maintenance, "request_cleanup", cleanup)
+
+    maintenance.recover_analysis_jobs()
+
+    assert queued.status == "queued"
+    assert stale.status == "failed"
+    cleanup.assert_called_once_with(db, stale, reason="worker_interrupted")

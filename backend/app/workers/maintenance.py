@@ -4,6 +4,7 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
+from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 
 from app.core.config import settings
@@ -44,12 +45,18 @@ def recover_analysis_jobs() -> None:
         ).all()
         for job in jobs:
             if job.execution_token is None and job.status != "running":
-                rq_job = enqueue_task(
-                    "app.workers.tasks.analysis.run_analysis",
-                    str(job.id),
-                    job_id=f"analysis-{job.id}",
-                )
-                if rq_job.get_status(refresh=False) not in EXPIRED_RQ_STATES:
+                try:
+                    rq_job = enqueue_task(
+                        "app.workers.tasks.analysis.run_analysis",
+                        str(job.id),
+                        job_id=f"analysis-{job.id}",
+                    )
+                    if rq_job.get_status(refresh=False) not in EXPIRED_RQ_STATES:
+                        continue
+                except (RedisError, OSError) as exc:
+                    logger.warning(
+                        "Không thể phục hồi job %s: %s", job.id, type(exc).__name__
+                    )
                     continue
             job.status = "cancelled" if job.status == "cancel_requested" else "failed"
             job.error_code = "WORKER_INTERRUPTED" if job.status == "failed" else None

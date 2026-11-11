@@ -53,3 +53,26 @@ def test_report_without_verified_metrics_has_insufficient_scores():
     assert item["status"] == "Insufficient"
     assert item["score"] is None
     assert item["report_id"] == 23
+
+
+def test_report_score_fallback_supports_offset():
+    db = MagicMock()
+    db.scalar.side_effect = [
+        SimpleNamespace(id=7, private=False),
+        SimpleNamespace(
+            id=23,
+            commit_sha="a" * 40,
+            languages=[{"name": "Python"}, {"name": "Go"}],
+            frameworks=[],
+        ),
+    ]
+    db.scalars.return_value.all.return_value = []
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_session] = lambda: db
+    with TestClient(app) as client:
+        res = client.get(
+            "/api/v1/scoring/repositories/7/skills?report_id=23&offset=1&limit=1"
+        )
+    assert res.status_code == 200
+    assert [item["technology"] for item in res.json()] == ["Go"]

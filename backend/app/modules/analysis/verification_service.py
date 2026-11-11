@@ -116,6 +116,19 @@ def verify_private_repo_consent(
     require_private_access_consent(db, user_id, repo.id)
 
 
+def _scoring_files(files: Any) -> list[dict[str, Any]]:
+    if not isinstance(files, list) or len(files) > 300:
+        return []
+    return [
+        {"path": item["filename"], "changes": item["changes"]}
+        for item in files
+        if isinstance(item, dict)
+        and isinstance(item.get("filename"), str)
+        and isinstance(item.get("changes"), int)
+        and item["changes"] > 0
+    ]
+
+
 async def verify_repository_contributions(
     db: Session,
     repository_id: int,
@@ -269,6 +282,8 @@ async def verify_repository_contributions(
     coverage_status = "complete"
     confidence = "high"
     collection_truncated = False
+    collect_score_files = report_id is not None or job_id is not None
+    scoring_files_partial = False
 
     def mark_collection_truncated() -> None:
         nonlocal collection_truncated
@@ -291,6 +306,7 @@ async def verify_repository_contributions(
         async def _inspect_commit(
             c: dict[str, Any],
         ) -> VerificationEvidenceItem | None:
+            nonlocal scoring_files_partial
             sha = c.get("sha", "")
             if not sha or sha in seen_commit_shas:
                 return None
@@ -348,8 +364,13 @@ async def verify_repository_contributions(
 
             additions = None
             deletions = None
+            changed_files = []
             c_stats = c.get("stats")
-            if isinstance(c_stats, dict) and "additions" in c_stats:
+            if (
+                isinstance(c_stats, dict)
+                and "additions" in c_stats
+                and not (collect_score_files and is_author_verified and not is_merge)
+            ):
                 additions = int(c_stats.get("additions", 0))
                 deletions = int(c_stats.get("deletions", 0))
             else:
@@ -358,13 +379,19 @@ async def verify_repository_contributions(
                         details = await api_client.get_commit_details(
                             owner, repo_name, sha
                         )
+                        if collect_score_files and is_author_verified and not is_merge:
+                            files = details.get("files")
+                            changed_files = _scoring_files(files)
+                            if not isinstance(files, list) or len(files) > 300:
+                                scoring_files_partial = True
                         stats = details.get("stats") or {}
                         additions = int(stats.get("additions", 0))
                         deletions = int(stats.get("deletions", 0))
                 except GitHubTokenRevokedError:
                     raise
                 except Exception:
-                    pass
+                    if collect_score_files and is_author_verified and not is_merge:
+                        scoring_files_partial = True
 
             parent_contains_commit: bool | None = None
 
@@ -449,6 +476,7 @@ async def verify_repository_contributions(
                 metadata={
                     "sha": sha,
                     "parents_count": len(c.get("parents", [])),
+                    "changed_files": changed_files if v_status == "verified" else [],
                 },
             )
 
@@ -500,6 +528,7 @@ async def verify_repository_contributions(
             on_truncated=mark_collection_truncated,
         )
 
+        requested_pr_files = 0
         for pr in raw_prs:
             pr_num = pr.get("number")
             if not pr_num or pr_num in seen_pr_numbers:
@@ -551,6 +580,27 @@ async def verify_repository_contributions(
                 rationale = f"Pull Request #{pr_num} do @{pr_user_login} tạo."
                 unverified_prs_count += 1
 
+            changed_files = []
+            if (
+                collect_score_files
+                and is_pr_author
+                and pr_user.get("type") != "Bot"
+                and base_data.get("ref") == target_branch
+            ):
+                if requested_pr_files >= 20:
+                    scoring_files_partial = True
+                else:
+                    requested_pr_files += 1
+                    try:
+                        changed_files = _scoring_files(
+                            await api_client.get_pull_request_files(
+                                owner, repo_name, int(pr_num)
+                            )
+                        )
+                    except GitHubTokenRevokedError:
+                        raise
+                    except GitHubApiError:
+                        scoring_files_partial = True
             evidence_list.append(
                 VerificationEvidenceItem(
                     evidence_type="pull_request",
@@ -571,6 +621,7 @@ async def verify_repository_contributions(
                         "number": pr_num,
                         "state": pr_state,
                         "merged": pr_merged,
+                        "changed_files": changed_files,
                     },
                 )
             )
@@ -734,7 +785,7 @@ async def verify_repository_contributions(
         anti_inflation_flag=anti_inflation_flag,
         time_range=time_range_info,
         limitations=limitations,
-        summary_data=summary_data,
+        summary_data={**summary_data, "scoring_files_partial": scoring_files_partial},
         verified_at=verified_at.isoformat(),
         evidence=evidence_list,
     )
@@ -994,6 +1045,10 @@ def persist_verification_result(
 
     db.flush()
 
+    if result.report_id is not None:
+        from app.modules.scoring.snapshots import save_skill_snapshots
+
+        save_skill_snapshots(db, result, verif.id)
     if commit:
         db.commit()
 
