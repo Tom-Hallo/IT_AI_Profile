@@ -1,3 +1,4 @@
+import { FindingEvidenceExplorer } from './FindingEvidenceExplorer'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError, isAbortError } from '@/shared/api/client'
@@ -1228,6 +1229,14 @@ export function RepositoryAnalysisPage() {
                   </div>
                 )}
               </section>
+
+              {/* PBI-015: Finding → Evidence drill-down for the current analysis report */}
+              <FindingEvidenceExplorer
+                key={`${effectiveRepoId}:${data.report_id ?? 'latest'}:${data.commit_sha}`}
+                repositoryId={Number(effectiveRepoId)}
+                reportId={data.report_id ?? undefined}
+                commitSha={data.commit_sha}
+              />
 
               {/* Verifiable Evidence Explorer */}
               <section className="card" style={{ padding: '1.5rem', background: '#ffffff' }}>

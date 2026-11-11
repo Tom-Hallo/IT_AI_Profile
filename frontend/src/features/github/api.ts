@@ -309,3 +309,42 @@ export function fetchCollaborationEvidence(
   )
 }
 
+
+// PBI-015: Finding → Evidence. Backend responses deliberately omit raw snippets.
+export interface FindingSummary {
+  id: number
+  report_id: number
+  finding_type: string
+  classification: string
+  confidence_score: number
+  analyzer_version: string
+}
+
+export interface FindingEvidence {
+  id: number
+  commit_sha: string
+  file_path: string
+  line_number: number | null
+  evidence_source: string
+  detection_method: string
+  confidence_score: number
+}
+
+export interface FindingDetail extends FindingSummary {
+  repository_id: number
+  commit_sha: string
+  rationale: string
+  scope: string
+  time_range: Record<string, unknown> | null
+  evidence: FindingEvidence[]
+}
+
+export function fetchFindings(repoId: number, reportId?: number, signal?: AbortSignal): Promise<FindingSummary[]> {
+  const query = new URLSearchParams({ repository_id: String(repoId), limit: '200' })
+  if (reportId !== undefined) query.set('report_id', String(reportId))
+  return apiFetch<FindingSummary[]>(`/analysis/findings?${query.toString()}`, { signal })
+}
+
+export function fetchFindingDetail(findingId: number, signal?: AbortSignal): Promise<FindingDetail> {
+  return apiFetch<FindingDetail>(`/analysis/findings/${findingId}`, { signal })
+}

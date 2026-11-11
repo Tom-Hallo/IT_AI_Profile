@@ -535,6 +535,11 @@ def save_analysis_result(
             )
             db.add(ev_rec)
 
+        db.flush()
+        from app.modules.analysis.finding_service import build_findings
+
+        build_findings(db, report)
+
         if commit:
             db.commit()
         else:

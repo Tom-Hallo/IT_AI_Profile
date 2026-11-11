@@ -98,6 +98,7 @@ export interface StructureSummary {
 }
 
 export interface RepositoryAnalysisResult {
+  report_id?: number | null
   repository_id: number
   commit_sha: string
   analyzed_at: string

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -130,6 +131,7 @@ class AnalysisEvidence(Base):
     __tablename__ = "analysis_evidence"
     __table_args__ = (
         Index("ix_analysis_evidence_repo_commit", "repository_id", "commit_sha"),
+        UniqueConstraint("id", "report_id", name="uq_analysis_evidence_id_report"),
         {"schema": "ita"},
     )
 
