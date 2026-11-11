@@ -20,7 +20,7 @@ import app.modules.github.selection_models
 import app.modules.roadmaps.models
 import app.modules.users.models  # noqa: F401
 from app.db.base import Base
-
+import app.modules.ai_mentor.usage_models  # noqa: F401
 
 def init_models() -> None:
     """Ensure all mappers are compiled and validated."""

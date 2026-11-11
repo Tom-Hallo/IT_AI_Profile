@@ -35,6 +35,7 @@ import app.modules.cvs.models  # noqa: F401, E402
 import app.modules.github.models  # noqa: F401, E402
 import app.modules.roadmaps.models  # noqa: F401, E402
 import app.modules.users.models  # noqa: F401, E402
+import app.modules.ai_mentor.usage_models  # noqa: F401, E402
 
 # ---------------------------------------------------------------------------
 
