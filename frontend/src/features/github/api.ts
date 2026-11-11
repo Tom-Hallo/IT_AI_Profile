@@ -1,9 +1,11 @@
 import { apiFetch } from '@/shared/api/client'
 import type {
   AnalysisJobInfo,
+  CollaborationEvidenceListResult,
   EvidenceListResult,
   Repository,
   RepositoryAnalysisResult,
+  RepositoryCollaborationResult,
   RepositoryListResponse,
   RepositoryQueryParams,
   RepositoryVerificationResult,
@@ -235,3 +237,114 @@ export function fetchVerificationEvidence(
   )
 }
 
+/**
+ * PBI-014: Kích hoạt / làm mới phân tích Pull Request, Review, CI & xử lý lỗi.
+ */
+export function triggerCollaborationAnalysis(
+  repoId: number,
+  payload: {
+    branch?: string
+    mode?: string
+    preset?: string
+    month?: string
+    year?: string | number
+    start_date?: string
+    end_date?: string
+    timezone?: string
+    force_refresh?: boolean
+  } = {},
+  signal?: AbortSignal,
+): Promise<RepositoryCollaborationResult> {
+  return apiFetch<RepositoryCollaborationResult>(`/repositories/${repoId}/collaboration`, {
+    method: 'POST',
+    body: payload,
+    signal,
+    timeoutMs: 60000,
+  })
+}
+
+/**
+ * PBI-014: Lấy kết quả phân tích cộng tác gần nhất đã lưu trong DB.
+ */
+export function fetchLatestCollaboration(
+  repoId: number,
+  signal?: AbortSignal,
+): Promise<RepositoryCollaborationResult> {
+  return apiFetch<RepositoryCollaborationResult>(`/repositories/${repoId}/collaboration`, {
+    signal,
+  })
+}
+
+/**
+ * PBI-014: Truy xuất danh sách bằng chứng cộng tác phân trang và lọc theo trạng thái/loại.
+ */
+export function fetchCollaborationEvidence(
+  repoId: number,
+  params: {
+    evidence_type?: string
+    state?: string
+    pr_number?: number
+    page?: number
+    per_page?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<CollaborationEvidenceListResult> {
+  const query = new URLSearchParams()
+  if (params.evidence_type && params.evidence_type !== 'all') {
+    query.set('evidence_type', params.evidence_type)
+  }
+  if (params.state && params.state !== 'all') {
+    query.set('state', params.state)
+  }
+  if (params.pr_number !== undefined) {
+    query.set('pr_number', String(params.pr_number))
+  }
+  if (params.page !== undefined) query.set('page', String(params.page))
+  if (params.per_page !== undefined) query.set('per_page', String(params.per_page))
+
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return apiFetch<CollaborationEvidenceListResult>(
+    `/repositories/${repoId}/collaboration/evidence${qs}`,
+    { signal },
+  )
+}
+
+
+// PBI-015: Finding → Evidence. Backend responses deliberately omit raw snippets.
+export interface FindingSummary {
+  id: number
+  report_id: number
+  finding_type: string
+  classification: string
+  confidence_score: number
+  analyzer_version: string
+}
+
+export interface FindingEvidence {
+  id: number
+  commit_sha: string
+  file_path: string
+  line_number: number | null
+  evidence_source: string
+  detection_method: string
+  confidence_score: number
+}
+
+export interface FindingDetail extends FindingSummary {
+  repository_id: number
+  commit_sha: string
+  rationale: string
+  scope: string
+  time_range: Record<string, unknown> | null
+  evidence: FindingEvidence[]
+}
+
+export function fetchFindings(repoId: number, reportId?: number, signal?: AbortSignal): Promise<FindingSummary[]> {
+  const query = new URLSearchParams({ repository_id: String(repoId), limit: '200' })
+  if (reportId !== undefined) query.set('report_id', String(reportId))
+  return apiFetch<FindingSummary[]>(`/analysis/findings?${query.toString()}`, { signal })
+}
+
+export function fetchFindingDetail(findingId: number, signal?: AbortSignal): Promise<FindingDetail> {
+  return apiFetch<FindingDetail>(`/analysis/findings/${findingId}`, { signal })
+}

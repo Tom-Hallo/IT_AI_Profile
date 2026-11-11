@@ -98,6 +98,7 @@ export interface StructureSummary {
 }
 
 export interface RepositoryAnalysisResult {
+  report_id?: number | null
   repository_id: number
   commit_sha: string
   analyzed_at: string
@@ -219,5 +220,95 @@ export interface VerificationEvidenceListResult {
   page: number
   per_page: number
   items: VerificationEvidenceItem[]
+}
+
+/**
+ * Types for PBI-014: Pull Request, Review, CI & Problem-Solving Analysis.
+ */
+
+export interface CollaborationEvidenceItem {
+  id?: number
+  evidence_type: string
+  target_identifier: string
+  pr_number?: number | null
+  commit_sha?: string | null
+  check_name?: string | null
+  state?: string | null
+  conclusion?: string | null
+  actor_login?: string | null
+  actor_id?: string | null
+  actor_type?: string | null
+  is_profile_owner: boolean
+  html_url?: string | null
+  title_or_message?: string | null
+  recorded_at?: string | null
+  rationale: string
+  metadata?: Record<string, unknown> | null
+}
+
+export interface CollaborationObservation {
+  category: 'pull_request' | 'review' | 'ci_check' | 'problem_solving' | string
+  title: string
+  description: string
+  evidence_level: 'observed_event' | 'evidence_backed_relationship' | 'contextual_explanation' | string
+  confidence: 'high' | 'medium' | 'uncertain' | string
+  related_identifiers: string[]
+}
+
+export interface ProblemSolvingSequence {
+  sequence_id: string
+  pr_number?: number | null
+  trigger_event: Record<string, unknown>
+  iteration_events: Record<string, unknown>[]
+  resolution_or_outcome: Record<string, unknown>
+  cycle_duration_seconds?: number | null
+  explanation: string
+  limitations: string[]
+}
+
+export interface RepositoryCollaborationResult {
+  id?: number
+  repository_id: number
+  repository_name: string
+  repository_full_name: string
+  user_id: number
+  job_id: string | null
+  report_id: number | null
+  total_prs_analyzed: number
+  merged_prs_count: number
+  closed_unmerged_prs_count: number
+  open_prs_count: number
+  user_prs_count: number
+  external_prs_count: number
+  total_reviews_analyzed: number
+  approved_reviews_count: number
+  changes_requested_count: number
+  commented_reviews_count: number
+  dismissed_reviews_count: number
+  user_reviews_conducted_count: number
+  user_reviews_received_count: number
+  total_checks_analyzed: number
+  successful_checks_count: number
+  failed_checks_count: number
+  pending_checks_count: number
+  other_checks_count: number
+  problem_solving_sequences_count: number
+  coverage_status: 'complete' | 'partial' | 'insufficient'
+  confidence: 'high' | 'medium' | 'uncertain'
+  time_range: Record<string, string | null> | null
+  limitations: string[]
+  collaboration_observations: CollaborationObservation[]
+  problem_solving_sequences: ProblemSolvingSequence[]
+  summary_data: Record<string, unknown>
+  analyzed_at: string
+  evidence: CollaborationEvidenceItem[]
+}
+
+export interface CollaborationEvidenceListResult {
+  repository_id: number
+  total: number
+  page: number
+  per_page: number
+  items: CollaborationEvidenceItem[]
 }
 

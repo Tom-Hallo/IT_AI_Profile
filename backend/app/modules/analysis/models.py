@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -130,6 +131,7 @@ class AnalysisEvidence(Base):
     __tablename__ = "analysis_evidence"
     __table_args__ = (
         Index("ix_analysis_evidence_repo_commit", "repository_id", "commit_sha"),
+        UniqueConstraint("id", "report_id", name="uq_analysis_evidence_id_report"),
         {"schema": "ita"},
     )
 
@@ -309,6 +311,186 @@ class VerificationEvidence(Base):
     pr_merged: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     source_repo: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_repo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CollaborationAnalysis(Base):
+    """Phân tích Pull Request, Review, CI & xử lý lỗi (PBI-014)."""
+
+    __tablename__ = "collaboration_analyses"
+    __table_args__ = (
+        Index("ix_collab_analysis_repo_user", "repository_id", "user_id"),
+        {"schema": "ita"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    repository_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ita.analysis_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.analysis_reports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # PR Metrics
+    total_prs_analyzed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    merged_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    closed_unmerged_prs_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    open_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    user_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    external_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Review Metrics
+    total_reviews_analyzed: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    approved_reviews_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    changes_requested_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    commented_reviews_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    dismissed_reviews_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    user_reviews_conducted_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    user_reviews_received_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    # CI Checks Metrics
+    total_checks_analyzed: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    successful_checks_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    failed_checks_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pending_checks_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    other_checks_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    problem_solving_sequences_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    # Coverage & Confidence
+    coverage_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="complete"
+    )
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="high")
+
+    time_range: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    collaboration_observations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    problem_solving_observations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    summary_data: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+
+    analyzed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CollaborationEvidence(Base):
+    """Bằng chứng chi tiết Pull Request, Review, CI & xử lý lỗi (PBI-014)."""
+
+    __tablename__ = "collaboration_evidence"
+    __table_args__ = (
+        Index("ix_collab_ev_analysis_id", "analysis_id"),
+        Index("ix_collab_ev_repo_target", "repository_id", "target_identifier"),
+        Index("ix_collab_ev_pr_number", "pr_number"),
+        Index("ix_collab_ev_commit_sha", "commit_sha"),
+        {"schema": "ita"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    analysis_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.collaboration_analyses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    repository_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ita.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    evidence_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # pull_request, review, check_run, commit_status, problem_solving_sequence
+    target_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    check_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    conclusion: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    actor_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actor_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_profile_owner: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    html_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title_or_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

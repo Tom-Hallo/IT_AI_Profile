@@ -19,6 +19,8 @@ from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.db.session import get_session
 from app.modules.analysis import service
+from app.modules.analysis.collaboration_router import collaboration_router
+from app.modules.analysis.finding_router import router as finding_router
 from app.modules.analysis.models import AnalysisJobEvent
 from app.modules.analysis.schemas import (
     EvidenceListResponse,
@@ -305,3 +307,5 @@ router = APIRouter()
 router.include_router(jobs_router)
 router.include_router(repo_router)
 router.include_router(verification_router)
+router.include_router(collaboration_router)
+router.include_router(finding_router)

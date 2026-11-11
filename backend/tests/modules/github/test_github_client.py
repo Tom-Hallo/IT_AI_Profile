@@ -386,3 +386,184 @@ async def test_redirect_does_not_forward_github_token():
 
     assert len(captured_requests) == 1
     assert captured_requests[0].url.host == "api.github.com"
+
+
+# ============================================================================
+# PBI-014: PR Reviews, Check Runs and Commit Statuses Client Tests
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_list_pull_request_reviews_success():
+    fake_reviews = [
+        {
+            "id": 1001,
+            "user": {"id": 11, "login": "reviewer1"},
+            "state": "APPROVED",
+            "submitted_at": "2026-11-01T10:00:00Z",
+            "html_url": "https://github.com/owner/repo/pull/1#pullrequestreview-1001",
+        },
+        {
+            "id": 1002,
+            "user": {"id": 12, "login": "reviewer2"},
+            "state": "CHANGES_REQUESTED",
+            "submitted_at": "2026-11-01T11:00:00Z",
+            "html_url": "https://github.com/owner/repo/pull/1#pullrequestreview-1002",
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/repos/owner/repo/pulls/1/reviews" in str(request.url)
+        return httpx.Response(200, json=fake_reviews)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    reviews = await client.list_pull_request_reviews("owner", "repo", 1)
+    assert len(reviews) == 2
+    assert reviews[0]["state"] == "APPROVED"
+    assert reviews[1]["state"] == "CHANGES_REQUESTED"
+
+
+@pytest.mark.anyio
+async def test_list_pull_request_reviews_pagination_and_deduplication():
+    page1 = [
+        {"id": 2001, "state": "COMMENTED", "user": {"id": 1, "login": "alice"}},
+    ]
+    page2 = [
+        {
+            "id": 2001,
+            "state": "COMMENTED",
+            "user": {"id": 1, "login": "alice"},
+        },  # duplicate
+        {"id": 2002, "state": "APPROVED", "user": {"id": 2, "login": "bob"}},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "page=2" in str(request.url):
+            return httpx.Response(200, json=page2)
+        headers = {
+            "link": (
+                "<https://api.github.com/repos/owner/repo/pulls/5/reviews?page=2>; "
+                'rel="next"'
+            )
+        }
+        return httpx.Response(200, json=page1, headers=headers)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    reviews = await client.list_pull_request_reviews("owner", "repo", 5)
+    assert len(reviews) == 2
+    assert [r["id"] for r in reviews] == [2001, 2002]
+
+
+@pytest.mark.anyio
+async def test_list_pull_request_reviews_404_returns_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    reviews = await client.list_pull_request_reviews("owner", "repo", 999)
+    assert reviews == []
+
+
+@pytest.mark.anyio
+async def test_list_check_runs_for_ref_success():
+    fake_checks = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 501,
+                "name": "lint",
+                "head_sha": "abc1234",
+                "status": "completed",
+                "conclusion": "success",
+                "completed_at": "2026-11-01T12:00:00Z",
+            },
+            {
+                "id": 502,
+                "name": "unit-tests",
+                "head_sha": "abc1234",
+                "status": "completed",
+                "conclusion": "failure",
+                "completed_at": "2026-11-01T12:05:00Z",
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/repos/owner/repo/commits/abc1234/check-runs" in str(request.url)
+        return httpx.Response(200, json=fake_checks)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    checks = await client.list_check_runs_for_ref("owner", "repo", "abc1234")
+    assert len(checks) == 2
+    assert checks[0]["name"] == "lint"
+    assert checks[0]["conclusion"] == "success"
+    assert checks[1]["name"] == "unit-tests"
+    assert checks[1]["conclusion"] == "failure"
+
+
+@pytest.mark.anyio
+async def test_list_check_runs_for_ref_404_returns_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    checks = await client.list_check_runs_for_ref("owner", "repo", "nonexistent")
+    assert checks == []
+
+
+@pytest.mark.anyio
+async def test_list_commit_statuses_for_ref_success():
+    fake_statuses = [
+        {
+            "id": 701,
+            "state": "success",
+            "context": "ci/circleci: build",
+            "description": "Build succeeded",
+            "target_url": "https://circleci.com/gh/owner/repo/701",
+            "created_at": "2026-11-01T12:10:00Z",
+        },
+        {
+            "id": 702,
+            "state": "failure",
+            "context": "ci/circleci: test",
+            "description": "Tests failed",
+            "target_url": "https://circleci.com/gh/owner/repo/702",
+            "created_at": "2026-11-01T12:15:00Z",
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/repos/owner/repo/commits/def5678/statuses" in str(request.url)
+        return httpx.Response(200, json=fake_statuses)
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    statuses = await client.list_commit_statuses_for_ref("owner", "repo", "def5678")
+    assert len(statuses) == 2
+    assert statuses[0]["context"] == "ci/circleci: build"
+    assert statuses[0]["state"] == "success"
+    assert statuses[1]["context"] == "ci/circleci: test"
+    assert statuses[1]["state"] == "failure"
+
+
+@pytest.mark.anyio
+async def test_list_commit_statuses_for_ref_404_returns_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = GitHubApiClient("test-token", client=mock_client)
+
+    statuses = await client.list_commit_statuses_for_ref("owner", "repo", "missing")
+    assert statuses == []
