@@ -98,8 +98,14 @@ export function RepositoryAnalysisPage() {
   // Collaboration & CI state
   const [collaborationData, setCollaborationData] = useState<RepositoryCollaborationResult | null>(null)
   const [collaborationLoading, setCollaborationLoading] = useState(false)
-  const [collaborationEvidence, setCollaborationEvidence] = useState<CollaborationEvidenceItem[]>([])
-  const [collabEvidenceLoading, setCollabEvidenceLoading] = useState(false)
+  const [collaborationLoadError, setCollaborationLoadError] = useState(false)
+  const [collabPage, setCollabPage] = useState(1)
+  const [collabEvidenceResult, setCollabEvidenceResult] = useState<{
+    key: string
+    items: CollaborationEvidenceItem[]
+    total: number
+    failed?: boolean
+  } | null>(null)
   const [collabEvidenceTypeFilter, setCollabEvidenceTypeFilter] = useState<string>('all')
   const [collabStateFilter, setCollabStateFilter] = useState<string>('all')
 
@@ -161,34 +167,49 @@ export function RepositoryAnalysisPage() {
     }
   }, [loadVerificationEvidence])
 
-  const loadCollaborationEvidence = useCallback(async (repoId: number, signal?: AbortSignal) => {
-    setCollabEvidenceLoading(true)
-    try {
-      const res = await fetchCollaborationEvidence(repoId, { per_page: 100 }, signal)
-      if (!signal?.aborted) setCollaborationEvidence(res.items)
-    } catch {
-      if (!signal?.aborted) setCollaborationEvidence([])
-    } finally {
-      if (!signal?.aborted) setCollabEvidenceLoading(false)
-    }
-  }, [])
-
   const loadCollaboration = useCallback(async (repoId: number, signal?: AbortSignal) => {
     setCollaborationLoading(true)
+    setCollaborationLoadError(false)
     try {
       const collab = await fetchLatestCollaboration(repoId, signal)
       if (signal?.aborted) return
       setCollaborationData(collab)
-      await loadCollaborationEvidence(repoId, signal)
-    } catch {
+    } catch (err) {
       if (!signal?.aborted) {
         setCollaborationData(null)
-        setCollaborationEvidence([])
+        setCollaborationLoadError(!(err instanceof ApiError && err.status === 404))
+
       }
     } finally {
       if (!signal?.aborted) setCollaborationLoading(false)
     }
-  }, [loadCollaborationEvidence])
+  }, [])
+
+  const analysisId = collaborationData?.id
+  const evidenceRepoId = collaborationData?.repository_id
+  const collabEvidenceKey = `${analysisId}:${collabEvidenceTypeFilter}:${collabStateFilter}:${collabPage}`
+  const visibleCollabEvidence = collabEvidenceResult?.key === collabEvidenceKey ? collabEvidenceResult : null
+
+  useEffect(() => {
+    if (activeTab !== 'collaboration' || !analysisId || evidenceRepoId !== Number(effectiveRepoId)) return
+    const controller = new AbortController()
+    void fetchCollaborationEvidence(evidenceRepoId, {
+      analysis_id: analysisId,
+      evidence_type: collabEvidenceTypeFilter,
+      state: collabStateFilter,
+      page: collabPage,
+      per_page: 25,
+    }, controller.signal).then((result) => {
+      if (!controller.signal.aborted) {
+        setCollabEvidenceResult({ key: collabEvidenceKey, items: result.items, total: result.total })
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setCollabEvidenceResult({ key: collabEvidenceKey, items: [], total: 0, failed: true })
+      }
+    })
+    return () => controller.abort()
+  }, [activeTab, analysisId, evidenceRepoId, effectiveRepoId, collabEvidenceKey, collabEvidenceTypeFilter, collabStateFilter, collabPage])
 
   const handleTabChange = (tab: 'structure' | 'verification' | 'collaboration') => {
     setActiveTab(tab)
@@ -309,7 +330,6 @@ export function RepositoryAnalysisPage() {
     setLoading(false)
     setEvidenceLoading(false)
     setVerEvidenceLoading(false)
-    setCollabEvidenceLoading(false)
     setManualRepoId(newRepoId)
     if (routeRepoId) {
       const path = newRepoId ? `/repositories/${newRepoId}/analysis` : '/analysis'
@@ -323,7 +343,7 @@ export function RepositoryAnalysisPage() {
     setVerificationData(null)
     setVerificationEvidence([])
     setCollaborationData(null)
-    setCollaborationEvidence([])
+    setCollabPage(1)
     setActiveJob(null)
   }
 
@@ -552,6 +572,7 @@ export function RepositoryAnalysisPage() {
     const controller = new AbortController()
     collaborationControllerRef.current = controller
     setCollaborationLoading(true)
+    setCollaborationLoadError(false)
     try {
       const payload: {
         branch?: string
@@ -583,7 +604,7 @@ export function RepositoryAnalysisPage() {
       const collab = await triggerCollaborationAnalysis(repoId, payload, controller.signal)
       if (controller.signal.aborted) return
       setCollaborationData(collab)
-      await loadCollaborationEvidence(repoId, controller.signal)
+      setCollabPage(1)
     } catch (err) {
       if (!controller.signal.aborted) handleApiError(err)
     } finally {
@@ -2008,7 +2029,13 @@ export function RepositoryAnalysisPage() {
             </div>
           </div>
 
-          {!collaborationData && !collaborationLoading && (
+          {collaborationLoadError && !collaborationLoading && (
+            <p className="analysis-coverage-warning" role="alert">
+              Không tải được báo cáo cộng tác đã lưu. Bạn có thể thử mở lại hoặc chạy phân tích.
+            </p>
+          )}
+
+          {!collaborationData && !collaborationLoading && !collaborationLoadError && (
             <section
               className="card"
               style={{
@@ -2045,6 +2072,14 @@ export function RepositoryAnalysisPage() {
 
           {collaborationData && (
             <>
+              {collaborationData.coverage_status !== 'complete' && (
+                <section className="analysis-coverage-warning" aria-label="Phạm vi dữ liệu cộng tác">
+                  <strong>Dữ liệu cộng tác chưa đầy đủ</strong>
+                  {collaborationData.limitations?.length > 0 && (
+                    <ul>{collaborationData.limitations.map((reason, i) => <li key={i}>{reason}</li>)}</ul>
+                  )}
+                </section>
+              )}
               {/* Summary Metrics Grid */}
               <div
                 style={{
@@ -2214,7 +2249,7 @@ export function RepositoryAnalysisPage() {
                       📋 Nhật ký bằng chứng chi tiết (Audit Trail)
                     </h3>
                     <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-                      Toàn bộ bản ghi PR, Review, CI check và chu kỳ giải quyết vấn đề gắn với định danh GitHub.
+                      Lọc bằng chứng PR, review và CI trong báo cáo đang xem.
                     </p>
                   </div>
 
@@ -2222,7 +2257,8 @@ export function RepositoryAnalysisPage() {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <select
                       value={collabEvidenceTypeFilter}
-                      onChange={(e) => setCollabEvidenceTypeFilter(e.target.value)}
+                      aria-label="Loại bằng chứng"
+                      onChange={(e) => { setCollabEvidenceTypeFilter(e.target.value); setCollabPage(1) }}
                       style={{ padding: '0.375rem 0.625rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
                     >
                       <option value="all">Tất cả loại bằng chứng</option>
@@ -2235,7 +2271,8 @@ export function RepositoryAnalysisPage() {
 
                     <select
                       value={collabStateFilter}
-                      onChange={(e) => setCollabStateFilter(e.target.value)}
+                      aria-label="Trạng thái bằng chứng"
+                      onChange={(e) => { setCollabStateFilter(e.target.value); setCollabPage(1) }}
                       style={{ padding: '0.375rem 0.625rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
                     >
                       <option value="all">Tất cả trạng thái</option>
@@ -2244,15 +2281,19 @@ export function RepositoryAnalysisPage() {
                       <option value="open">Open</option>
                       <option value="APPROVED">Approved</option>
                       <option value="CHANGES_REQUESTED">Changes Requested</option>
-                      <option value="success">Success / Completed</option>
-                      <option value="failure">Failure / Fail-fast</option>
+                      <option value="success">CI thành công</option>
+                      <option value="completed">CI đã kết thúc</option>
+                      <option value="pending">CI đang chờ</option>
+                      <option value="failure">CI thất bại</option>
                     </select>
                   </div>
                 </div>
 
-                {collabEvidenceLoading ? (
+                {analysisId && !visibleCollabEvidence ? (
                   <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Đang tải danh sách bằng chứng...</p>
-                ) : collaborationEvidence.length === 0 ? (
+                ) : visibleCollabEvidence?.failed ? (
+                  <p role="alert">Không tải được bằng chứng. Hãy đổi bộ lọc hoặc mở lại báo cáo.</p>
+                ) : !visibleCollabEvidence?.items.length ? (
                   <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Không có bằng chứng nào phù hợp với bộ lọc.</p>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
@@ -2268,13 +2309,7 @@ export function RepositoryAnalysisPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {collaborationEvidence
-                          .filter((ev) => {
-                            if (collabEvidenceTypeFilter !== 'all' && ev.evidence_type !== collabEvidenceTypeFilter) return false
-                            if (collabStateFilter !== 'all' && ev.state !== collabStateFilter && ev.conclusion !== collabStateFilter) return false
-                            return true
-                          })
-                          .slice(0, 50)
+                        {visibleCollabEvidence.items
                           .map((ev, idx) => (
                             <tr key={`${ev.evidence_type}:${ev.target_identifier}:${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '0.625rem 0.75rem', textTransform: 'capitalize', fontWeight: 500 }}>
@@ -2340,6 +2375,13 @@ export function RepositoryAnalysisPage() {
                           ))}
                       </tbody>
                     </table>
+                    {visibleCollabEvidence.total > 25 && (
+                      <nav aria-label="Phân trang bằng chứng cộng tác">
+                        <button type="button" disabled={collabPage === 1} onClick={() => setCollabPage(page => page - 1)}>Trang trước</button>
+                        <span aria-live="polite"> Trang {collabPage} / {Math.ceil(visibleCollabEvidence.total / 25)} </span>
+                        <button type="button" disabled={collabPage * 25 >= visibleCollabEvidence.total} onClick={() => setCollabPage(page => page + 1)}>Trang sau</button>
+                      </nav>
+                    )}
                   </div>
                 )}
               </section>

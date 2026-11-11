@@ -287,6 +287,7 @@ export function fetchLatestCollaboration(
 export function fetchCollaborationEvidence(
   repoId: number,
   params: {
+    analysis_id?: number
     evidence_type?: string
     state?: string
     pr_number?: number
@@ -296,6 +297,7 @@ export function fetchCollaborationEvidence(
   signal?: AbortSignal,
 ): Promise<CollaborationEvidenceListResult> {
   const query = new URLSearchParams()
+  if (params.analysis_id) query.set('analysis_id', String(params.analysis_id))
   if (params.evidence_type && params.evidence_type !== 'all') {
     query.set('evidence_type', params.evidence_type)
   }
