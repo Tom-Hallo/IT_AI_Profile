@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -161,7 +161,7 @@ async def test_01_full_collaboration_analysis_positive_path(monkeypatch):
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "valid-gh-token",
+        lambda _db, _uid: ("valid-gh-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -370,7 +370,7 @@ async def test_02_never_penalize_closed_unmerged_prs_or_failed_ci(monkeypatch):
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "valid-token",
+        lambda _db, _uid: ("valid-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -444,7 +444,7 @@ async def test_03_empty_repository_history_does_not_infer_poor_teamwork(monkeypa
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "valid-token",
+        lambda _db, _uid: ("valid-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -487,7 +487,7 @@ async def test_04_rate_limit_handling_marks_partial_coverage(monkeypatch):
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "valid-token",
+        lambda _db, _uid: ("valid-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -525,7 +525,7 @@ async def test_05_revoked_token_raises_401(monkeypatch):
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "expired-token",
+        lambda _db, _uid: ("expired-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -561,9 +561,21 @@ async def test_06_private_repo_without_consent_raises_404(monkeypatch):
         "app.modules.analysis.collaboration_service.verify_repository_access",
         lambda _db, _rid, _u: repo,
     )
+
     monkeypatch.setattr(
-        "app.modules.analysis.collaboration_service.has_private_access",
-        lambda _db, _uid: False,
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("valid-token", "repo"),
+    )
+
+    def deny_private_consent(_repo, _scope, _db, _user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Private repository consent required.",
+        )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_private_repo_consent",
+        deny_private_consent,
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -575,7 +587,7 @@ async def test_06_private_repo_without_consent_raises_404(monkeypatch):
             persist=False,
         )
 
-    assert exc_info.value.status_code == 404
+    assert exc_info.value.status_code == 403
 
 
 @pytest.mark.anyio
@@ -587,7 +599,7 @@ async def test_07_missing_checks_or_reviews_handled_gracefully(monkeypatch):
 
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.get_user_github_token",
-        lambda _db, _uid: "valid-token",
+        lambda _db, _uid: ("valid-token", "read:user"),
     )
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_service.verify_repository_access",
@@ -630,7 +642,13 @@ async def test_07_missing_checks_or_reviews_handled_gracefully(monkeypatch):
     assert res.total_prs_analyzed == 1
     assert res.total_reviews_analyzed == 0
     assert res.total_checks_analyzed == 0
-    assert res.coverage_status == "complete"
+
+    assert res.coverage_status == "partial"
+    assert res.confidence == "uncertain"
+
+    assert any("reviews" in limitation.lower() for limitation in res.limitations)
+
+    assert any("check runs" in limitation.lower() for limitation in res.limitations)
 
 
 # ============================================================================
@@ -719,7 +737,16 @@ def test_08_persist_and_retrieve_collaboration_result(in_memory_db):
     assert len(retrieved.evidence) == 1
     assert retrieved.evidence[0].target_identifier == "PR #1"
 
-    # 3. Repeated persistence is idempotent and replaces evidence cleanly
+    # 3. Reanalysis creates a new snapshot without deleting old evidence
+    first_analysis_id = row.id
+
+    collab_resp.analyzed_at = "2026-11-02T12:00:00+00:00"
+    collab_resp.time_range = {
+        "start": "2026-10-01T00:00:00+00:00",
+        "end": "2026-11-01T00:00:00+00:00",
+        "timezone": "UTC",
+        "label": "custom",
+    }
     collab_resp.total_prs_analyzed = 3
     collab_resp.evidence = [
         CollaborationEvidenceItem(
@@ -732,14 +759,65 @@ def test_08_persist_and_retrieve_collaboration_result(in_memory_db):
             rationale="Updated evidence",
         )
     ]
-    row2 = persist_collaboration_result(in_memory_db, collab_resp, commit=True)
-    assert row2.id == row.id  # Same record updated
 
+    row2 = persist_collaboration_result(in_memory_db, collab_resp, commit=True)
+
+    # Each analysis is stored independently
+    assert row2.id != first_analysis_id
+
+    # The latest analysis is returned
     retrieved2 = get_stored_collaboration(in_memory_db, repo.id, user)
     assert retrieved2 is not None
+    assert retrieved2.id == row2.id
     assert retrieved2.total_prs_analyzed == 3
     assert len(retrieved2.evidence) == 1
     assert retrieved2.evidence[0].target_identifier == "PR #2"
+
+    # The previous snapshot and its evidence remain intact
+    old_evidence = in_memory_db.scalars(
+        select(CollaborationEvidence).where(
+            CollaborationEvidence.analysis_id == first_analysis_id
+        )
+    ).all()
+
+    assert len(old_evidence) == 1
+    assert old_evidence[0].target_identifier == "PR #1"
+
+    all_analyses = in_memory_db.scalars(
+        select(CollaborationAnalysis).where(
+            CollaborationAnalysis.repository_id == repo.id,
+            CollaborationAnalysis.user_id == user.id,
+        )
+    ).all()
+
+    assert len(all_analyses) == 2
+    # Evidence endpoint must only return the latest analysis snapshot
+    latest_evidence = get_collaboration_evidence_list(
+        in_memory_db,
+        repo.id,
+        user,
+    )
+
+    assert latest_evidence.total == 1
+    assert len(latest_evidence.items) == 1
+    assert latest_evidence.items[0].target_identifier == "PR #2"
+    assert latest_evidence.items[0].target_identifier != "PR #1"
+
+    # Latest overall snapshot may have a custom time range.
+    latest = get_stored_collaboration(in_memory_db, repo.id, user)
+    assert latest is not None
+    assert latest.id == row2.id
+
+    # Default unfiltered cache must not return that custom snapshot.
+    unfiltered = get_stored_collaboration(
+        in_memory_db,
+        repo.id,
+        user,
+        only_unfiltered=True,
+    )
+    assert unfiltered is not None
+    assert unfiltered.id == first_analysis_id
+    assert unfiltered.time_range is None
 
 
 def test_09_evidence_filtering_and_pagination(in_memory_db):
@@ -965,3 +1043,317 @@ def test_11_cross_user_isolation(in_memory_db):
     client = TestClient(app)
     res = client.get(f"/api/v1/repositories/{repo_a.id}/collaboration")
     assert res.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "read_function",
+    [get_stored_collaboration, get_collaboration_evidence_list],
+)
+@pytest.mark.parametrize(
+    ("granted", "revoked"),
+    [
+        (False, False),
+        (False, True),
+        (True, True),
+    ],
+)
+def test_12_private_consent_revocation_blocks_stored_collaboration(
+    monkeypatch, read_function, granted, revoked
+):
+    """Private evidence không được đọc khi consent thiếu hoặc đã bị thu hồi."""
+    from datetime import UTC, datetime
+
+    from app.modules.consent.service import POLICY_VERSION
+
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=120, private=True)
+
+    consent = MagicMock()
+    consent.granted = granted
+    consent.revoked_at = datetime.now(UTC) if revoked else None
+    consent.policy_version = POLICY_VERSION
+
+    db = MagicMock()
+
+    def fake_scalar(statement):
+        sql = str(statement).lower()
+
+        if "private_consents" in sql:
+            return consent
+        if "repositories" in sql:
+            return repo
+
+        return None
+
+    db.scalar.side_effect = fake_scalar
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda _db, _repo_id, _user: repo,
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("test-token", "repo"),
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.has_private_access",
+        lambda _db, _uid: True,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        read_function(db, repo.id, user)
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "read_function",
+    [get_stored_collaboration, get_collaboration_evidence_list],
+)
+def test_13_valid_private_consent_allows_collaboration_read(monkeypatch, read_function):
+    """Consent hợp lệ không được chặn nhầm việc đọc dữ liệu private."""
+    from app.modules.consent.service import POLICY_VERSION
+
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=121, private=True)
+
+    consent = MagicMock()
+    consent.granted = True
+    consent.revoked_at = None
+    consent.policy_version = POLICY_VERSION
+
+    db = MagicMock()
+
+    def fake_scalar(statement):
+        sql = str(statement).lower()
+
+        if "private_consents" in sql:
+            return consent
+        if "repositories" in sql:
+            return repo
+
+        return None
+
+    db.scalar.side_effect = fake_scalar
+    db.scalars.return_value.all.return_value = []
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda _db, _repo_id, _user: repo,
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("test-token", "repo"),
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.verification_service.has_private_access",
+        lambda _db, _uid: True,
+    )
+
+    result = read_function(db, repo.id, user)
+
+    if read_function is get_stored_collaboration:
+        assert result is None
+    else:
+        assert result.repository_id == repo.id
+        assert result.total == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "truncated_source",
+    ["reviews", "checks", "statuses"],
+)
+async def test_14_pagination_truncation_marks_partial(monkeypatch, truncated_source):
+    """Dữ liệu vượt giới hạn phân trang phải được đánh dấu partial."""
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=140)
+    db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("valid-token", "read:user"),
+    )
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda _db, _rid, _user: repo,
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+
+    mock_client.list_pull_requests = AsyncMock(
+        return_value=[
+            {
+                "number": 1,
+                "title": "Test pagination",
+                "state": "open",
+                "created_at": "2026-11-01T10:00:00Z",
+                "user": {"id": 12345, "login": "mydev"},
+                "head": {"sha": "abc123"},
+            }
+        ]
+    )
+
+    async def fake_collection(*args, **kwargs):
+        callback = kwargs.get("on_truncated")
+
+        if truncated_source == kwargs.get("source_for_test"):
+            raise AssertionError("Unexpected test argument")
+
+        if callback is not None:
+            callback()
+
+        return []
+
+    async def collect_reviews(*args, **kwargs):
+        if truncated_source == "reviews":
+            return await fake_collection(*args, **kwargs)
+        return []
+
+    async def collect_checks(*args, **kwargs):
+        if truncated_source == "checks":
+            return await fake_collection(*args, **kwargs)
+        return []
+
+    async def collect_statuses(*args, **kwargs):
+        if truncated_source == "statuses":
+            return await fake_collection(*args, **kwargs)
+        return []
+
+    mock_client.list_pull_request_reviews = AsyncMock(side_effect=collect_reviews)
+    mock_client.list_check_runs_for_ref = AsyncMock(side_effect=collect_checks)
+    mock_client.list_commit_statuses_for_ref = AsyncMock(side_effect=collect_statuses)
+
+    result = await analyze_repository_collaboration(
+        db=db,
+        repository_id=repo.id,
+        user=user,
+        request=CollaborationAnalysisRequest(force_refresh=True),
+        persist=False,
+        custom_client=mock_client,
+    )
+
+    assert result.total_prs_analyzed == 1
+    assert result.coverage_status == "partial"
+    assert result.confidence == "uncertain"
+    assert any("phân trang" in limitation.lower() for limitation in result.limitations)
+
+
+@pytest.mark.anyio
+async def test_15_invalid_time_range_returns_422(monkeypatch):
+    """Khoảng thời gian không hợp lệ không được bị bỏ qua."""
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=150)
+    db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("valid-token", "read:user"),
+    )
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda _db, _rid, _user: repo,
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+    mock_client.list_pull_requests = AsyncMock(return_value=[])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await analyze_repository_collaboration(
+            db=db,
+            repository_id=repo.id,
+            user=user,
+            request=CollaborationAnalysisRequest(
+                mode="custom",
+                start_date="2026-11-10",
+                end_date="2026-11-01",
+                force_refresh=True,
+            ),
+            persist=False,
+            custom_client=mock_client,
+        )
+
+    assert exc_info.value.status_code == 422
+    mock_client.list_pull_requests.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_16_branch_filter_uses_pr_base_branch(monkeypatch):
+    user = _create_mock_user(user_id=1)
+    repo = _create_mock_repo(repo_id=160)
+    db = make_mock_db(repo)
+
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda _db, _uid: ("valid-token", "read:user"),
+    )
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda _db, _rid, _user: repo,
+    )
+
+    mock_client = MagicMock(spec=GitHubApiClient)
+
+    mock_client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+
+    mock_client.list_pull_requests = AsyncMock(
+        return_value=[
+            {
+                "number": 1,
+                "state": "open",
+                "created_at": "2026-11-01T10:00:00Z",
+                "user": {"id": 12345, "login": "mydev"},
+                "head": {"sha": "sha1", "ref": "feature/login"},
+                "base": {"ref": "main"},
+            },
+            {
+                "number": 2,
+                "state": "open",
+                "created_at": "2026-11-02T10:00:00Z",
+                "user": {"id": 12345, "login": "mydev"},
+                "head": {"sha": "sha2", "ref": "feature/search"},
+                "base": {"ref": "develop"},
+            },
+        ]
+    )
+
+    mock_client.list_pull_request_reviews = AsyncMock(return_value=[])
+    mock_client.list_check_runs_for_ref = AsyncMock(return_value=[])
+    mock_client.list_commit_statuses_for_ref = AsyncMock(return_value=[])
+
+    result = await analyze_repository_collaboration(
+        db=db,
+        repository_id=repo.id,
+        user=user,
+        request=CollaborationAnalysisRequest(
+            branch="develop",
+            force_refresh=True,
+        ),
+        persist=False,
+        custom_client=mock_client,
+    )
+
+    assert result.total_prs_analyzed == 1
+    assert result.summary_data["branch_filter"] == "develop"
+    assert result.summary_data["branch_filter_type"] == "base"
+
+    pr_evidence = [
+        item for item in result.evidence if item.evidence_type == "pull_request"
+    ]
+
+    assert len(pr_evidence) == 1
+    assert pr_evidence[0].pr_number == 2

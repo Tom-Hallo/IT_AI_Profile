@@ -20,8 +20,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.types import JSON
 
 from app.core.time_range import resolve_range
 from app.modules.analysis.models import (
@@ -41,7 +42,7 @@ from app.modules.analysis.verification_service import (
     verify_repository_access,
 )
 from app.modules.auth.models import OAuthAccount
-from app.modules.auth.service import get_user_github_token, has_private_access
+from app.modules.auth.service import get_user_github_token
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -92,41 +93,34 @@ async def analyze_repository_collaboration(
     owner = repo.owner_login or (repo.full_name.split("/")[0] if repo.full_name else "")
     repo_name = repo.name
 
-    if repo.private:
-        if not has_private_access(db, user.id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
-            )
-        verify_private_repo_consent(repo, None, db, user.id)
+    # Hàm này trả về tuple: (token, OAuth scopes).
+    token, scopes = get_user_github_token(db, user.id)
 
-    # 1. Kiểm tra cache / kết quả đã lưu nếu không force_refresh
-    if not request.force_refresh:
-        stored = get_stored_collaboration(db, repository_id, user)
-        if stored is not None:
-            return stored
-
-    # 2. Khởi tạo GitHub Client và xác thực người dùng
-    access_token = get_user_github_token(db, user.id)
-    if not access_token and custom_client is None:
+    if not token and custom_client is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tài khoản chưa liên kết GitHub hoặc token không khả dụng.",
         )
 
+    # Private repo phải được kiểm tra bằng scope thật, không phải None.
+    verify_private_repo_consent(repo, scopes, db, user.id)
+
+    # 2. Khởi tạo GitHub Client và xác thực người dùng
     oauth_acc = db.scalar(
         select(OAuthAccount).where(
-            OAuthAccount.user_id == user.id, OAuthAccount.provider == "github"
+            OAuthAccount.user_id == user.id,
+            OAuthAccount.provider == "github",
         )
     )
-    auth_github_user_id: str | None = oauth_acc.provider_user_id if oauth_acc else None
+
+    auth_github_user_id: str | None = (
+        str(oauth_acc.provider_user_id)
+        if oauth_acc and oauth_acc.provider_user_id is not None
+        else None
+    )
     auth_github_login: str | None = None
 
-    client = (
-        custom_client
-        if custom_client is not None
-        else GitHubApiClient(access_token or "")
-    )
+    client = custom_client if custom_client is not None else GitHubApiClient(token)
 
     try:
         gh_user = await client.get_authenticated_user()
@@ -173,8 +167,13 @@ async def analyze_repository_collaboration(
                 "timezone": request.timezone,
                 "label": getattr(resolved, "label", request.mode),
             }
-        except Exception as exc:
-            logger.warning(f"Lỗi khi giải quyết khoảng thời gian PBI-010: {exc}")
+        except HTTPException:
+            raise
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Khoảng thời gian phân tích không hợp lệ.",
+            ) from exc
 
     coverage_status = "complete"
     confidence = "high"
@@ -239,6 +238,12 @@ async def analyze_repository_collaboration(
         pr_num = pr.get("number")
         if not pr_num:
             continue
+
+        # Lọc theo nhánh đích (base branch) của Pull Request.
+        if request.branch:
+            base_info = pr.get("base") or {}
+            if base_info.get("ref") != request.branch:
+                continue
 
         created_at_dt = _parse_timestamp(pr.get("created_at"))
         updated_at_dt = _parse_timestamp(pr.get("updated_at"))
@@ -361,6 +366,7 @@ async def analyze_repository_collaboration(
                 pull_number=pr_num,
                 per_page=50,
                 max_pages=1,
+                on_truncated=mark_truncated,
             )
             for rev in reviews:
                 rev_id = rev.get("id")
@@ -453,8 +459,12 @@ async def analyze_repository_collaboration(
                 f"Đạt giới hạn rate-limit khi lấy review của PR #{pr_num}."
             )
         except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-            pass
+            coverage_status = "partial"
+            confidence = "uncertain"
+            limitations.append(f"Không thể xác minh đầy đủ reviews của PR #{pr_num}.")
         except (GitHubApiError, GitHubServerError) as exc:
+            coverage_status = "partial"
+            confidence = "uncertain"
             limitations.append(
                 f"Lỗi khi lấy review của PR #{pr_num}: {type(exc).__name__}."
             )
@@ -469,6 +479,7 @@ async def analyze_repository_collaboration(
                     ref=head_sha,
                     per_page=50,
                     max_pages=1,
+                    on_truncated=mark_truncated,
                 )
                 for run in check_runs:
                     run_id = run.get("id")
@@ -549,8 +560,14 @@ async def analyze_repository_collaboration(
                     f"{head_sha[:7]}."
                 )
             except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-                pass
+                coverage_status = "partial"
+                confidence = "uncertain"
+                limitations.append(
+                    f"Không thể xác minh check runs của commit {head_sha[:7]}."
+                )
             except (GitHubApiError, GitHubServerError) as exc:
+                coverage_status = "partial"
+                confidence = "uncertain"
                 limitations.append(
                     f"Lỗi khi lấy check runs của commit {head_sha[:7]}: "
                     f"{type(exc).__name__}."
@@ -564,6 +581,7 @@ async def analyze_repository_collaboration(
                     ref=head_sha,
                     per_page=50,
                     max_pages=1,
+                    on_truncated=mark_truncated,
                 )
                 for st in statuses:
                     st_id = st.get("id")
@@ -633,8 +651,14 @@ async def analyze_repository_collaboration(
                     f"{head_sha[:7]}."
                 )
             except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-                pass
+                coverage_status = "partial"
+                confidence = "uncertain"
+                limitations.append(
+                    f"Không thể xác minh commit statuses của {head_sha[:7]}."
+                )
             except (GitHubApiError, GitHubServerError) as exc:
+                coverage_status = "partial"
+                confidence = "uncertain"
                 limitations.append(
                     f"Lỗi khi lấy statuses của commit {head_sha[:7]}: "
                     f"{type(exc).__name__}."
@@ -689,18 +713,13 @@ async def analyze_repository_collaboration(
                         "time": cr_time.isoformat() if cr_time else None,
                         "description": "Yêu cầu thay đổi từ reviewer",
                     },
-                    iteration_events=[
-                        {
-                            "type": "pr_revision_updated",
-                            "description": "Mã nguồn PR được cập nhật sau phản hồi",
-                        }
-                    ],
+                    iteration_events=[],
                     resolution_or_outcome=appr_event,
                     explanation=(
-                        f"Quan sát thấy chu kỳ phản biện lặp trên PR #{pr_num}: "
-                        "PR nhận yêu cầu thay đổi (CHANGES_REQUESTED), sau đó "
-                        "được điều chỉnh và đạt trạng thái phê duyệt/merge. "
-                        "Minh chứng cho sự cộng tác và tiếp thu ý kiến."
+                        f"PR #{pr_num} ghi nhận yêu cầu thay đổi từ reviewer, "
+                        "sau đó có sự kiện phê duyệt hoặc merge. "
+                        "Chưa đủ bằng chứng để kết luận developer đã sửa mã nguồn "
+                        "hoặc giải quyết chính xác yêu cầu review."
                     ),
                     limitations=[
                         "Quan sát dựa trên chuỗi thời gian của review và trạng thái; "
@@ -714,7 +733,7 @@ async def analyze_repository_collaboration(
                         evidence_type="problem_solving_sequence",
                         target_identifier=f"Sequence {seq_id} (PR #{pr_num})",
                         pr_number=pr_num,
-                        state="resolved_cycle",
+                        state="review_followup_observed",
                         is_profile_owner=pr_ctx["is_pr_author"],
                         recorded_at=cr_time,
                         rationale=seq.explanation,
@@ -748,12 +767,7 @@ async def analyze_repository_collaboration(
                         "time": f_time.isoformat(),
                         "conclusion": failed_checks[0].get("conclusion"),
                     },
-                    iteration_events=[
-                        {
-                            "type": "commit_revision",
-                            "description": "Mã nguồn hiệu chỉnh khắc phục cảnh báo",
-                        }
-                    ],
+                    iteration_events=[],
                     resolution_or_outcome={
                         "type": "ci_check_success",
                         "check_name": successful_checks[-1].get("name"),
@@ -761,11 +775,10 @@ async def analyze_repository_collaboration(
                         "conclusion": "success",
                     },
                     explanation=(
-                        "Quan sát thấy chu kỳ phát hiện và khắc phục qua CI trên "
-                        f"PR #{pr_num}: kiểm tra '{failed_checks[0].get('name')}' "
-                        "phát hiện lỗi, tiếp sau đó kiểm tra "
-                        f"'{successful_checks[-1].get('name')}' đạt kết quả tốt. "
-                        "Minh chứng cho quy trình kiểm thử và xử lý lỗi tự động."
+                        f"PR #{pr_num} có một check thất bại và một check thành công "
+                        "được ghi nhận sau đó. Đây là hai sự kiện CI quan sát được. "
+                        "Chưa có bằng chứng commit sửa đổi hoặc nguyên nhân cụ thể "
+                        "để khẳng định lỗi trước đó đã được khắc phục."
                     ),
                     limitations=[
                         "Kiểm tra thành công tiếp sau là bằng chứng của kết quả CI; "
@@ -779,7 +792,7 @@ async def analyze_repository_collaboration(
                         evidence_type="problem_solving_sequence",
                         target_identifier=f"Sequence {seq_id} (PR #{pr_num})",
                         pr_number=pr_num,
-                        state="resolved_ci_cycle",
+                        state="ci_outcomes_observed",
                         is_profile_owner=pr_ctx["is_pr_author"],
                         recorded_at=f_time,
                         rationale=seq.explanation,
@@ -876,14 +889,14 @@ async def analyze_repository_collaboration(
         collaboration_observations.append(
             CollaborationObservation(
                 category="problem_solving",
-                title=f"Xác minh {len(problem_solving_sequences)} chu kỳ xử lý vấn đề",
+                title=f"Ghi nhận {len(problem_solving_sequences)} chuỗi sự kiện",
                 description=(
                     f"Đã ghi nhận {len(problem_solving_sequences)} chuỗi sự kiện "
-                    "chứng minh khả năng tiếp nhận phản hồi review và giải quyết "
-                    "cảnh báo kiểm thử CI qua các bước commit điều chỉnh."
+                    "review hoặc CI có diễn biến tiếp theo. "
+                    "Chưa xác minh được hành động sửa code hoặc quan hệ nhân quả."
                 ),
-                evidence_level="evidence_backed_relationship",
-                confidence="high",
+                evidence_level="contextual_explanation",
+                confidence="uncertain",
                 related_identifiers=[s.sequence_id for s in problem_solving_sequences],
             )
         )
@@ -898,6 +911,8 @@ async def analyze_repository_collaboration(
 
     analyzed_at = datetime.now(UTC)
     summary_data = {
+        "branch_filter": request.branch,
+        "branch_filter_type": "base",
         "total_prs_analyzed": total_prs_analyzed,
         "merged_prs_count": merged_prs_count,
         "closed_unmerged_prs_count": closed_unmerged_prs_count,
@@ -958,6 +973,18 @@ async def analyze_repository_collaboration(
     )
 
     if persist:
+        # Kiểm tra lại quyền truy cập trước khi lưu dữ liệu.
+        current_repo = verify_repository_access(db, repository_id, user)
+
+        if current_repo.private:
+            _, current_scopes = get_user_github_token(db, user.id)
+            verify_private_repo_consent(
+                current_repo,
+                current_scopes,
+                db,
+                user.id,
+            )
+
         persist_collaboration_result(db, response, commit=True)
 
     return response
@@ -967,19 +994,37 @@ def get_stored_collaboration(
     db: Session,
     repository_id: int,
     user: User,
+    *,
+    only_unfiltered: bool = False,
 ) -> CollaborationAnalysisResponse | None:
     """Truy xuất bản ghi phân tích cộng tác gần nhất đã lưu trong cơ sở dữ liệu."""
 
-    verify_repository_access(db, repository_id, user)
+    repo = verify_repository_access(db, repository_id, user)
+
+    if repo.private:
+        _, scopes = get_user_github_token(db, user.id)
+        verify_private_repo_consent(repo, scopes, db, user.id)
+
+    stmt = select(CollaborationAnalysis).where(
+        CollaborationAnalysis.repository_id == repository_id,
+        CollaborationAnalysis.user_id == user.id,
+    )
+
+    if only_unfiltered:
+        stmt = stmt.where(
+            or_(
+                CollaborationAnalysis.time_range.is_(None),
+                CollaborationAnalysis.time_range == JSON.NULL,
+            )
+        )
 
     collab = db.scalar(
-        select(CollaborationAnalysis)
-        .where(
-            CollaborationAnalysis.repository_id == repository_id,
-            CollaborationAnalysis.user_id == user.id,
+        stmt.order_by(
+            desc(CollaborationAnalysis.analyzed_at),
+            desc(CollaborationAnalysis.id),
         )
-        .order_by(desc(CollaborationAnalysis.analyzed_at))
     )
+
     if not collab:
         return None
 
@@ -1074,21 +1119,13 @@ def persist_collaboration_result(
 ) -> CollaborationAnalysis:
     """Lưu kết quả phân tích cộng tác vào cơ sở dữ liệu một cách an toàn."""
 
-    existing = db.scalar(
-        select(CollaborationAnalysis).where(
-            CollaborationAnalysis.repository_id == result.repository_id,
-            CollaborationAnalysis.user_id == result.user_id,
-        )
+    # Mỗi lần phân tích tạo một bản ghi độc lập.
+    # Không ghi đè kết quả và evidence của các lần phân tích trước.
+    collab = CollaborationAnalysis(
+        repository_id=result.repository_id,
+        user_id=result.user_id,
     )
-
-    if existing is None:
-        collab = CollaborationAnalysis(
-            repository_id=result.repository_id,
-            user_id=result.user_id,
-        )
-        db.add(collab)
-    else:
-        collab = existing
+    db.add(collab)
 
     analyzed_at_val = (
         datetime.fromisoformat(result.analyzed_at)
@@ -1187,11 +1224,38 @@ def get_collaboration_evidence_list(
 ) -> CollaborationEvidenceListResponse:
     """Truy xuất danh sách bằng chứng cộng tác phân trang và lọc (PBI-014)."""
 
-    verify_repository_access(db, repository_id, user)
+    repo = verify_repository_access(db, repository_id, user)
+
+    if repo.private:
+        _, scopes = get_user_github_token(db, user.id)
+        verify_private_repo_consent(repo, scopes, db, user.id)
+
+    latest_analysis = db.scalar(
+        select(CollaborationAnalysis.id)
+        .where(
+            CollaborationAnalysis.repository_id == repository_id,
+            CollaborationAnalysis.user_id == user.id,
+        )
+        .order_by(
+            desc(CollaborationAnalysis.analyzed_at),
+            desc(CollaborationAnalysis.id),
+        )
+        .limit(1)
+    )
+
+    if latest_analysis is None:
+        return CollaborationEvidenceListResponse(
+            repository_id=repository_id,
+            total=0,
+            page=page,
+            per_page=per_page,
+            items=[],
+        )
 
     stmt = select(CollaborationEvidence).where(
         CollaborationEvidence.repository_id == repository_id,
         CollaborationEvidence.user_id == user.id,
+        CollaborationEvidence.analysis_id == latest_analysis,
     )
 
     if evidence_type and evidence_type != "all":
