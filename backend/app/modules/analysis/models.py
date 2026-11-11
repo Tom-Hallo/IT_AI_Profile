@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -60,6 +61,12 @@ class AnalysisJob(Base):
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     step: Mapped[str] = mapped_column(String(80), nullable=False, default="queued")
     error_code: Mapped[str | None] = mapped_column(String(80))
+    request_options: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True)
+    )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ita.analysis_reports.id", ondelete="SET NULL")
+    )
     retry_of: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ita.analysis_jobs.id")
     )

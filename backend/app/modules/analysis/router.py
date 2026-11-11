@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
+from app.core.time_range import resolve_range
 from app.db.session import get_session
 from app.modules.analysis import service
 from app.modules.analysis.collaboration_router import collaboration_router
@@ -89,7 +90,11 @@ def csrf(request: Request) -> None:
 def dispatch(job: Any, db: Session) -> None:
     """Fail closed if Redis cannot accept the job; do not leave it queued."""
     try:
-        enqueue_task("app.workers.tasks.analysis.run_analysis", str(job.id))
+        enqueue_task(
+            "app.workers.tasks.analysis.run_analysis",
+            str(job.id),
+            job_id=f"analysis-{job.id}",
+        )
     except (RedisError, ConnectionError, TimeoutError, OSError) as exc:
         logger.error("Analysis enqueue failed: %s", type(exc).__name__)
         service.fail_dispatch(db, job.id)
@@ -108,8 +113,25 @@ def create_job(
 ):
     csrf(request)
     assert body.repo_id is not None
-    job, created = service.create(db, user.id, body.repo_id, body.scope)
-    if created:
+    options = body.model_dump(
+        mode="json", exclude={"repo_id", "repository_id", "scope"}, exclude_none=True
+    )
+    if body.mode:
+        resolve_range(
+            mode=body.mode,
+            preset=body.preset,
+            month=body.month,
+            year=body.year,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            timezone_name=body.timezone or "UTC",
+        )
+    else:
+        options = {"branch": body.branch} if body.branch else {}
+    job, created = service.create(
+        db, user.id, body.repo_id, body.scope, request_options=options or None
+    )
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 
@@ -168,7 +190,7 @@ def retry_job(
 ):
     csrf(request)
     job, created = service.retry(db, user.id, job_id)
-    if created:
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 
@@ -212,7 +234,8 @@ async def trigger_repository_analysis(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 
@@ -243,6 +266,7 @@ def get_repository_analysis_report(
         repository_id=repository_id,
         user=current_user,
         commit_sha=commit_sha,
+        include_evidence=False,
     )
     return RepositoryAnalysisResponse(
         report_id=result.get("report_id"),
@@ -255,7 +279,8 @@ def get_repository_analysis_report(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 

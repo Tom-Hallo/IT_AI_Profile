@@ -6,7 +6,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -26,6 +26,7 @@ from app.modules.analysis.verification_service import (
     verify_repository_access,
     verify_repository_contributions,
 )
+from app.modules.consent.guards import require_private_access_consent
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ async def trigger_verification(
 )
 async def get_verification(
     repository_id: int,
+    report_id: int | None = Query(default=None, gt=0),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryVerificationResponse:
@@ -75,6 +77,7 @@ async def get_verification(
         db=db,
         repository_id=repository_id,
         user=current_user,
+        report_id=report_id,
     )
     if result is None:
         raise HTTPException(
@@ -93,6 +96,7 @@ async def get_verification(
 )
 def get_verification_evidence(
     repository_id: int,
+    verification_id: int | None = Query(default=None, gt=0),
     verification_status: Literal["all", "verified", "unverified", "unknown"] = Query(
         default="all",
         description="Lọc theo trạng thái: verified, unverified, unknown hoặc all",
@@ -109,15 +113,20 @@ def get_verification_evidence(
     db: Session = Depends(get_session),  # noqa: B008
 ) -> VerificationEvidenceListResponse:
     """Truy xuất bằng chứng xác minh commit/PR/provenance có phân trang và lọc."""
-    verify_repository_access(db, repository_id, current_user)
+    repo = verify_repository_access(db, repository_id, current_user)
+    if repo.private:
+        require_private_access_consent(db, current_user.id, repo.id)
 
+    query = select(RepositoryVerification).where(
+        RepositoryVerification.repository_id == repository_id,
+        RepositoryVerification.user_id == current_user.id,
+    )
+    if verification_id is not None:
+        query = query.where(RepositoryVerification.id == verification_id)
     verif = db.scalar(
-        select(RepositoryVerification)
-        .where(
-            RepositoryVerification.repository_id == repository_id,
-            RepositoryVerification.user_id == current_user.id,
-        )
-        .order_by(desc(RepositoryVerification.verified_at))
+        query.order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        ).limit(1)
     )
     if not verif:
         raise HTTPException(
@@ -137,14 +146,12 @@ def get_verification_evidence(
     if evidence_type != "all":
         stmt = stmt.where(VerificationEvidence.evidence_type == evidence_type)
 
-    stmt = stmt.order_by(VerificationEvidence.id.asc())
-
-    all_items = db.scalars(stmt).all()
-    total = len(all_items)
-
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    paged_rows = all_items[start_idx:end_idx]
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    paged_rows = db.scalars(
+        stmt.order_by(VerificationEvidence.id)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    ).all()
 
     items = [
         VerificationEvidenceItem(

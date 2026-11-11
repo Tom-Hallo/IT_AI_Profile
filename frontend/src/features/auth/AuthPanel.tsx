@@ -1,9 +1,9 @@
 import { env } from '@/shared/config/env'
-import { useAuth } from './useAuth'
+import type { useAuth } from './useAuth'
 import './AuthPanel.css'
 
-export function AuthPanel() {
-  const { user, isLoading, isLoggingOut, error, signOut } = useAuth()
+export function AuthPanel({ auth }: { auth: ReturnType<typeof useAuth> }) {
+  const { user, isLoading, isLoggingOut, error, signOut } = auth
 
   const handleGitHubLogin = () => {
     if (!env.apiBaseUrl) return

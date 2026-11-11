@@ -18,7 +18,7 @@ def dispatch_once() -> int:
                 select(CleanupRequest)
                 .join(AnalysisJob, AnalysisJob.id == CleanupRequest.job_id)
                 .where(
-                    CleanupRequest.status.in_(("pending", "failed")),
+                    CleanupRequest.status.in_(("pending", "failed", "running")),
                     AnalysisJob.status.in_(TERMINAL),
                 )
                 .limit(100)

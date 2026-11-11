@@ -410,27 +410,23 @@ class GitHubApiClient:
         repo: str,
         tree_sha: str,
         recursive: bool = True,
+        on_truncated: Callable[[], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Lấy toàn bộ cây thư mục/tập tin (Git Tree) của repository."""
         params: dict[str, Any] = {}
         if recursive:
             params["recursive"] = 1
-        try:
-            response = await self._request(
-                "GET",
-                f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
-                params=params,
-            )
-            data = response.json()
-            if (
-                isinstance(data, dict)
-                and "tree" in data
-                and isinstance(data["tree"], list)
-            ):
-                return data["tree"]
-            return []
-        except GitHubNotFoundError:
-            return []
+        response = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
+            params=params,
+        )
+        data = response.json()
+        if isinstance(data, dict) and isinstance(data.get("tree"), list):
+            if data.get("truncated") is True and on_truncated is not None:
+                on_truncated()
+            return data["tree"]
+        raise GitHubApiError("GitHub trả về cây thư mục không hợp lệ.")
 
     async def get_authenticated_user(self) -> dict[str, Any]:
         """Lấy thông tin tài khoản GitHub của token hiện tại."""
@@ -518,6 +514,22 @@ class GitHubApiClient:
         data = response.json()
         if not isinstance(data, dict):
             raise GitHubApiError("Chi tiết commit không hợp lệ.")
+        if _parse_next_link(response.headers.get("link")):
+            data = {key: value for key, value in data.items() if key != "files"}
+        return data
+
+    async def get_pull_request_files(
+        self, owner: str, repo: str, number: int
+    ) -> list[dict[str, Any]]:
+        response = await self._request(
+            "GET",
+            f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
+            f"/pulls/{number}/files",
+            params={"per_page": 100},
+        )
+        data = response.json()
+        if not isinstance(data, list) or _parse_next_link(response.headers.get("link")):
+            raise GitHubApiError("Không có danh sách tệp PR đầy đủ.")
         return data
 
     async def list_pull_requests(

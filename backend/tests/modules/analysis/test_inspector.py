@@ -204,3 +204,29 @@ async def test_commit_and_path_evidence_correctness():
         assert ev["detection_method"] is not None
         assert ev["confidence"] in ["high", "medium", "low", "uncertain"]
         assert len(ev["rationale"]) > 0
+
+
+@pytest.mark.anyio
+async def test_github_truncated_tree_marks_report_incomplete():
+    import httpx
+
+    from app.modules.analysis.service import GitHubRepositoryContentSource
+    from app.modules.github.client import GitHubApiClient
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "truncated": True,
+                "tree": [{"path": "main.py", "type": "blob", "size": 8}],
+            },
+        )
+
+    sha = "a" * 40
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        source = GitHubRepositoryContentSource(
+            GitHubApiClient("test-token", client=client), "owner", "repo", sha
+        )
+        result = await RepositoryInspector(1, sha).inspect(source)
+    assert result["budget"]["limit_reached"] is True
+    assert result["budget"]["limit_reason"] == "github_tree_truncated"

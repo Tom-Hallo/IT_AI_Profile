@@ -1,0 +1,37 @@
+.analysis-login {
+  max-width: 56rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.repository-analysis {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.repository-analysis table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.repository-analysis button:focus-visible,
+.repository-analysis a:focus-visible {
+  outline: 3px solid var(--color-focus, #2563eb);
+  outline-offset: 2px;
+}
+
+.analysis-coverage-warning {
+  color: #744600;
+  background: #fff5dd;
+  border: 1px solid #f2d59a;
+  border-radius: .65rem;
+  padding: .75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+@media (max-width: 36rem) {
+  .repository-analysis { padding-inline: .75rem !important; }
+  .repository-analysis .card { padding-inline: .8rem !important; }
+  .repository-analysis nav { flex-wrap: wrap; }
+}

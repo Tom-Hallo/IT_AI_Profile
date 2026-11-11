@@ -31,86 +31,41 @@ function BackendSummary({ state }: { state: HealthState }) {
 }
 
 export function SystemStatusPage() {
-  const { user } = useAuth()
+  const auth = useAuth()
+  const { user } = auth
   const { state, refresh } = useHealthStatus()
   const isLoading = state.phase === 'loading'
   const data = state.phase === 'ok' || state.phase === 'degraded' ? state.data : null
 
   return (
     <main className="status-page">
-      <header>
-        <h1>IT Talent AI Profile</h1>
-        <p className="subtitle">Trang kiểm tra hệ thống</p>
+      <header className="workspace-hero">
+        <div>
+          <h1>IT Talent AI Profile</h1>
+          <p>Phân tích mã nguồn, hoạt động và đóng góp từ GitHub.</p>
+        </div>
+        <BackendSummary state={state} />
       </header>
 
-      <AuthPanel />
+      <AuthPanel auth={auth} />
 
       {user && (
-        <>
-          <section className="card" style={{ marginBottom: '1rem', background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <h2 style={{ fontSize: '1.15rem', margin: '0 0 4px', color: '#166534' }}>
-                  📊 Phân tích hoạt động GitHub (PBI-010)
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.9rem', color: '#15803d' }}>
-                  Phân tích commits và pull requests theo khoảng thời gian thực tế từ GitHub API.
-                </p>
-              </div>
-              <Link
-                to="/activity"
-                style={{
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  background: '#16a34a',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                }}
-              >
-                Mở trang phân tích hoạt động →
-              </Link>
-            </div>
-          </section>
-
-          <section className="card" style={{ marginBottom: '1.5rem', background: '#eff6ff', borderColor: '#bfdbfe' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <h2 style={{ fontSize: '1.15rem', margin: '0 0 4px', color: '#1e40af' }}>
-                  🔍 Phân tích mã nguồn, ngôn ngữ & kiến trúc (PBI-012)
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.9rem', color: '#1d4ed8' }}>
-                  Phân tích cây thư mục repository, phát hiện ngôn ngữ, framework công nghệ và kiến trúc phần mềm.
-                </p>
-              </div>
-              <Link
-                to="/analysis"
-                style={{
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  background: '#2563eb',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                }}
-              >
-                Mở trang phân tích mã nguồn →
-              </Link>
-            </div>
-          </section>
-        </>
+        <nav className="workspace-actions" aria-label="Công cụ phân tích">
+          <Link to="/analysis" className="workspace-action">
+            <strong>Phân tích mã nguồn</strong>
+            <span>Ngôn ngữ, framework, kiến trúc và bằng chứng</span>
+          </Link>
+          <Link to="/activity" className="workspace-action">
+            <strong>Phân tích hoạt động</strong>
+            <span>Commit, pull request và đóng góp theo thời gian</span>
+          </Link>
+        </nav>
       )}
 
       <GitHubRepositoriesSection isAuthenticated={Boolean(user)} />
 
-      <section className="card" aria-labelledby="status-heading">
-        <h2 id="status-heading">Trạng thái hệ thống</h2>
+      <details className="card workspace-diagnostics">
+        <summary>Chi tiết kết nối hệ thống</summary>
 
         <dl className="rows" aria-live="polite">
           <div className="row">
@@ -178,7 +133,7 @@ export function SystemStatusPage() {
         <Button variant="primary" onClick={refresh} disabled={isLoading}>
           {isLoading ? 'Đang kiểm tra…' : 'Kiểm tra lại'}
         </Button>
-      </section>
+      </details>
     </main>
   )
 }
