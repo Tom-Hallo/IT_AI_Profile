@@ -30,3 +30,26 @@ def test_scores_route_checks_repository_membership_and_private_consent(monkeypat
             "app.modules.analysis.service.has_private_access", lambda *_: True
         )
         assert client.get(endpoint).status_code == 403
+
+
+def test_report_without_verified_metrics_has_insufficient_scores():
+    db = MagicMock()
+    db.scalar.side_effect = [
+        SimpleNamespace(id=7, private=False),
+        SimpleNamespace(
+            id=23, commit_sha="a" * 40, languages=[{"name": "Python"}], frameworks=[]
+        ),
+    ]
+    db.scalars.return_value.all.return_value = []
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_session] = lambda: db
+
+    with TestClient(app) as client:
+        res = client.get("/api/v1/scoring/repositories/7/skills?report_id=23")
+    assert res.status_code == 200
+    [item] = res.json()
+    assert item["technology"] == "Python"
+    assert item["status"] == "Insufficient"
+    assert item["score"] is None
+    assert item["report_id"] == 23

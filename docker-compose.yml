@@ -125,7 +125,7 @@ services:
   # ========================================
   # 4. WORKER - RQ
   # ========================================
-  worker:
+  worker: &worker
     build:
       context: ./backend
 
@@ -149,6 +149,7 @@ services:
 
     volumes:
       - ./backend:/app
+      - analysis_temp:/tmp/ita-private-code
 
     depends_on:
       migrate:
@@ -159,6 +160,10 @@ services:
         condition: service_healthy
 
     restart: unless-stopped
+
+  maintenance:
+    <<: *worker
+    command: ["python", "-m", "app.workers.maintenance"]
 
   # ========================================
   # 5. FRONTEND - REACT + VITE
@@ -210,5 +215,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  analysis_temp:
   postgres_data:
   frontend_node_modules:

@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 class RepositoryContentSource(ABC):
+    tree_truncated: bool = False
     """Giao diện nguồn cung cấp nội dung cây thư mục và tập tin."""
 
     @abstractmethod
@@ -119,6 +120,7 @@ class RepositoryInspector:
         """Thực thi toàn bộ quy trình kiểm tra và phân tích tĩnh repository."""
         # 1. Lấy toàn bộ cây tập tin
         raw_tree = await source.get_tree_items()
+        self.tree_truncated = source.tree_truncated
 
         # Xử lý Empty Repository
         if not raw_tree:
@@ -375,5 +377,12 @@ class RepositoryInspector:
                 for a in architecture
             ],
             "evidence": [record.model_dump(mode="json") for record in all_records],
-            "budget": self.budget.summary(),
+            "budget": {
+                **self.budget.summary(),
+                **(
+                    {"limit_reached": True, "limit_reason": "github_tree_truncated"}
+                    if self.tree_truncated
+                    else {}
+                ),
+            },
         }

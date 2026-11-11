@@ -132,7 +132,7 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
                   onChange={(e) => setUseBackgroundSync(e.target.checked)}
                   disabled={isSyncing}
                 />
-                Chạy nền (RQ Worker)
+                Đồng bộ chạy nền
               </label>
 
               <Button
@@ -141,6 +141,14 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
                 disabled={isSyncing || statusLoading}
               >
                 {isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => handleConnect(Boolean(syncStatus?.has_private_scope))}
+                disabled={!env.apiBaseUrl || isSyncing}
+              >
+                Kết nối lại
               </Button>
 
               {!syncStatus?.has_private_scope && (

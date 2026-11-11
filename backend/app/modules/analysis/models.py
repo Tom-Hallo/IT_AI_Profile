@@ -64,6 +64,9 @@ class AnalysisJob(Base):
     request_options: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(none_as_null=True)
     )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ita.analysis_reports.id", ondelete="SET NULL")
+    )
     retry_of: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ita.analysis_jobs.id")
     )

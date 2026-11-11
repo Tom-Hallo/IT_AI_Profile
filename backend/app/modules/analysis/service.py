@@ -255,6 +255,7 @@ def serialize(job: AnalysisJob) -> dict[str, Any]:
     return {
         "id": str(job.id),
         "repo_id": job.repo_id,
+        "report_id": job.report_id,
         "scope": job.scope,
         "status": job.status,
         "progress": job.progress,
@@ -296,11 +297,15 @@ class GitHubRepositoryContentSource(RepositoryContentSource):
         self.owner = owner
         self.repo = repo
         self.commit_sha = commit_sha
+        self.tree_truncated = False
 
     async def get_tree_items(self) -> list[dict[str, Any]]:
         return await self.client.get_tree(
-            self.owner, self.repo, self.commit_sha, recursive=True
+            self.owner, self.repo, self.commit_sha, on_truncated=self._mark_truncated
         )
+
+    def _mark_truncated(self) -> None:
+        self.tree_truncated = True
 
     async def get_file_content(self, path: str, max_bytes: int) -> str | None:
         return await self.client.get_file_content(

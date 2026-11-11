@@ -1,5 +1,5 @@
 .status-page {
-  max-width: 40rem;
+  max-width: 70rem;
   margin: 0 auto;
   padding: 2rem 1rem 3rem;
 }
@@ -134,3 +134,44 @@
     text-align: left;
   }
 }
+
+.workspace-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  padding: clamp(1.25rem, 4vw, 3rem);
+  color: #f5f8ff;
+  border-radius: 1.25rem;
+  background: linear-gradient(120deg, #111b31, #203a61 65%, #215267);
+}
+
+.workspace-hero h1 { font-size: clamp(1.7rem, 4vw, 2.7rem); letter-spacing: -.04em; }
+.workspace-hero p { margin: .5rem 0 0; color: #dce8f8; }
+
+.workspace-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: .75rem;
+  margin-top: 1.25rem;
+}
+
+.workspace-action {
+  display: grid;
+  gap: .35rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: .9rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.workspace-action:hover { border-color: #5077ad; }
+.workspace-action:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.workspace-action span { color: var(--color-text-muted); font-size: .9rem; }
+.workspace-diagnostics { margin-top: 1rem; overflow-wrap: anywhere; }
+.workspace-diagnostics summary { cursor: pointer; font-weight: 650; }
+.workspace-diagnostics[open] summary { margin-bottom: 1rem; }

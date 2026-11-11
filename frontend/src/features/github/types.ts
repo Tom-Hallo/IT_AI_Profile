@@ -145,6 +145,7 @@ export interface EvidenceListResult {
 }
 
 export interface AnalysisJobInfo {
+  report_id?: number | null
   id: string
   repo_id: number
   scope: string

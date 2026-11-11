@@ -90,7 +90,11 @@ def csrf(request: Request) -> None:
 def dispatch(job: Any, db: Session) -> None:
     """Fail closed if Redis cannot accept the job; do not leave it queued."""
     try:
-        enqueue_task("app.workers.tasks.analysis.run_analysis", str(job.id))
+        enqueue_task(
+            "app.workers.tasks.analysis.run_analysis",
+            str(job.id),
+            job_id=f"analysis-{job.id}",
+        )
     except (RedisError, ConnectionError, TimeoutError, OSError) as exc:
         logger.error("Analysis enqueue failed: %s", type(exc).__name__)
         service.fail_dispatch(db, job.id)
@@ -127,7 +131,7 @@ def create_job(
     job, created = service.create(
         db, user.id, body.repo_id, body.scope, request_options=options or None
     )
-    if created:
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 
@@ -186,7 +190,7 @@ def retry_job(
 ):
     csrf(request)
     job, created = service.retry(db, user.id, job_id)
-    if created:
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 

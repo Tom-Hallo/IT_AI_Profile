@@ -749,22 +749,24 @@ def get_stored_verification(
     db: Session,
     repository_id: int,
     user: User,
+    *,
+    report_id: int | None = None,
 ) -> RepositoryVerificationResponse | None:
     """Truy xuất bản ghi xác minh gần nhất đã lưu trong cơ sở dữ liệu."""
     repo = verify_repository_access(db, repository_id, user)
     if repo.private:
         require_private_access_consent(db, user.id, repo.id)
 
+    query = select(RepositoryVerification).where(
+        RepositoryVerification.repository_id == repository_id,
+        RepositoryVerification.user_id == user.id,
+    )
+    if report_id is not None:
+        query = query.where(RepositoryVerification.report_id == report_id)
     verif = db.scalar(
-        select(RepositoryVerification)
-        .where(
-            RepositoryVerification.repository_id == repository_id,
-            RepositoryVerification.user_id == user.id,
-        )
-        .order_by(
+        query.order_by(
             desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
-        )
-        .limit(1)
+        ).limit(1)
     )
     if not verif:
         return None

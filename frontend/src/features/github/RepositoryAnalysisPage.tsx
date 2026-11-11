@@ -1,6 +1,8 @@
 import { FindingEvidenceExplorer } from './FindingEvidenceExplorer'
-import { useEffect, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { ReportSkillScores } from '@/features/scoring/ReportSkillScores'
+import './RepositoryAnalysisPage.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ApiError, isAbortError } from '@/shared/api/client'
 import { useAuth } from '@/features/auth/useAuth'
 import {
@@ -30,10 +32,20 @@ import type {
   VerificationEvidenceItem,
 } from './types'
 
+const JOB_LABELS: Record<AnalysisJobInfo['status'], string> = {
+  queued: 'Đang chờ',
+  running: 'Đang phân tích',
+  succeeded: 'Hoàn tất',
+  failed: 'Thất bại',
+  cancelled: 'Đã hủy',
+  cancel_requested: 'Đang hủy',
+}
+
 export function RepositoryAnalysisPage() {
   const { repositoryId: routeRepoId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
 
   // Track selected repository
   const [manualRepoId, setManualRepoId] = useState('')
@@ -75,7 +87,7 @@ export function RepositoryAnalysisPage() {
       : 'structure',
   )
 
-  // Verification state (PBI-013)
+  // Verification state
   const [verificationData, setVerificationData] = useState<RepositoryVerificationResult | null>(null)
   const [verificationLoading, setVerificationLoading] = useState(false)
   const [verificationEvidence, setVerificationEvidence] = useState<VerificationEvidenceItem[]>([])
@@ -83,7 +95,7 @@ export function RepositoryAnalysisPage() {
   const [verEvidenceTypeFilter, setVerEvidenceTypeFilter] = useState<string>('all')
   const [verStatusFilter, setVerStatusFilter] = useState<string>('all')
 
-  // Collaboration & CI state (PBI-014)
+  // Collaboration & CI state
   const [collaborationData, setCollaborationData] = useState<RepositoryCollaborationResult | null>(null)
   const [collaborationLoading, setCollaborationLoading] = useState(false)
   const [collaborationEvidence, setCollaborationEvidence] = useState<CollaborationEvidenceItem[]>([])
@@ -96,74 +108,87 @@ export function RepositoryAnalysisPage() {
   const [jobActionBusy, setJobActionBusy] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const verificationControllerRef = useRef<AbortController | null>(null)
+  const collaborationControllerRef = useRef<AbortController | null>(null)
 
-  const loadEvidence = async (repoId: number, commitSha?: string) => {
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    verificationControllerRef.current?.abort()
+    collaborationControllerRef.current?.abort()
+  }, [effectiveRepoId])
+
+  const loadEvidence = useCallback(async (repoId: number, commitSha?: string, reportId?: number, signal?: AbortSignal) => {
     setEvidenceLoading(true)
     try {
-      const evRes = await fetchAnalysisEvidence(repoId, commitSha)
-      setEvidenceList(evRes.items)
-    } catch (err) {
-      console.warn('Could not load detailed evidence list', err)
-    } finally {
-      setEvidenceLoading(false)
-    }
-  }
-
-  const loadVerification = async (repoId: number) => {
-    setVerificationLoading(true)
-    try {
-      const ver = await fetchRepositoryVerification(repoId)
-      setVerificationData(ver)
-      await loadVerificationEvidence(repoId)
+      const evRes = await fetchAnalysisEvidence(repoId, commitSha, signal, reportId)
+      if (!signal?.aborted) setEvidenceList(evRes.items)
     } catch {
-      setVerificationData(null)
-      setVerificationEvidence([])
+      if (!signal?.aborted) setEvidenceList([])
     } finally {
-      setVerificationLoading(false)
+      if (!signal?.aborted) setEvidenceLoading(false)
     }
-  }
+  }, [])
 
-  const loadVerificationEvidence = async (repoId: number) => {
+  const loadVerificationEvidence = useCallback(async (repoId: number, verificationId?: number, signal?: AbortSignal) => {
     setVerEvidenceLoading(true)
     try {
       const res = await fetchVerificationEvidence(repoId, {
+        verification_id: verificationId,
         per_page: 100,
-      })
-      setVerificationEvidence(res.items)
-    } catch (err) {
-      console.warn('Could not load verification evidence', err)
-    } finally {
-      setVerEvidenceLoading(false)
-    }
-  }
-
-  const loadCollaboration = async (repoId: number) => {
-    setCollaborationLoading(true)
-    try {
-      const collab = await fetchLatestCollaboration(repoId)
-      setCollaborationData(collab)
-      await loadCollaborationEvidence(repoId)
+      }, signal)
+      if (!signal?.aborted) setVerificationEvidence(res.items)
     } catch {
-      setCollaborationData(null)
-      setCollaborationEvidence([])
+      if (!signal?.aborted) setVerificationEvidence([])
     } finally {
-      setCollaborationLoading(false)
+      if (!signal?.aborted) setVerEvidenceLoading(false)
     }
-  }
+  }, [])
 
-  const loadCollaborationEvidence = async (repoId: number) => {
+  const loadVerification = useCallback(async (repoId: number, reportId?: number, signal?: AbortSignal) => {
+    setVerificationLoading(true)
+    try {
+      const ver = await fetchRepositoryVerification(repoId, signal, reportId)
+      if (signal?.aborted) return
+      setVerificationData(ver)
+      await loadVerificationEvidence(repoId, ver.id ?? undefined, signal)
+    } catch {
+      if (!signal?.aborted) {
+        setVerificationData(null)
+        setVerificationEvidence([])
+      }
+    } finally {
+      if (!signal?.aborted) setVerificationLoading(false)
+    }
+  }, [loadVerificationEvidence])
+
+  const loadCollaborationEvidence = useCallback(async (repoId: number, signal?: AbortSignal) => {
     setCollabEvidenceLoading(true)
     try {
-      const res = await fetchCollaborationEvidence(repoId, {
-        per_page: 100,
-      })
-      setCollaborationEvidence(res.items)
-    } catch (err) {
-      console.warn('Could not load collaboration evidence', err)
+      const res = await fetchCollaborationEvidence(repoId, { per_page: 100 }, signal)
+      if (!signal?.aborted) setCollaborationEvidence(res.items)
+    } catch {
+      if (!signal?.aborted) setCollaborationEvidence([])
     } finally {
-      setCollabEvidenceLoading(false)
+      if (!signal?.aborted) setCollabEvidenceLoading(false)
     }
-  }
+  }, [])
+
+  const loadCollaboration = useCallback(async (repoId: number, signal?: AbortSignal) => {
+    setCollaborationLoading(true)
+    try {
+      const collab = await fetchLatestCollaboration(repoId, signal)
+      if (signal?.aborted) return
+      setCollaborationData(collab)
+      await loadCollaborationEvidence(repoId, signal)
+    } catch {
+      if (!signal?.aborted) {
+        setCollaborationData(null)
+        setCollaborationEvidence([])
+      }
+    } finally {
+      if (!signal?.aborted) setCollaborationLoading(false)
+    }
+  }, [loadCollaborationEvidence])
 
   const handleTabChange = (tab: 'structure' | 'verification' | 'collaboration') => {
     setActiveTab(tab)
@@ -201,96 +226,97 @@ export function RepositoryAnalysisPage() {
 
   // When repo changes, automatically attempt to fetch latest saved analysis & verification
   useEffect(() => {
-    if (!effectiveRepoId) return
+    if (!user || !effectiveRepoId) return
     const repoIdNum = Number(effectiveRepoId)
     if (!repoIdNum) return
 
     let active = true
-    fetchLatestAnalysis(repoIdNum)
+    const controller = new AbortController()
+    fetchLatestAnalysis(repoIdNum, undefined, controller.signal)
       .then((res) => {
         if (!active) return
         setData(res)
         setError(null)
         // Also fetch evidence
-        void loadEvidence(repoIdNum, res.commit_sha)
+        void loadEvidence(repoIdNum, res.commit_sha, res.report_id ?? undefined, controller.signal)
+        void loadVerification(repoIdNum, res.report_id ?? undefined, controller.signal)
       })
       .catch(() => {
         // Not analyzed yet or no saved results - normal for fresh repo
         if (!active) return
         setData(null)
         setEvidenceList([])
+        void loadVerification(repoIdNum, undefined, controller.signal)
       })
 
-    // Also fetch latest verification
-    fetchRepositoryVerification(repoIdNum)
-      .then((ver) => {
-        if (!active) return
-        setVerificationData(ver)
-        void loadVerificationEvidence(repoIdNum)
-      })
-      .catch(() => {
-        if (!active) return
-        setVerificationData(null)
-        setVerificationEvidence([])
-      })
-
-    fetchLatestCollaboration(repoIdNum)
-      .then((collab) => {
-        if (!active) return
-        setCollaborationData(collab)
-        void loadCollaborationEvidence(repoIdNum)
-      })
-      .catch(() => {
-        if (!active) return
-        setCollaborationData(null)
-        setCollaborationEvidence([])
-      })
+    void Promise.resolve().then(() => {
+      if (!controller.signal.aborted) return loadCollaboration(repoIdNum, controller.signal)
+    })
 
     return () => {
       active = false
+      controller.abort()
     }
-  }, [effectiveRepoId])
+  }, [effectiveRepoId, user, loadEvidence, loadVerification, loadCollaboration])
 
-  // Poll active background job
+  // Keep polling on transient failures and discard responses after navigating away.
   useEffect(() => {
-    if (!activeJob) return
-    const isTerminal = ['succeeded', 'failed', 'cancelled'].includes(activeJob.status)
-    if (isTerminal) {
-      if (activeJob.status === 'succeeded' && effectiveRepoId) {
-        // Load completed results from database
-        const repoIdNum = Number(effectiveRepoId)
-        void fetchLatestAnalysis(repoIdNum).then((res) => {
-          setData(res)
-          void loadEvidence(repoIdNum, res.commit_sha)
-          void fetchRepositoryVerification(repoIdNum)
-            .then((ver) => {
-              setVerificationData(ver)
-              void loadVerificationEvidence(repoIdNum)
-            })
-            .catch(() => {
-              // Ignore if verification not available
-            })
+    if (!activeJob || activeJob.repo_id !== Number(effectiveRepoId)) return
+    const controller = new AbortController()
+    const { signal } = controller
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    if (activeJob.status === 'succeeded' && activeJob.report_id) {
+      const repoId = activeJob.repo_id
+      void fetchLatestAnalysis(repoId, undefined, signal, activeJob.report_id ?? undefined)
+        .then((result) => {
+          if (signal.aborted) return
+          setData(result)
+          void loadVerification(repoId, result.report_id ?? undefined, signal)
+          void loadEvidence(repoId, result.commit_sha, result.report_id ?? undefined, signal)
         })
+        .catch(() => {
+          if (!signal.aborted) setError('Chưa tải được báo cáo đã hoàn tất. Hãy thử mở lại repository.')
+        })
+    } else if (['queued', 'running', 'cancel_requested'].includes(activeJob.status)) {
+      const poll = () => {
+        timer = setTimeout(() => {
+          void fetchAnalysisJob(activeJob.id, signal)
+            .then((updated) => {
+              if (!signal.aborted) setActiveJob(updated)
+            })
+            .catch((error: unknown) => {
+              if (signal.aborted) return
+              if (error instanceof ApiError && [401, 403, 404].includes(error.status ?? 0)) {
+                setError('Không thể truy cập tiến trình phân tích. Hãy kiểm tra quyền GitHub.')
+                return
+              }
+              poll()
+            })
+        }, 2000)
       }
-      return
+      poll()
     }
 
-    const timer = setTimeout(() => {
-      fetchAnalysisJob(activeJob.id)
-        .then((updated) => {
-          setActiveJob(updated)
-        })
-        .catch((err) => {
-          console.warn('Failed to poll analysis job', err)
-        })
-    }, 2000)
-
-    return () => clearTimeout(timer)
-  }, [activeJob, effectiveRepoId])
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [activeJob, effectiveRepoId, loadEvidence, loadVerification])
 
   const handleRepoChange = (newRepoId: string) => {
+    abortControllerRef.current?.abort()
+    setLoading(false)
+    setEvidenceLoading(false)
+    setVerEvidenceLoading(false)
+    setCollabEvidenceLoading(false)
     setManualRepoId(newRepoId)
-    setSearchParams({ repository_id: newRepoId, tab: activeTab })
+    if (routeRepoId) {
+      const path = newRepoId ? `/repositories/${newRepoId}/analysis` : '/analysis'
+      void navigate(`${path}?tab=${activeTab}`, { replace: true })
+    } else {
+      setSearchParams({ repository_id: newRepoId, tab: activeTab })
+    }
     setError(null)
     setData(null)
     setEvidenceList([])
@@ -364,7 +390,7 @@ export function RepositoryAnalysisPage() {
           timezone?: string
         } = {
           scope: scope === 'all' ? 'full' : scope,
-          branch: currentRepo?.default_branch || 'master',
+          branch: currentRepo?.default_branch ?? undefined,
         }
 
         if (enableTimeRange) {
@@ -418,7 +444,7 @@ export function RepositoryAnalysisPage() {
         timezone?: string
       } = {
         scope,
-        branch: currentRepo?.default_branch || 'master',
+        branch: currentRepo?.default_branch ?? undefined,
       }
 
       if (enableTimeRange) {
@@ -444,20 +470,16 @@ export function RepositoryAnalysisPage() {
       }
 
       const result = await triggerRepositoryAnalysis(repoId, payload, abortController.signal)
+      if (abortController.signal.aborted) return
       setData(result)
-      await loadEvidence(repoId, result.commit_sha)
-      if (result.verification) {
-        setVerificationData(result.verification)
-        await loadVerificationEvidence(repoId)
-      } else {
-        void loadVerification(repoId)
-      }
-      void loadCollaboration(repoId)
+      await loadEvidence(repoId, result.commit_sha, result.report_id ?? undefined, abortController.signal)
+      if (abortController.signal.aborted) return
+      void loadVerification(repoId, result.report_id ?? undefined, abortController.signal)
+      void loadCollaboration(repoId, abortController.signal)
     } catch (err) {
-      if (isAbortError(err)) return
-      handleApiError(err)
+      if (!abortController.signal.aborted && !isAbortError(err)) handleApiError(err)
     } finally {
-      setLoading(false)
+      if (!abortController.signal.aborted) setLoading(false)
     }
   }
 
@@ -473,6 +495,9 @@ export function RepositoryAnalysisPage() {
     const repoId = Number(effectiveRepoId)
     const currentRepo = repos.find((r) => r.id === repoId)
 
+    verificationControllerRef.current?.abort()
+    const controller = new AbortController()
+    verificationControllerRef.current = controller
     setVerificationLoading(true)
     try {
       const payload: {
@@ -488,7 +513,7 @@ export function RepositoryAnalysisPage() {
         force_refresh?: boolean
       } = {
         scope,
-        branch: currentRepo?.default_branch || 'master',
+        branch: currentRepo?.default_branch ?? undefined,
         force_refresh: true,
       }
 
@@ -504,13 +529,14 @@ export function RepositoryAnalysisPage() {
         }
       }
 
-      const ver = await triggerRepositoryVerification(repoId, payload)
+      const ver = await triggerRepositoryVerification(repoId, payload, controller.signal)
+      if (controller.signal.aborted) return
       setVerificationData(ver)
-      await loadVerificationEvidence(repoId)
+      await loadVerificationEvidence(repoId, ver.id ?? undefined, controller.signal)
     } catch (err) {
-      handleApiError(err)
+      if (!controller.signal.aborted) handleApiError(err)
     } finally {
-      setVerificationLoading(false)
+      if (!controller.signal.aborted) setVerificationLoading(false)
     }
   }
 
@@ -522,6 +548,9 @@ export function RepositoryAnalysisPage() {
     const repoId = Number(effectiveRepoId)
     const currentRepo = repos.find((r) => r.id === repoId)
 
+    collaborationControllerRef.current?.abort()
+    const controller = new AbortController()
+    collaborationControllerRef.current = controller
     setCollaborationLoading(true)
     try {
       const payload: {
@@ -535,7 +564,7 @@ export function RepositoryAnalysisPage() {
         timezone?: string
         force_refresh?: boolean
       } = {
-        branch: currentRepo?.default_branch || 'master',
+        branch: currentRepo?.default_branch ?? undefined,
         force_refresh: true,
       }
 
@@ -551,13 +580,14 @@ export function RepositoryAnalysisPage() {
         }
       }
 
-      const collab = await triggerCollaborationAnalysis(repoId, payload)
+      const collab = await triggerCollaborationAnalysis(repoId, payload, controller.signal)
+      if (controller.signal.aborted) return
       setCollaborationData(collab)
-      await loadCollaborationEvidence(repoId)
+      await loadCollaborationEvidence(repoId, controller.signal)
     } catch (err) {
-      handleApiError(err)
+      if (!controller.signal.aborted) handleApiError(err)
     } finally {
-      setCollaborationLoading(false)
+      if (!controller.signal.aborted) setCollaborationLoading(false)
     }
   }
 
@@ -588,13 +618,13 @@ export function RepositoryAnalysisPage() {
     }
 
     const messages: Record<number, string> = {
-      401: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại qua GitHub.',
+      401: backendDetail || 'Vui lòng đăng nhập hoặc liên kết lại GitHub.',
       403: backendDetail || "Repository riêng tư yêu cầu quyền OAuth 'repo'. Vui lòng cấp quyền Private.",
-      404: 'Không tìm thấy repository hoặc bạn không có quyền truy cập.',
+      404: backendDetail || 'Không tìm thấy repository hoặc bạn không có quyền truy cập.',
       422: backendDetail || 'Tham số yêu cầu phân tích không hợp lệ.',
       429: 'GitHub API đang giới hạn tần suất (Rate limit). Vui lòng thử lại sau vài phút.',
       500: backendDetail || 'Backend gặp sự cố khi đọc cây thư mục repository.',
-      503: 'Hàng đợi phân tích (Redis/Worker) tạm thời không khả dụng.',
+      503: backendDetail || 'Dịch vụ phân tích tạm thời không khả dụng.',
     }
 
     setError(messages[status ?? 0] ?? backendDetail ?? 'Không thể thực hiện phân tích.')
@@ -607,8 +637,19 @@ export function RepositoryAnalysisPage() {
     return e.finding_type === evidenceFilter
   })
 
+  if (authLoading || !user) {
+    return (
+      <main className="analysis-login">
+        <h1>Phân tích mã nguồn</h1>
+        {authLoading ? <p role="status">Đang kiểm tra phiên GitHub…</p> : (
+          <p><Link to="/">Về trang chủ để đăng nhập bằng GitHub</Link></p>
+        )}
+      </main>
+    )
+  }
+
   return (
-    <main style={{ maxWidth: 1140, margin: '2rem auto', padding: '0 1.5rem', fontFamily: 'inherit' }}>
+    <main className="repository-analysis" style={{ maxWidth: 1140, margin: '2rem auto', padding: '0 1.5rem', fontFamily: 'inherit' }}>
       {/* Navigation breadcrumbs */}
       <nav style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem' }}>
         <Link to="/" style={{ color: 'var(--color-primary, #2563eb)', textDecoration: 'none', fontWeight: 500 }}>
@@ -621,7 +662,7 @@ export function RepositoryAnalysisPage() {
               to={`/repositories/${effectiveRepoId}/activity`}
               style={{ color: 'var(--color-text-muted, #64748b)', textDecoration: 'none' }}
             >
-              📊 Phân tích hoạt động (PBI-010)
+              📊 Phân tích hoạt động
             </Link>
           </>
         )}
@@ -636,7 +677,7 @@ export function RepositoryAnalysisPage() {
           </h1>
         </div>
         <p style={{ margin: 0, color: 'var(--color-text-muted, #64748b)', fontSize: '0.95rem' }}>
-          PBI-012: Phân tích cây thư mục, nhận diện ngôn ngữ, framework công nghệ và cấu trúc kiến trúc từ dẫn chứng thực tế.
+          Chọn repository để xem ngôn ngữ, framework, kiến trúc và bằng chứng.
         </p>
       </header>
 
@@ -646,7 +687,7 @@ export function RepositoryAnalysisPage() {
           Cấu hình phân tích repository
         </h2>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
           {/* Repository Selection */}
           <div>
             <label style={{ display: 'block', fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.375rem' }}>
@@ -713,7 +754,7 @@ export function RepositoryAnalysisPage() {
               onChange={(e) => setUseBackgroundJob(e.target.checked)}
               disabled={loading}
             />
-            <span>Chạy nền với hàng đợi (Redis + RQ Worker)</span>
+            <span>Phân tích chạy nền</span>
           </label>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
@@ -723,14 +764,14 @@ export function RepositoryAnalysisPage() {
               onChange={(e) => setEnableTimeRange(e.target.checked)}
               disabled={loading}
             />
-            <span>Lọc theo mốc thời gian commit (PBI-010)</span>
+            <span>Lọc theo mốc thời gian commit</span>
           </label>
         </div>
 
         {/* Time range parameters if enabled */}
         {enableTimeRange && (
           <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Chế độ</label>
                 <select value={mode} onChange={(e) => setMode(e.target.value as 'preset' | 'month' | 'year' | 'custom')} style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid #cbd5e1' }}>
@@ -823,7 +864,7 @@ export function RepositoryAnalysisPage() {
                   fetchLatestAnalysis(repoIdNum)
                     .then((res) => {
                       setData(res)
-                      void loadEvidence(repoIdNum, res.commit_sha)
+                      void loadEvidence(repoIdNum, res.commit_sha, res.report_id ?? undefined)
                       setError(null)
                     })
                     .catch(() => setError('Chưa có kết quả phân tích lưu trước đó.'))
@@ -867,7 +908,7 @@ export function RepositoryAnalysisPage() {
                   activeJob.status === 'succeeded' ? '#166534' : activeJob.status === 'failed' ? '#991b1b' : '#3730a3',
               }}
             >
-              {activeJob.status.toUpperCase()}
+              {JOB_LABELS[activeJob.status]}
             </span>
           </div>
 
@@ -945,7 +986,7 @@ export function RepositoryAnalysisPage() {
       )}
 
       {/* Tab Switcher: PBI-012 Structure vs PBI-013 Verification */}
-      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.25rem' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.25rem' }}>
         <button
           type="button"
           onClick={() => handleTabChange('structure')}
@@ -964,7 +1005,7 @@ export function RepositoryAnalysisPage() {
             gap: '0.5rem',
           }}
         >
-          <span>🏛️</span> Mã nguồn & Kiến trúc (PBI-012)
+          <span>🏛️</span> Mã nguồn & Kiến trúc
         </button>
 
         <button
@@ -985,7 +1026,7 @@ export function RepositoryAnalysisPage() {
             gap: '0.5rem',
           }}
         >
-          <span>🛡️</span> Xác minh Fork & Đóng góp (PBI-013)
+          <span>🛡️</span> Xác minh Fork & Đóng góp
           {verificationData && (
             <span
               style={{
@@ -1030,7 +1071,7 @@ export function RepositoryAnalysisPage() {
             gap: '0.5rem',
           }}
         >
-          <span>🤝</span> Cộng tác, Review & CI (PBI-014)
+          <span>🤝</span> Cộng tác, Review & CI
           {collaborationData && (
             <span
               style={{
@@ -1077,8 +1118,15 @@ export function RepositoryAnalysisPage() {
                   </div>
                 </div>
 
+                {data.budget.limit_reached === true && (
+                  <p className="analysis-coverage-warning" role="status">
+                    {data.budget.limit_reason === 'github_tree_truncated'
+                      ? 'GitHub chỉ trả về một phần cây thư mục. Các số liệu dưới đây chỉ phản ánh dữ liệu đã nhận.'
+                      : 'Đã đạt giới hạn quét. Báo cáo chỉ phản ánh phần dữ liệu đã xử lý.'}
+                  </p>
+                )}
                 {/* Structure metrics grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '1rem' }}>
                   <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>Tổng số tệp tin</span>
                     <strong style={{ fontSize: '1.5rem', color: '#0f172a' }}>{data.structure.total_files}</strong>
@@ -1104,6 +1152,8 @@ export function RepositoryAnalysisPage() {
                 </div>
               </section>
 
+              {data.report_id && <ReportSkillScores key={data.report_id} repoId={data.repository_id} reportId={data.report_id} />}
+
               {/* Languages Section */}
               <section className="card" style={{ padding: '1.5rem', background: '#ffffff' }}>
                 <h3 style={{ margin: '0 0 1rem', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1113,7 +1163,7 @@ export function RepositoryAnalysisPage() {
                 {data.languages.length === 0 ? (
                   <p style={{ color: '#64748b', margin: 0, fontStyle: 'italic' }}>Không phát hiện mã nguồn phù hợp.</p>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '1rem' }}>
                     {data.languages.map((lang) => (
                       <div
                         key={lang.name}
@@ -1154,7 +1204,7 @@ export function RepositoryAnalysisPage() {
                 {data.frameworks.length === 0 ? (
                   <p style={{ color: '#64748b', margin: 0, fontStyle: 'italic' }}>Không tìm thấy manifest hoặc cấu hình framework.</p>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '1rem' }}>
                     {data.frameworks.map((fw) => (
                       <div
                         key={`${fw.name}:${fw.ecosystem}`}
@@ -1539,7 +1589,7 @@ export function RepositoryAnalysisPage() {
                 </div>
 
                 {/* Provenance details grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '1rem' }}>
                   <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginBottom: 4 }}>Vai trò sở hữu (Ownership)</span>
                     <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>
@@ -1616,7 +1666,7 @@ export function RepositoryAnalysisPage() {
                   <span>📊</span> Số liệu đóng góp thực tế đã qua xác minh
                 </h3>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '1rem' }}>
                   <div style={{ padding: '1.25rem', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
                     <span style={{ fontSize: '0.8rem', color: '#166534', display: 'block' }}>Commits đã xác minh</span>
                     <strong style={{ fontSize: '1.75rem', color: '#15803d' }}>{verificationData.verified_commits_count}</strong>
@@ -1900,7 +1950,7 @@ export function RepositoryAnalysisPage() {
                   gap: '0.5rem',
                 }}
               >
-                <span>🤝</span> Phân tích Pull Request, Review, CI & Xử lý lỗi (PBI-014)
+                <span>🤝</span> Phân tích Pull Request, Review, CI & Xử lý lỗi
               </h2>
               <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
                 Thu thập và đánh giá hoạt động cộng tác, lịch sử code review, kết quả CI/CD và chu kỳ giải quyết vấn đề từ GitHub API thực tế.
@@ -1999,7 +2049,7 @@ export function RepositoryAnalysisPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
                   gap: '1rem',
                 }}
               >

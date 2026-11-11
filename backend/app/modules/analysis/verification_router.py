@@ -68,6 +68,7 @@ async def trigger_verification(
 )
 async def get_verification(
     repository_id: int,
+    report_id: int | None = Query(default=None, gt=0),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> RepositoryVerificationResponse:
@@ -76,6 +77,7 @@ async def get_verification(
         db=db,
         repository_id=repository_id,
         user=current_user,
+        report_id=report_id,
     )
     if result is None:
         raise HTTPException(
@@ -94,6 +96,7 @@ async def get_verification(
 )
 def get_verification_evidence(
     repository_id: int,
+    verification_id: int | None = Query(default=None, gt=0),
     verification_status: Literal["all", "verified", "unverified", "unknown"] = Query(
         default="all",
         description="Lọc theo trạng thái: verified, unverified, unknown hoặc all",
@@ -114,13 +117,16 @@ def get_verification_evidence(
     if repo.private:
         require_private_access_consent(db, current_user.id, repo.id)
 
+    query = select(RepositoryVerification).where(
+        RepositoryVerification.repository_id == repository_id,
+        RepositoryVerification.user_id == current_user.id,
+    )
+    if verification_id is not None:
+        query = query.where(RepositoryVerification.id == verification_id)
     verif = db.scalar(
-        select(RepositoryVerification)
-        .where(
-            RepositoryVerification.repository_id == repository_id,
-            RepositoryVerification.user_id == current_user.id,
-        )
-        .order_by(desc(RepositoryVerification.verified_at))
+        query.order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        ).limit(1)
     )
     if not verif:
         raise HTTPException(

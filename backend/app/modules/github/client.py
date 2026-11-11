@@ -410,6 +410,7 @@ class GitHubApiClient:
         repo: str,
         tree_sha: str,
         recursive: bool = True,
+        on_truncated: Callable[[], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Lấy toàn bộ cây thư mục/tập tin (Git Tree) của repository."""
         params: dict[str, Any] = {}
@@ -422,6 +423,8 @@ class GitHubApiClient:
         )
         data = response.json()
         if isinstance(data, dict) and isinstance(data.get("tree"), list):
+            if data.get("truncated") is True and on_truncated is not None:
+                on_truncated()
             return data["tree"]
         raise GitHubApiError("GitHub trả về cây thư mục không hợp lệ.")
 

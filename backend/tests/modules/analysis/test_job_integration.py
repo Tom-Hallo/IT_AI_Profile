@@ -18,7 +18,7 @@ from app.api.dependencies import get_current_user
 from app.db.session import get_session
 from app.main import create_app
 from app.modules.analysis.inspector import InMemoryContentSource
-from app.modules.analysis.models import AnalysisJob
+from app.modules.analysis.models import AnalysisJob, AnalysisReport
 from app.modules.analysis.service import (
     _ANALYSIS_CACHE,
     cancel,
@@ -72,6 +72,7 @@ def _mock_job(
     j.progress = progress
     j.step = step
     j.error_code = None
+    j.report_id = None
     j.retry_of = None
     j.request_options = None
     j.execution_token = None
@@ -198,6 +199,12 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
 
     mock_db = MagicMock()
 
+    def assign_report_id(row):
+        if isinstance(row, AnalysisReport):
+            row.id = 123
+
+    mock_db.add.side_effect = assign_report_id
+
     # Mock session_scope contextmanager
     class FakeSessionScope:
         def __enter__(self):
@@ -239,6 +246,7 @@ def test_run_analysis_executes_pipeline_and_succeeds(monkeypatch):
     assert len(result["frameworks"]) >= 1
     assert any(f["name"] == "FastAPI" for f in result["frameworks"])
     assert job_record.status == "succeeded"
+    assert job_record.report_id == result["report_id"] == 123
     assert job_record.progress == 100
     assert job_record.step == "completed"
     assert mock_scalar_fn.call_count >= 6

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { env } from '@/shared/config/env'
 import { ApiError, apiFetch, isAbortError } from '@/shared/api/client'
 import { useAuth } from '@/features/auth/useAuth'
@@ -88,6 +88,7 @@ interface Analysis {
 
 export function ActivityAnalysisPage() {
   const { repositoryId: routeRepoId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, isLoading: authLoading } = useAuth()
 
@@ -109,7 +110,7 @@ export function ActivityAnalysisPage() {
   const [mode, setMode] = useState<Mode>('preset')
   const [preset, setPreset] = useState('1m')
   const [month, setMonth] = useState('')
-  const [year, setYear] = useState('2026')
+  const [year, setYear] = useState(String(new Date().getFullYear()))
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [timezone, setTimezone] = useState('Asia/Ho_Chi_Minh')
@@ -159,11 +160,15 @@ export function ActivityAnalysisPage() {
 
   // Handle repository change from dropdown
   const handleRepoSelect = (repoId: string) => {
+    abortControllerRef.current?.abort()
+    setLoading(false)
     setManualRepoId(repoId)
     setError('')
     setData(null)
 
-    if (repoId) {
+    if (routeRepoId) {
+      void navigate(repoId ? `/repositories/${repoId}/activity` : '/activity', { replace: true })
+    } else if (repoId) {
       setSearchParams({ repository_id: repoId }, { replace: true })
     } else {
       setSearchParams({}, { replace: true })

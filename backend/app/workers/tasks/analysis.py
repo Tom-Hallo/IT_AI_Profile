@@ -352,6 +352,7 @@ def run_analysis(
                     commit=False,
                 )
 
+            job.report_id = report.id
             job.status = "succeeded"
             job.progress = 100
             job.step = "completed"
