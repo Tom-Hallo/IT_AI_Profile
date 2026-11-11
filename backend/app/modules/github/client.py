@@ -132,7 +132,7 @@ class GitHubApiClient:
             self._owned_client = None
 
     @property
-    def _headers(self) -> dict[str, str]:
+    def _headers(self) -> dict[str, str]: #asda
         return {
             "Authorization": f"Bearer {self._access_token}",
             "Accept": "application/vnd.github+json",
