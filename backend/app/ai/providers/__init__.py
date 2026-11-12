@@ -1,3 +1,4 @@
+
 """AI provider package."""
 
 from app.ai.providers.exceptions import (
@@ -9,6 +10,7 @@ from app.ai.providers.exceptions import (
     AITimeoutError,
 )
 from app.ai.providers.factory import get_ai_provider
+from app.ai.providers.ollama_provider import OllamaProvider
 from app.ai.providers.openai_provider import OpenAIProvider
 
 __all__ = [
@@ -19,5 +21,6 @@ __all__ = [
     "AICostLimitError",
     "AIInjectionBlockedError",
     "OpenAIProvider",
+    "OllamaProvider",
     "get_ai_provider",
 ]

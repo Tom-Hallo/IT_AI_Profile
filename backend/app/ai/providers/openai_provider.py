@@ -3,6 +3,7 @@
 Không ghi API key, prompt hoặc nội dung phản hồi vào log.
 """
 
+import asyncio
 from typing import TypedDict
 
 import httpx
@@ -35,6 +36,13 @@ class OpenAIProvider:
 
     API_URL = "https://api.openai.com/v1/responses"
 
+    # Tối đa 3 lần gửi request, bao gồm lần đầu.
+    MAX_ATTEMPTS = 3
+
+    # Thời gian chờ giữa các lần retry: 0.25s, 0.5s.
+    RETRY_BASE_DELAY = 0.25
+    RETRY_MAX_DELAY = 1.0
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
@@ -55,6 +63,13 @@ class OpenAIProvider:
         if not instructions.strip() or not input_text.strip():
             raise ValueError("Instructions và input không được để trống.")
 
+        if len(input_text) > self.settings.ai_max_input_chars:
+            raise AIProviderError(
+                "Nội dung đầu vào vượt quá giới hạn cho phép.",
+                provider="openai",
+                retryable=False,
+            )
+
         headers = {
             "Authorization": f"Bearer {api_key.get_secret_value()}",
             "Content-Type": "application/json",
@@ -62,43 +77,82 @@ class OpenAIProvider:
 
         payload = {
             "model": model,
+            "max_output_tokens": self.settings.ai_max_output_tokens,
             "instructions": (
                 SYSTEM_SECURITY_INSTRUCTIONS + "\n\nAPPLICATION TASK:\n" + instructions
             ),
             "input": build_secure_input(input_text),
         }
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=self.settings.ai_timeout_seconds
-            ) as client:
-                response = await client.post(
-                    self.API_URL,
-                    headers=headers,
-                    json=payload,
-                )
-                response.raise_for_status()
-                result = response.json()
+        result = None
+        last_error: AIProviderError | None = None
 
-        except httpx.TimeoutException:
-            raise AITimeoutError(provider="openai") from None
+        async with httpx.AsyncClient(
+            timeout=self.settings.ai_timeout_seconds
+        ) as client:
+            for attempt in range(self.MAX_ATTEMPTS):
+                try:
+                    response = await client.post(
+                        self.API_URL,
+                        headers=headers,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    break
 
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
-                raise AIRateLimitError(provider="openai") from None
+                except httpx.TimeoutException:
+                    last_error = AITimeoutError(provider="openai")
+
+                except httpx.HTTPStatusError as exc:
+                    status_code = exc.response.status_code
+
+                    if status_code == 429:
+                        raise AIRateLimitError(provider="openai") from None
+
+                    if status_code < 500:
+                        raise AIProviderError(
+                            f"AI provider trả về lỗi HTTP {status_code}.",
+                            provider="openai",
+                            retryable=False,
+                        ) from None
+
+                    last_error = AIProviderError(
+                        f"AI provider trả về lỗi HTTP {status_code}.",
+                        provider="openai",
+                        retryable=True,
+                    )
+
+                except httpx.RequestError:
+                    last_error = AIProviderError(
+                        "Không thể kết nối đến AI provider.",
+                        provider="openai",
+                        retryable=True,
+                    )
+
+                except ValueError:
+                    raise AIProviderError(
+                        "AI provider trả về dữ liệu JSON không hợp lệ.",
+                        provider="openai",
+                        retryable=False,
+                    ) from None
+
+                if attempt < self.MAX_ATTEMPTS - 1:
+                    delay = min(
+                        self.RETRY_BASE_DELAY * (2**attempt),
+                        self.RETRY_MAX_DELAY,
+                    )
+                    await asyncio.sleep(delay)
+
+        if result is None:
+            if last_error is not None:
+                raise last_error
 
             raise AIProviderError(
-                f"AI provider trả về lỗi HTTP {exc.response.status_code}.",
+                "Không thể hoàn thành yêu cầu đến AI provider.",
                 provider="openai",
-                retryable=exc.response.status_code >= 500,
-            ) from None
-
-        except (httpx.RequestError, ValueError):
-            raise AIProviderError(
-                "Không thể kết nối hoặc đọc phản hồi từ AI provider.",
-                provider="openai",
-                retryable=True,
-            ) from None
+                retryable=False,
+            )
 
         if not isinstance(result, dict):
             raise AIProviderError(

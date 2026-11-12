@@ -1,7 +1,9 @@
 """Service ghi nhận metadata sử dụng AI provider."""
 
 import logging
+from datetime import UTC, datetime, time, timedelta
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import session_scope
@@ -44,3 +46,31 @@ def record_ai_usage(
             )
     except SQLAlchemyError:
         logger.exception("Failed to persist AI usage audit metadata")
+
+
+def count_ai_requests_today(*, user_id: int, provider: str) -> int:
+    """Đếm số request AI của user trong ngày UTC hiện tại."""
+    now = datetime.now(UTC)
+    start_of_day = datetime.combine(
+        now.date(),
+        time.min,
+        tzinfo=UTC,
+    )
+    start_of_next_day = start_of_day + timedelta(days=1)
+
+    try:
+        with session_scope() as db:
+            statement = (
+                select(func.count())
+                .select_from(AIUsageLog)
+                .where(
+                    AIUsageLog.user_id == user_id,
+                    AIUsageLog.provider == provider,
+                    AIUsageLog.created_at >= start_of_day,
+                    AIUsageLog.created_at < start_of_next_day,
+                )
+            )
+            return db.scalar(statement) or 0
+    except SQLAlchemyError:
+        logger.exception("Failed to count AI usage requests")
+        raise

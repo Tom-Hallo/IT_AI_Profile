@@ -1,4 +1,4 @@
-"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
+﻿"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
 
 Quy tắc:
 - Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import
@@ -56,11 +56,14 @@ class Settings(BaseSettings):
     github_sync_timeout_seconds: int = 300
     github_api_concurrency: int = 8
     # AI Provider
-    # API key và model có thể để trống để hệ thống chạy local-only.
-    ai_provider: Literal["openai"] = "openai"
+    ai_provider: Literal["openai", "ollama"] = "ollama"
     ai_api_key: SecretStr | None = None
     ai_model: str | None = None
-    ai_timeout_seconds: int = 30
+    ai_base_url: str = "http://localhost:11434"
+    ai_timeout_seconds: int = 120
+    ai_max_input_chars: int = 50000
+    ai_max_output_tokens: int = 2000
+    ai_max_requests_per_day: int = 50
 
     @field_validator(
         "github_client_id",
@@ -84,6 +87,17 @@ class Settings(BaseSettings):
     @field_validator("ai_timeout_seconds")
     @classmethod
     def _validate_ai_timeout(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("phải lớn hơn 0")
+        return value
+
+    @field_validator(
+        "ai_max_input_chars",
+        "ai_max_output_tokens",
+        "ai_max_requests_per_day",
+    )
+    @classmethod
+    def _validate_ai_limits(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("phải lớn hơn 0")
         return value
