@@ -18,16 +18,7 @@
   margin: 0.25rem 0;
 }
 
-.eyebrow {
-  margin: 0;
-  font-size: var(--text-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-.muted {
+.mentor-page .muted {
   color: var(--color-text-muted);
 }
 
@@ -67,15 +58,6 @@
   font-size: var(--text-sm);
 }
 
-.source-toggle {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: var(--space-3);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
 .mentor-sources .field {
   display: grid;
   gap: 6px;
@@ -85,7 +67,6 @@
 }
 
 .mentor-sources textarea,
-.mentor-sources input,
 .mentor-form textarea {
   width: 100%;
   padding: 9px 11px;
@@ -122,6 +103,11 @@
 
 .chat-bubble--assistant {
   border-left: 3px solid var(--color-success);
+}
+
+.chat-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-meta {

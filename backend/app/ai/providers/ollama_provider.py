@@ -4,6 +4,7 @@ Không ghi prompt, nội dung code hoặc dữ liệu riêng tư vào log.
 """
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -36,6 +37,7 @@ class OllamaProvider:
         *,
         instructions: str,
         input_text: str,
+        before_send: Callable[[], None] | None = None,
     ) -> AIProviderResult:
         """Gửi yêu cầu tới Ollama và trả về nội dung cùng token usage."""
 
@@ -87,6 +89,8 @@ class OllamaProvider:
         for attempt in range(self.MAX_ATTEMPTS):
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
+                    if before_send is not None:
+                        before_send()
                     response = await client.post(url, json=payload)
 
                 if response.status_code >= 500:

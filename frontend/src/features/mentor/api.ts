@@ -1,5 +1,5 @@
 import { apiFetch } from '@/shared/api/client'
-import type { MentorChatRequest, MentorChatResponse } from './types'
+import type { MentorChatRequest, MentorChatResponse, MentorSourceOptions } from './types'
 
 export function sendMentorChat(
   payload: MentorChatRequest,
@@ -9,6 +9,10 @@ export function sendMentorChat(
     method: 'POST',
     body: payload,
     signal,
-    timeoutMs: 120_000,
+    timeoutMs: 130_000,
   })
+}
+
+export function fetchMentorSources(signal: AbortSignal): Promise<MentorSourceOptions> {
+  return apiFetch<MentorSourceOptions>('/mentor/sources', { signal })
 }
