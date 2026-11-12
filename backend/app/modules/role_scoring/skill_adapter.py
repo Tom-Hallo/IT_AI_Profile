@@ -125,19 +125,7 @@ class DatabaseSkillSnapshotSource:
                 .limit(MAX_SNAPSHOT_ITEMS)
             )
             if self._repo_id_filter is not None:
-                latest = aliased(AnalysisReport)
-                report_id = (
-                    select(latest.id)
-                    .where(latest.repository_id == SkillScore.repository_id)
-                    .order_by(latest.analyzed_at.desc(), latest.id.desc())
-                    .limit(1)
-                    .correlate(SkillScore)
-                    .scalar_subquery()
-                )
-                query = query.where(
-                    SkillScore.repository_id.in_(self._repo_id_filter),
-                    SkillScore.report_id == report_id,
-                )
+                query = query.where(SkillScore.repository_id.in_(self._repo_id_filter))
             scores = self._db.scalars(query).all()
             if not scores:
                 return None

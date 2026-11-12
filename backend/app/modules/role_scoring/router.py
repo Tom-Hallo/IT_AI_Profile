@@ -130,12 +130,6 @@ def score_role_scoped(
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "Role or rubric not found"
         ) from exc
-    except (RepositoryNotFoundError, PrivateConsentRequiredError) as exc:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Repository access changed; refresh the scoped score.",
-            headers={"Cache-Control": "no-store"},
-        ) from exc
     except SkillSnapshotSourceError as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,

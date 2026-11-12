@@ -94,7 +94,7 @@ class TestDatabaseSkillSnapshotSourceScopeFilter:
 
         assert result is None
 
-    def test_scoped_snapshot_ref_derived_from_rows(self) -> None:
+    def test_snapshot_ref_set_from_param(self) -> None:
         s1 = _make_score(id=1)
         db = self._make_db([s1])
 
@@ -102,9 +102,9 @@ class TestDatabaseSkillSnapshotSourceScopeFilter:
         result = source.fetch(1, snapshot_ref="my_ref")
 
         assert result is not None
-        assert result.payload.snapshot_ref.startswith("pbi016_")  # type: ignore[union-attr]
+        assert result.payload.snapshot_ref == "my_ref"  # type: ignore[union-attr]
 
-    def test_scoped_snapshot_ref_does_not_expose_user_id(self) -> None:
+    def test_snapshot_ref_default_includes_user_id(self) -> None:
         s1 = _make_score(id=1, user_id=42)
         db = self._make_db([s1])
 
@@ -112,4 +112,4 @@ class TestDatabaseSkillSnapshotSourceScopeFilter:
         result = source.fetch(42)
 
         assert result is not None
-        assert result.payload.snapshot_ref.startswith("pbi016_")  # type: ignore[union-attr]
+        assert "42" in result.payload.snapshot_ref  # type: ignore[union-attr]

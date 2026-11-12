@@ -18,8 +18,8 @@ Quy tắc consent:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from hashlib import sha256
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,17 +28,14 @@ from app.ai.scoring import (
     ArchitectureEvidenceSet,
     EvidenceRef,
     RoleRubric,
+    RoleScoreResult,
     RoleScoringEngine,
     RoleScoringInput,
-    ScoreStatus,
     SkillSnapshotInput,
 )
 from app.ai.scoring.schemas import Limitation
-from app.modules.analysis.models import AnalysisReport
 from app.modules.github.models import Repository, user_repository
-from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.architecture_provider import (
-    MAX_REPOSITORIES,
     ArchitectureEvidencePort,
     ArchitectureEvidenceResult,
     ArchitectureStatus,
@@ -54,6 +51,8 @@ from app.modules.role_scoring.skill_adapter import (
     SkillSnapshotResult,
     SkillSnapshotStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 Scope = str  # "public" | "private" | "combined"
 
@@ -101,13 +100,13 @@ class ScopedRoleScoringService:
         *,
         db: Session,
         user_id: int,
-        guard: RepositoryAccessGuard,
+        base_service: RoleScoringService,
         engine: RoleScoringEngine,
         architecture_provider: ArchitectureEvidencePort,
     ) -> None:
         self._db = db
         self._user_id = user_id
-        self._guard = guard
+        self._base = base_service
         self._engine = engine
         self._arch_provider = architecture_provider
 
@@ -143,12 +142,6 @@ class ScopedRoleScoringService:
             private_outcome=private_result.outcome,
         )
 
-        combined_result.limitations.extend(
-            [
-                *public_result.limitations,
-                *private_result.limitations,
-            ]
-        )
         return ScopedScoringOutcome(
             rubric=rubric,
             public=public_result,
@@ -171,16 +164,7 @@ class ScopedRoleScoringService:
                 user_repository.c.user_id == self._user_id,
                 Repository.private == private,
             )
-            .order_by(
-                select(AnalysisReport.analyzed_at)
-                .where(AnalysisReport.repository_id == Repository.id)
-                .order_by(AnalysisReport.analyzed_at.desc())
-                .limit(1)
-                .scalar_subquery()
-                .desc()
-                .nulls_last(),
-                user_repository.c.repository_id,
-            )
+            .order_by(user_repository.c.repository_id)
         ).all()
         return [int(r) for r in rows]
 
@@ -192,55 +176,64 @@ class ScopedRoleScoringService:
         rubric_version: str | None,
         repo_ids: list[int],
     ) -> ScopeResult:
-        allowed = [
-            repo_id
-            for repo_id in repo_ids
-            if self._guard.check(repo_id) == AccessDecision.ALLOWED
-        ]
-        limitations = []
-        if len(allowed) < len(repo_ids):
-            limitations.append(
-                Limitation(
-                    code="SCOPE_REPOSITORY_ACCESS_EXCLUDED",
-                    message="Repo thiếu quyền hoặc consent đã được loại.",
-                )
+        if not repo_ids:
+            return ScopeResult(
+                scope=scope,
+                available=False,
+                outcome=None,
+                limitations=[
+                    Limitation(
+                        code=f"SCOPE_{scope.upper()}_NO_REPOSITORIES",
+                        message=(
+                            f"Không có repository {scope} nào thuộc người dùng "
+                            "này; scope không khả dụng."
+                        ),
+                    )
+                ],
             )
-        if len(allowed) > MAX_REPOSITORIES:
-            limitations.append(
-                Limitation(
-                    code="SCOPE_REPOSITORY_LIMIT",
-                    message=f"Tối đa {MAX_REPOSITORIES} repository mỗi scope.",
-                )
-            )
-            allowed = allowed[:MAX_REPOSITORIES]
-        if not allowed:
-            limitations.append(
-                Limitation(
-                    code=f"SCOPE_{scope.upper()}_INSUFFICIENT",
-                    message="Chưa có repository được phép với đủ bằng chứng.",
-                )
-            )
-            return ScopeResult(scope, False, None, limitations)
 
-        service = RoleScoringService(
+        # DatabaseSkillSnapshotSource với filter repo
+        scoped_source = DatabaseSkillSnapshotSource(
+            self._db,
+            repo_id_filter=frozenset(repo_ids),
+        )
+        from app.modules.role_scoring.access import DbRepositoryAccessGuard
+
+        guard = DbRepositoryAccessGuard(self._db, self._user_id)
+        adapter = SkillSnapshotAdapter(scoped_source)
+        from app.modules.role_scoring.service import RoleScoringService
+
+        scoped_service = RoleScoringService(
             user_id=self._user_id,
             engine=self._engine,
-            skill_adapter=SkillSnapshotAdapter(
-                DatabaseSkillSnapshotSource(self._db, repo_id_filter=frozenset(allowed))
-            ),
+            skill_adapter=adapter,
             architecture_provider=self._arch_provider,
-            guard=self._guard,
+            guard=guard,
         )
-        outcome = service.score(
-            RoleScoringRequest(
-                role_key=role_key,
-                repository_ids=allowed,
-                rubric_version=rubric_version,
+
+        try:
+            outcome = scoped_service.score(
+                RoleScoringRequest(
+                    role_key=role_key,
+                    repository_ids=repo_ids,
+                    rubric_version=rubric_version,
+                )
             )
-        )
-        if outcome.result.status == ScoreStatus.UNKNOWN:
-            outcome.result.status = ScoreStatus.INSUFFICIENT
-        return ScopeResult(scope, True, outcome, limitations)
+        except Exception:
+            logger.exception("Lỗi khi tính scope '%s'", scope)
+            return ScopeResult(
+                scope=scope,
+                available=False,
+                outcome=None,
+                limitations=[
+                    Limitation(
+                        code=f"SCOPE_{scope.upper()}_SCORING_FAILED",
+                        message=f"Tính điểm scope {scope} thất bại.",
+                    )
+                ],
+            )
+
+        return ScopeResult(scope=scope, available=True, outcome=outcome)
 
     def _score_combined(
         self,
@@ -273,15 +266,13 @@ class ScopedRoleScoringService:
                 priv_skill = snap
 
         # Dedup architecture evidence
-        by_key: dict[str, EvidenceRef] = {}
+        seen_keys: set[str] = set()
+        combined_arch_refs: list[EvidenceRef] = []
         for ref in pub_refs + priv_refs:
-            previous = by_key.get(ref.dedup_key)
-            if previous is None or (
-                (not ref.verified, ref.confidence_score)
-                < (not previous.verified, previous.confidence_score)
-            ):
-                by_key[ref.dedup_key] = ref
-        combined_arch_refs = list(by_key.values())
+            k = ref.dedup_key
+            if k not in seen_keys:
+                seen_keys.add(k)
+                combined_arch_refs.append(ref)
 
         total_before = len(pub_refs) + len(priv_refs)
         duplicates_removed = total_before - len(combined_arch_refs)
@@ -293,24 +284,27 @@ class ScopedRoleScoringService:
             duplicates_removed=duplicates_removed,
         )
 
-        # Giữ các điểm có bộ bằng chứng khác nhau để engine áp dụng rubric.
+        # Merge skill snapshot (dedup theo skill_key: giữ item có score cao hơn)
         combined_skill = self._merge_skill_snapshots(pub_skill, priv_skill)
 
-        if public_outcome is None and private_outcome is None:
-            return (
-                ScopeResult(
-                    "combined",
-                    False,
-                    None,
-                    [
-                        Limitation(
-                            code="SCOPE_COMBINED_NO_DATA",
-                            message="Không có dữ liệu được phép để tính điểm Combined.",
-                        )
-                    ],
-                ),
-                dedup_summary,
-            )
+        # Nếu không có dữ liệu gì → không khả dụng
+        if combined_skill is None and not combined_arch_refs:
+            limitations = [
+                Limitation(
+                    code="SCOPE_COMBINED_NO_DATA",
+                    message="Không có dữ liệu nào để tính combined score.",
+                )
+            ]
+            if public_outcome is None and private_outcome is None:
+                return (
+                    ScopeResult(
+                        scope="combined",
+                        available=False,
+                        outcome=None,
+                        limitations=limitations,
+                    ),
+                    dedup_summary,
+                )
 
         # Xây ArchitectureEvidenceSet tổng hợp
         arch_set: ArchitectureEvidenceSet | None = None
@@ -348,17 +342,34 @@ class ScopedRoleScoringService:
                 evidence=combined_arch_refs,
             )
 
-        rubric = self._engine.registry.get(role_key, rubric_version)
-        result = self._engine.score(
-            RoleScoringInput(
+        # Chạy engine với data đã dedup
+        try:
+            rubric = self._engine.registry.get(role_key, rubric_version)
+            scoring_input = RoleScoringInput(
                 role_key=rubric.role_key,
                 skill_snapshot=combined_skill,
                 architecture=arch_set,
-            ),
-            rubric_version=rubric.rubric_version,
-        )
-        if result.status == ScoreStatus.UNKNOWN:
-            result.status = ScoreStatus.INSUFFICIENT
+            )
+            result: RoleScoreResult = self._engine.score(
+                scoring_input,
+                rubric_version=rubric.rubric_version,
+            )
+        except Exception:
+            logger.exception("Lỗi khi tính combined score")
+            return (
+                ScopeResult(
+                    scope="combined",
+                    available=False,
+                    outcome=None,
+                    limitations=[
+                        Limitation(
+                            code="SCOPE_COMBINED_SCORING_FAILED",
+                            message="Tính điểm combined thất bại.",
+                        )
+                    ],
+                ),
+                dedup_summary,
+            )
 
         # Thêm limitation nếu chỉ 1 scope khả dụng
         limitations: list[Limitation] = []
@@ -376,30 +387,17 @@ class ScopedRoleScoringService:
             limitations.append(
                 Limitation(
                     code="COMBINED_PUBLIC_SCOPE_UNAVAILABLE",
-                    message="Combined chỉ dùng phạm vi Riêng tư đang khả dụng.",
+                    message="Combined chỉ dùng private scope (không có public repo).",
                 )
             )
         elif private_outcome is None and public_outcome is not None:
             limitations.append(
                 Limitation(
                     code="COMBINED_PRIVATE_SCOPE_UNAVAILABLE",
-                    message="Combined chỉ dùng phạm vi Công khai đang khả dụng.",
+                    message="Combined chỉ dùng public scope (không có private repo).",
                 )
             )
-        seen = {(item.code, item.message) for item in result.limitations}
-        for item in [
-            *limitations,
-            *(
-                item
-                for outcome in (public_outcome, private_outcome)
-                if outcome
-                for item in outcome.result.limitations
-            ),
-        ]:
-            key = (item.code, item.message)
-            if key not in seen:
-                result.limitations.append(item)
-                seen.add(key)
+        result.limitations.extend(limitations)
 
         # Dựng ArchitectureEvidenceResult tổng hợp cho outcome
 
@@ -439,28 +437,49 @@ class ScopedRoleScoringService:
         pub: SkillSnapshotInput | None,
         priv: SkillSnapshotInput | None,
     ) -> SkillSnapshotInput | None:
-        """Deduplicate identical inputs and retain distinct evidence."""
-        snapshots = [snapshot for snapshot in (pub, priv) if snapshot is not None]
-        if not snapshots:
+        """Gộp 2 skill snapshots; với cùng skill_key, giữ item có score cao hơn."""
+        if pub is None and priv is None:
             return None
 
-        items = []
-        seen = set()
-        for snapshot in snapshots:
-            for item in snapshot.items:
-                evidence = frozenset(ref.dedup_key for ref in item.evidence_refs)
-                key = (item.skill_key, evidence)
-                if evidence and key in seen:
-                    continue
-                seen.add(key)
-                items.append(item)
+        from app.ai.scoring.schemas import SkillScoreItem
 
-        refs = "|".join(snapshot.snapshot_ref for snapshot in snapshots)
+        all_items: dict[str, SkillScoreItem] = {}
+
+        for snap in [pub, priv]:
+            if snap is None:
+                continue
+            for item in snap.items:
+                existing = all_items.get(item.skill_key)
+                if existing is None:
+                    all_items[item.skill_key] = item
+                else:
+                    # Giữ item có điểm cao hơn; nếu bằng thì giữ item đã có
+                    new_score = item.score if item.score is not None else -1.0
+                    old_score = existing.score if existing.score is not None else -1.0
+                    if new_score > old_score:
+                        all_items[item.skill_key] = item
+
+        if not all_items:
+            return None
+
+        # Gộp repository_ids từ cả 2 snapshot
+        repo_ids: list[str] = []
+        seen: set[str] = set()
+        for snap in [pub, priv]:
+            if snap is None:
+                continue
+            for rid in snap.repository_ids:
+                if rid not in seen:
+                    seen.add(rid)
+                    repo_ids.append(rid)
+
+        # Lấy context từ snap nào có dữ liệu
+        base = pub or priv
+        assert base is not None
+
         return SkillSnapshotInput(
-            snapshot_ref="combined_" + sha256(refs.encode()).hexdigest()[:24],
-            status=snapshots[0].status,
-            repository_ids=sorted(
-                {repo for snapshot in snapshots for repo in snapshot.repository_ids}
-            ),
-            items=items,
+            snapshot_ref=f"combined_{base.snapshot_ref}",
+            status=base.status,
+            repository_ids=repo_ids,
+            items=list(all_items.values()),
         )

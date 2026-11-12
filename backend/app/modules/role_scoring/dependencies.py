@@ -66,10 +66,18 @@ def get_scoped_role_scoring_service(
     """Dependency cho endpoint /score/scoped (PBI-018)."""
     guard = DbRepositoryAccessGuard(db, user)
     arch_provider = DbArchitectureEvidenceProvider(db, user.id, guard)
+    base_source = DatabaseSkillSnapshotSource(db)
+    base_service = RoleScoringService(
+        user_id=user.id,
+        engine=engine,
+        skill_adapter=SkillSnapshotAdapter(base_source),
+        architecture_provider=arch_provider,
+        guard=guard,
+    )
     return ScopedRoleScoringService(
         db=db,
         user_id=user.id,
-        guard=guard,
+        base_service=base_service,
         engine=engine,
         architecture_provider=arch_provider,
     )

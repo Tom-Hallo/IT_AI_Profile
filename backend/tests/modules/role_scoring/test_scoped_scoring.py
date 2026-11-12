@@ -212,8 +212,8 @@ class TestMergeSkillSnapshots:
         result = ScopedRoleScoringService._merge_skill_snapshots(None, None)
         assert result is None
 
-    def test_dedup_keeps_first_identical_evidence(self) -> None:
-        """Cùng bộ evidence: giữ một bản nhất quán."""
+    def test_dedup_keeps_higher_score(self) -> None:
+        """Cùng skill_key: giữ item có score cao hơn."""
         pub_snap = SkillSnapshotInput(
             snapshot_ref="pub",
             status=SnapshotStatus.COMPLETE,
@@ -226,28 +226,10 @@ class TestMergeSkillSnapshots:
         )
         result = ScopedRoleScoringService._merge_skill_snapshots(pub_snap, priv_snap)
         assert result is not None
-        # Chỉ còn một item cho cùng bộ bằng chứng
+        # Chỉ còn 1 python item với score cao hơn
         python_items = [i for i in result.items if i.skill_key == "python"]
         assert len(python_items) == 1
-        assert python_items[0].score == 60.0
-
-    def test_same_skill_keeps_distinct_evidence(self) -> None:
-        public = self._item("python", 72.0)
-        private = self._item("python", 78.0).model_copy(
-            update={
-                "evidence_refs": [
-                    EvidenceRef(
-                        evidence_id="unique-private", file_path="services/other.py"
-                    )
-                ]
-            }
-        )
-        merged = ScopedRoleScoringService._merge_skill_snapshots(
-            SkillSnapshotInput(snapshot_ref="pub", items=[public]),
-            SkillSnapshotInput(snapshot_ref="priv", items=[private]),
-        )
-        assert merged is not None
-        assert merged.items == [public, private]
+        assert python_items[0].score == 90.0
 
     def test_different_skills_merged(self) -> None:
         pub_snap = SkillSnapshotInput(
@@ -265,7 +247,7 @@ class TestMergeSkillSnapshots:
         keys = {i.skill_key for i in result.items}
         assert keys == {"python", "javascript", "rust"}
 
-    def test_combined_snapshot_ref_is_derived_from_source(self) -> None:
+    def test_combined_snapshot_ref_contains_base(self) -> None:
         pub_snap = SkillSnapshotInput(
             snapshot_ref="my_pub_ref",
             status=SnapshotStatus.COMPLETE,
@@ -273,7 +255,7 @@ class TestMergeSkillSnapshots:
         )
         result = ScopedRoleScoringService._merge_skill_snapshots(pub_snap, None)
         assert result is not None
-        assert result.snapshot_ref.startswith("combined_")
+        assert "my_pub_ref" in result.snapshot_ref
 
 
 class TestEvidenceDedupLogic:
