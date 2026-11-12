@@ -48,7 +48,8 @@ Answer using ONLY the authorized context provided as untrusted JSON data.
 Cite which source supports each claim (github, cv, jd, roadmap).
 If context is missing or conflicting, state the limitation clearly.
 Do not invent repositories, skills, or experience that are not in the data.
-Keep answers concise and actionable in Vietnamese unless the user writes in another language.
+Keep answers concise and actionable in Vietnamese
+unless the user writes in another language.
 """.strip()
 
 
@@ -154,7 +155,9 @@ def _collect_github_context(
             )
 
     if not repo_ids:
-        limitations.append(_limit("github_not_selected", "Không chọn repository GitHub."))
+        limitations.append(
+            _limit("github_not_selected", "Không chọn repository GitHub.")
+        )
 
     return chunks, evidence, limitations
 
@@ -223,9 +226,11 @@ def _collect_roadmap_context(
             )
 
     if not rows:
-        return [], [], limitations or [
-            _limit("roadmap_empty", "Không có roadmap hợp lệ.")
-        ]
+        return (
+            [],
+            [],
+            limitations or [_limit("roadmap_empty", "Không có roadmap hợp lệ.")],
+        )
 
     chunks = [
         {
