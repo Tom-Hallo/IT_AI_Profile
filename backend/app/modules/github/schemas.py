@@ -44,6 +44,9 @@ class RepositoryListResponse(BaseModel):
     total_pages: int
 
 
+RepositoryVisibility = Literal["all", "public", "private"]
+
+
 class SyncStatusResponse(BaseModel):
     status: Literal["idle", "running", "completed", "failed"]
     is_connected: bool
@@ -51,6 +54,8 @@ class SyncStatusResponse(BaseModel):
     total_repositories: int
     last_synced_at: str | None = None
     error_message: str | None = None
+    synced_count: int | None = None
+    synced_visibility: RepositoryVisibility | None = None
 
 
 class SyncTriggerResponse(BaseModel):
@@ -58,4 +63,5 @@ class SyncTriggerResponse(BaseModel):
     message: str
     job_id: str | None = None
     synced_count: int | None = None
+    synced_visibility: RepositoryVisibility | None = None
     last_synced_at: str | None = None
