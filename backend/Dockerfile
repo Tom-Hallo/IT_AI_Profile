@@ -18,7 +18,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Chạy bằng user không phải root.
-RUN useradd --create-home --uid 1000 appuser && chown appuser:appuser /app
+RUN useradd --create-home --uid 1000 appuser \
+    && install -d -o appuser -g appuser -m 0700 /tmp/ita-private-code \
+    && chown appuser:appuser /app
 
 # Cài dependency (kể cả dev: pytest, ruff) theo pyproject.toml, đặt trước COPY mã nguồn
 # để Docker cache lại khi chỉ sửa code. Trên image dev, bộ công cụ test nằm sẵn để chạy

@@ -8,6 +8,7 @@ import type {
   RepositoryCollaborationResult,
   RepositoryListResponse,
   RepositoryQueryParams,
+  RepositoryVisibility,
   RepositoryVerificationResult,
   SyncStatusResponse,
   SyncTriggerResponse,
@@ -25,9 +26,11 @@ export function fetchSyncStatus(signal?: AbortSignal): Promise<SyncStatusRespons
  * Kích hoạt đồng bộ repository GitHub.
  * Mặc định kích hoạt background worker qua Redis + RQ.
  */
-export function triggerSync(background = true): Promise<SyncTriggerResponse> {
-  return apiFetch<SyncTriggerResponse>(`/github/sync?background=${background}`, {
+export function triggerSync(background: boolean, visibility: RepositoryVisibility): Promise<SyncTriggerResponse> {
+  const query = new URLSearchParams({ background: String(background), visibility })
+  return apiFetch<SyncTriggerResponse>(`/github/sync?${query}`, {
     method: 'POST',
+    timeoutMs: 360_000,
   })
 }
 
@@ -99,8 +102,9 @@ export function fetchLatestAnalysis(
   repoId: number,
   commitSha?: string,
   signal?: AbortSignal,
+  reportId?: number,
 ): Promise<RepositoryAnalysisResult> {
-  const query = commitSha ? `?commit_sha=${encodeURIComponent(commitSha)}` : ''
+  const query = reportId ? `?report_id=${reportId}` : commitSha ? `?commit_sha=${encodeURIComponent(commitSha)}` : ''
   return apiFetch<RepositoryAnalysisResult>(`/repositories/${repoId}/analysis${query}`, { signal })
 }
 
@@ -111,8 +115,9 @@ export function fetchAnalysisEvidence(
   repoId: number,
   commitSha?: string,
   signal?: AbortSignal,
+  reportId?: number,
 ): Promise<EvidenceListResult> {
-  const query = commitSha ? `?commit_sha=${encodeURIComponent(commitSha)}` : ''
+  const query = reportId ? `?report_id=${reportId}` : commitSha ? `?commit_sha=${encodeURIComponent(commitSha)}` : ''
   return apiFetch<EvidenceListResult>(`/repositories/${repoId}/analysis/evidence${query}`, { signal })
 }
 
@@ -177,8 +182,10 @@ export function retryAnalysisJob(jobId: string): Promise<AnalysisJobInfo> {
 export function fetchRepositoryVerification(
   repoId: number,
   signal?: AbortSignal,
+  reportId?: number,
 ): Promise<RepositoryVerificationResult> {
-  return apiFetch<RepositoryVerificationResult>(`/repositories/${repoId}/verification`, { signal })
+  const query = reportId ? `?report_id=${reportId}` : ''
+  return apiFetch<RepositoryVerificationResult>(`/repositories/${repoId}/verification${query}`, { signal })
 }
 
 /**
@@ -213,6 +220,7 @@ export function triggerRepositoryVerification(
 export function fetchVerificationEvidence(
   repoId: number,
   params: {
+    verification_id?: number
     verification_status?: string
     evidence_type?: string
     page?: number
@@ -221,6 +229,7 @@ export function fetchVerificationEvidence(
   signal?: AbortSignal,
 ): Promise<VerificationEvidenceListResult> {
   const query = new URLSearchParams()
+  if (params.verification_id) query.set('verification_id', String(params.verification_id))
   if (params.verification_status && params.verification_status !== 'all') {
     query.set('verification_status', params.verification_status)
   }
@@ -281,6 +290,7 @@ export function fetchLatestCollaboration(
 export function fetchCollaborationEvidence(
   repoId: number,
   params: {
+    analysis_id?: number
     evidence_type?: string
     state?: string
     pr_number?: number
@@ -290,6 +300,7 @@ export function fetchCollaborationEvidence(
   signal?: AbortSignal,
 ): Promise<CollaborationEvidenceListResult> {
   const query = new URLSearchParams()
+  if (params.analysis_id) query.set('analysis_id', String(params.analysis_id))
   if (params.evidence_type && params.evidence_type !== 'all') {
     query.set('evidence_type', params.evidence_type)
   }

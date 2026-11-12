@@ -7,6 +7,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.analysis.models import ACTIVE, AnalysisJob
+from app.modules.consent.cleanup_service import request_cleanup
 from app.modules.consent.models import PrivateConsent, PrivateConsentAudit
 from app.modules.github.models import Repository, user_repository
 
@@ -120,6 +122,19 @@ def grant(
 def revoke(db: Session, user_id: int, repo_id: int, kind: str, provider: str) -> None:
     provider = normalize_type(kind, provider)
     owned_repo(db, user_id, repo_id)
+    jobs = []
+    if kind == ACCESS:
+        # Match the worker's lock order: jobs first, then the repository.
+        jobs = db.scalars(
+            select(AnalysisJob)
+            .where(
+                AnalysisJob.user_id == user_id,
+                AnalysisJob.repo_id == repo_id,
+                AnalysisJob.status.in_(ACTIVE),
+            )
+            .order_by(AnalysisJob.id)
+            .with_for_update()
+        ).all()
     db.scalar(select(Repository).where(Repository.id == repo_id).with_for_update())
     record = db.scalar(consent_stmt(user_id, repo_id, kind, provider))
     if record is None:
@@ -137,6 +152,9 @@ def revoke(db: Session, user_id: int, repo_id: int, kind: str, provider: str) ->
             scope=list(record.scope),
         )
     )
+    for job in jobs:
+        job.status = "cancel_requested"
+        request_cleanup(db, job, reason="consent_revoked")
     db.commit()
 
 

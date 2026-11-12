@@ -59,6 +59,12 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
   const {
     syncStatus,
     statusLoading,
+    statusError,
+    reposError,
+    privateBlocked,
+    dismissNotice,
+    retryList,
+    retryStatus,
     repositories,
     pagination,
     reposLoading,
@@ -83,6 +89,8 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
 
   const isConnected = syncStatus?.is_connected ?? false
   const isSyncing = syncStatus?.status === 'running' || isSyncTriggering
+
+  const syncDisabled = isSyncing || statusLoading || privateBlocked || isDisconnecting
 
   const handleConnect = (includePrivate: boolean) => {
     if (!env.apiBaseUrl) return
@@ -116,7 +124,9 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
                 )}
               </>
             ) : (
-              <span className="badge-pill badge-pill--archived">Chưa kết nối GitHub</span>
+              <span className="badge-pill badge-pill--archived">
+                {statusLoading ? 'Đang kiểm tra kết nối GitHub…' : statusError ? 'Chưa xác định được kết nối' : 'Chưa kết nối GitHub'}
+              </span>
             )}
           </div>
         </div>
@@ -130,20 +140,28 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
                   type="checkbox"
                   checked={useBackgroundSync}
                   onChange={(e) => setUseBackgroundSync(e.target.checked)}
-                  disabled={isSyncing}
+                  disabled={syncDisabled}
                 />
-                Chạy nền (RQ Worker)
+                Đồng bộ chạy nền
               </label>
 
               <Button
                 variant="primary"
                 onClick={() => void triggerSync(useBackgroundSync)}
-                disabled={isSyncing || statusLoading}
+                disabled={syncDisabled}
               >
                 {isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
               </Button>
 
-              {!syncStatus?.has_private_scope && (
+              <Button
+                variant="ghost"
+                onClick={() => handleConnect(Boolean(syncStatus?.has_private_scope))}
+                disabled={!env.apiBaseUrl || isSyncing}
+              >
+                Kết nối lại
+              </Button>
+
+              {!syncStatus?.has_private_scope && !privateBlocked && (
                 <Button
                   variant="default"
                   onClick={() => handleConnect(true)}
@@ -190,12 +208,19 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
           <span>{actionNotice.message}</span>
           <button
             type="button"
-            onClick={() => {}}
+            onClick={dismissNotice}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
             aria-label="Đóng"
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {statusError && (
+        <div className="github-notice github-notice--error" role="alert">
+          <span>{statusError}</span>
+          {!isSyncing && <Button onClick={retryStatus}>Thử tải lại</Button>}
         </div>
       )}
 
@@ -210,12 +235,12 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
         </div>
       )}
 
-      {syncStatus?.status === 'failed' && (
+      {isConnected && !privateBlocked && !isSyncing && syncStatus?.status === 'failed' && (
         <div className="github-notice github-notice--error" role="alert">
           <div>
             <strong>Đồng bộ thất bại:</strong> {syncStatus.error_message ?? 'Đã xảy ra lỗi khi gọi GitHub API.'}
           </div>
-          <Button variant="danger" onClick={() => void triggerSync(useBackgroundSync)}>
+          <Button variant="danger" disabled={syncDisabled} onClick={() => void triggerSync(useBackgroundSync)}>
             Thử lại
           </Button>
         </div>
@@ -238,13 +263,15 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
             <button
               type="button"
               className={`filter-tab ${visibility === 'all' ? 'filter-tab--active' : ''}`}
+              aria-pressed={visibility === 'all'}
               onClick={() => changeVisibility('all')}
             >
-              Tất cả {pagination?.total !== undefined ? `(${pagination.total})` : ''}
+              Tất cả
             </button>
             <button
               type="button"
               className={`filter-tab ${visibility === 'public' ? 'filter-tab--active' : ''}`}
+              aria-pressed={visibility === 'public'}
               onClick={() => changeVisibility('public')}
             >
               Công khai (Public)
@@ -252,6 +279,7 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
             <button
               type="button"
               className={`filter-tab ${visibility === 'private' ? 'filter-tab--active' : ''}`}
+              aria-pressed={visibility === 'private'}
               onClick={() => changeVisibility('private')}
             >
               Riêng tư (Private)
@@ -263,7 +291,19 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
       {/* Repositories List */}
       {isConnected && (
         <>
-          {reposLoading && repositories.length === 0 ? (
+          {privateBlocked ? (
+            <div className="github-empty">
+              <p>GitHub hiện chỉ cấp quyền Public. Hãy cấp quyền Private để đồng bộ và xem repository riêng tư.</p>
+              <Button variant="primary" disabled={!env.apiBaseUrl || isSyncing || isDisconnecting} onClick={() => handleConnect(true)}>
+                Cấp quyền Private
+              </Button>
+            </div>
+          ) : reposError ? (
+            <div className="github-empty" role="alert">
+              <p>{reposError}</p>
+              <Button onClick={retryList}>Tải lại danh sách</Button>
+            </div>
+          ) : reposLoading ? (
             <div className="github-empty">
               <p>Đang tải danh sách repositories...</p>
             </div>
@@ -272,13 +312,15 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
               <p>
                 {searchQuery
                   ? `Không tìm thấy repository nào phù hợp với từ khóa "${searchQuery}".`
-                  : 'Chưa có repository nào được đồng bộ.'}
+                  : visibility === 'private'
+                    ? 'Chưa có repository riêng tư nào được đồng bộ.'
+                    : 'Chưa có repository nào được đồng bộ.'}
               </p>
               {!searchQuery && (
                 <Button
                   variant="primary"
                   onClick={() => void triggerSync(useBackgroundSync)}
-                  disabled={isSyncing}
+                  disabled={syncDisabled}
                 >
                   Bắt đầu đồng bộ ngay
                 </Button>

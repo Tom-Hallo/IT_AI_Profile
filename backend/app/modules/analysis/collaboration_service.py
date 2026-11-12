@@ -14,13 +14,14 @@ Strict compliance with Epic-03, FR-010:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, desc, or_, select
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.types import JSON
 
@@ -90,8 +91,12 @@ async def analyze_repository_collaboration(
     """Thực hiện thu thập và phân tích Pull Request, Review, CI & xử lý lỗi."""
 
     repo = verify_repository_access(db, repository_id, user)
-    owner = repo.owner_login or (repo.full_name.split("/")[0] if repo.full_name else "")
-    repo_name = repo.name
+    owner, _, repo_name = (repo.full_name or "").partition("/")
+    if not owner or not repo_name or "/" in repo_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Tên đầy đủ của repository GitHub không hợp lệ.",
+        )
 
     # Hàm này trả về tuple: (token, OAuth scopes).
     token, scopes = get_user_github_token(db, user.id)
@@ -104,6 +109,31 @@ async def analyze_repository_collaboration(
 
     # Private repo phải được kiểm tra bằng scope thật, không phải None.
     verify_private_repo_consent(repo, scopes, db, user.id)
+
+    since_dt = until_dt = None
+    time_range_info = None
+    if request.mode or request.preset or request.start_date or request.end_date:
+        since_dt, until_dt = resolve_range(
+            mode=request.mode or "preset",
+            preset=request.preset,
+            month=request.month,
+            year=request.year,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            timezone_name=request.timezone,
+        )
+        time_range_info = {
+            "start": since_dt.isoformat(),
+            "end": until_dt.isoformat(),
+            "timezone": request.timezone,
+            "label": request.mode or "preset",
+        }
+
+    def in_window(value: str | datetime | None) -> bool:
+        if since_dt is None or until_dt is None:
+            return True
+        at = _parse_timestamp(value)
+        return at is not None and since_dt <= at < until_dt
 
     # 2. Khởi tạo GitHub Client và xác thực người dùng
     oauth_acc = db.scalar(
@@ -143,38 +173,6 @@ async def analyze_repository_collaboration(
             detail=f"Lỗi khi kết nối GitHub API: {type(exc).__name__}",
         ) from exc
 
-    # 3. Phân giải khoảng thời gian
-    time_range_info = None
-    since_dt: datetime | None = None
-    until_dt: datetime | None = None
-
-    if request.mode or request.preset or request.start_date:
-        try:
-            resolved = resolve_range(
-                mode=request.mode or "preset",
-                preset=request.preset,
-                month=request.month,
-                year=int(request.year) if request.year else None,
-                start=request.start_date,
-                end=request.end_date,
-                tz_name=request.timezone,
-            )
-            since_dt = resolved.start
-            until_dt = resolved.end
-            time_range_info = {
-                "start": since_dt.isoformat(),
-                "end": until_dt.isoformat(),
-                "timezone": request.timezone,
-                "label": getattr(resolved, "label", request.mode),
-            }
-        except HTTPException:
-            raise
-        except (ValueError, TypeError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Khoảng thời gian phân tích không hợp lệ.",
-            ) from exc
-
     coverage_status = "complete"
     confidence = "high"
     limitations: list[str] = []
@@ -197,6 +195,10 @@ async def analyze_repository_collaboration(
             max_pages=2,
             on_truncated=mark_truncated,
         )
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+        ) from exc
     except GitHubRateLimitError:
         coverage_status = "partial"
         confidence = "uncertain"
@@ -234,10 +236,12 @@ async def analyze_repository_collaboration(
 
     prs_with_context: list[dict[str, Any]] = []
 
+    seen_prs = set()
     for pr in raw_prs:
         pr_num = pr.get("number")
-        if not pr_num:
+        if not pr_num or pr_num in seen_prs:
             continue
+        seen_prs.add(pr_num)
 
         # Lọc theo nhánh đích (base branch) của Pull Request.
         if request.branch:
@@ -250,10 +254,10 @@ async def analyze_repository_collaboration(
         closed_at_dt = _parse_timestamp(pr.get("closed_at"))
         merged_at_dt = _parse_timestamp(pr.get("merged_at"))
 
-        if since_dt and created_at_dt and created_at_dt < since_dt:
-            if not updated_at_dt or updated_at_dt < since_dt:
-                continue
-        if until_dt and created_at_dt and created_at_dt > until_dt:
+        if not any(
+            in_window(at)
+            for at in (created_at_dt, updated_at_dt, closed_at_dt, merged_at_dt)
+        ):
             continue
 
         total_prs_analyzed += 1
@@ -281,13 +285,18 @@ async def analyze_repository_collaboration(
 
         is_merged = bool(merged_at_dt or pr.get("merged"))
         raw_state = pr.get("state", "open")
+        if until_dt and any(
+            at is not None and at >= until_dt for at in (merged_at_dt, closed_at_dt)
+        ):
+            is_merged = False
+            raw_state = "open"
 
         if is_merged:
             normalized_state = "merged"
             merged_prs_count += 1
             rationale = (
                 f"Pull Request #{pr_num} đã được merge vào nhánh "
-                f"'{pr.get('base', {}).get('ref', 'main')}'. "
+                f"'{(pr.get('base') or {}).get('ref', 'main')}'. "
                 "Ghi nhận đóng góp cộng tác được tích hợp."
             )
         elif raw_state == "closed":
@@ -352,22 +361,53 @@ async def analyze_repository_collaboration(
 
     # 5. Thu thập Reviews và CI Checks cho các PR
     prs_to_inspect = prs_with_context[:MAX_PRS_LIMIT]
+    if len(prs_with_context) > MAX_PRS_LIMIT:
+        mark_truncated()
+    ci_by_sha: dict[str, tuple[Any, Any]] = {}
 
     for pr_ctx in prs_to_inspect:
         pr_num = pr_ctx["pr_num"]
         head_sha = pr_ctx["head_sha"]
         is_pr_author = pr_ctx["is_pr_author"]
 
-        # A. Thu thập Reviews
-        try:
-            reviews = await client.list_pull_request_reviews(
-                owner=owner,
-                repo=repo_name,
-                pull_number=pr_num,
-                per_page=50,
-                max_pages=1,
-                on_truncated=mark_truncated,
+        reviews_call = client.list_pull_request_reviews(
+            owner=owner,
+            repo=repo_name,
+            pull_number=pr_num,
+            per_page=MAX_REVIEWS_PER_PR,
+            max_pages=1,
+            on_truncated=mark_truncated,
+        )
+        count_ci = bool(head_sha and head_sha not in ci_by_sha)
+        if count_ci:
+            reviews, check_runs, statuses = await asyncio.gather(
+                reviews_call,
+                client.list_check_runs_for_ref(
+                    owner=owner,
+                    repo=repo_name,
+                    ref=head_sha,
+                    per_page=MAX_CHECKS_PER_COMMIT,
+                    max_pages=1,
+                    on_truncated=mark_truncated,
+                ),
+                client.list_commit_statuses_for_ref(
+                    owner=owner,
+                    repo=repo_name,
+                    ref=head_sha,
+                    per_page=MAX_CHECKS_PER_COMMIT,
+                    max_pages=1,
+                    on_truncated=mark_truncated,
+                ),
+                return_exceptions=True,
             )
+            ci_by_sha[head_sha] = (check_runs, statuses)
+        else:
+            (reviews,) = await asyncio.gather(reviews_call, return_exceptions=True)
+            check_runs, statuses = ci_by_sha.get(head_sha, ([], []))
+
+        try:
+            if isinstance(reviews, BaseException):
+                raise reviews
             for rev in reviews:
                 rev_id = rev.get("id")
                 rev_user = rev.get("user") or {}
@@ -376,10 +416,15 @@ async def analyze_repository_collaboration(
                 rev_state = (rev.get("state") or "COMMENTED").upper()
                 rev_submitted_at = rev.get("submitted_at")
 
+                if rev_state == "PENDING" or not in_window(rev_submitted_at):
+                    continue
                 is_rev_owner = bool(
-                    auth_github_login
-                    and rev_login
-                    and rev_login.lower() == auth_github_login.lower()
+                    (rev_id_str and rev_id_str == auth_github_user_id)
+                    or (
+                        auth_github_login
+                        and rev_login
+                        and rev_login.lower() == auth_github_login.lower()
+                    )
                 )
 
                 total_reviews_analyzed += 1
@@ -452,6 +497,10 @@ async def analyze_repository_collaboration(
                         "submitted_at": _parse_timestamp(rev_submitted_at),
                     }
                 )
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+            ) from exc
         except GitHubRateLimitError:
             coverage_status = "partial"
             confidence = "uncertain"
@@ -473,14 +522,8 @@ async def analyze_repository_collaboration(
         if head_sha:
             # 1. Checks API (Check Runs)
             try:
-                check_runs = await client.list_check_runs_for_ref(
-                    owner=owner,
-                    repo=repo_name,
-                    ref=head_sha,
-                    per_page=50,
-                    max_pages=1,
-                    on_truncated=mark_truncated,
-                )
+                if isinstance(check_runs, BaseException):
+                    raise check_runs
                 for run in check_runs:
                     run_id = run.get("id")
                     run_name = run.get("name", "check")
@@ -488,15 +531,17 @@ async def analyze_repository_collaboration(
                     run_conclusion = run.get("conclusion")
                     run_completed_at = run.get("completed_at") or run.get("started_at")
 
-                    total_checks_analyzed += 1
+                    if not in_window(run_completed_at):
+                        continue
+                    total_checks_analyzed += int(count_ci)
                     if run_conclusion == "success":
-                        successful_checks_count += 1
+                        successful_checks_count += int(count_ci)
                         check_rationale = (
                             f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
                             "thành công."
                         )
                     elif run_conclusion in ("failure", "timed_out", "action_required"):
-                        failed_checks_count += 1
+                        failed_checks_count += int(count_ci)
                         check_rationale = (
                             f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
                             f"thất bại ({run_conclusion}). Thất bại trong CI là "
@@ -504,12 +549,12 @@ async def analyze_repository_collaboration(
                             "không phản ánh năng lực kém."
                         )
                     elif run_status in ("queued", "in_progress", "waiting"):
-                        pending_checks_count += 1
+                        pending_checks_count += int(count_ci)
                         check_rationale = (
                             f"Kiểm tra CI '{run_name}' đang thực thi ({run_status})."
                         )
                     else:
-                        other_checks_count += 1
+                        other_checks_count += int(count_ci)
                         check_rationale = (
                             f"Kiểm tra CI '{run_name}' có kết quả "
                             f"'{run_conclusion or run_status}'."
@@ -552,6 +597,10 @@ async def analyze_repository_collaboration(
                             "completed_at": _parse_timestamp(run_completed_at),
                         }
                     )
+            except GitHubTokenRevokedError as exc:
+                raise HTTPException(
+                    401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+                ) from exc
             except GitHubRateLimitError:
                 coverage_status = "partial"
                 confidence = "uncertain"
@@ -575,39 +624,35 @@ async def analyze_repository_collaboration(
 
             # 2. Status API (Commit Statuses)
             try:
-                statuses = await client.list_commit_statuses_for_ref(
-                    owner=owner,
-                    repo=repo_name,
-                    ref=head_sha,
-                    per_page=50,
-                    max_pages=1,
-                    on_truncated=mark_truncated,
-                )
+                if isinstance(statuses, BaseException):
+                    raise statuses
                 for st in statuses:
                     st_id = st.get("id")
                     st_context = st.get("context", "ci")
                     st_state = st.get("state", "pending")
                     st_created_at = st.get("created_at")
 
-                    total_checks_analyzed += 1
+                    if not in_window(st_created_at):
+                        continue
+                    total_checks_analyzed += int(count_ci)
                     if st_state == "success":
-                        successful_checks_count += 1
+                        successful_checks_count += int(count_ci)
                         st_rationale = (
                             f"Commit status '{st_context}' cho commit {head_sha[:7]} "
                             "thành công."
                         )
                     elif st_state in ("failure", "error"):
-                        failed_checks_count += 1
+                        failed_checks_count += int(count_ci)
                         st_rationale = (
                             f"Commit status '{st_context}' cho commit {head_sha[:7]} "
                             f"báo lỗi ({st_state}). Cảnh báo kiểm thử commit giúp "
                             "ngăn ngừa lỗi, không phản ánh năng lực kém."
                         )
                     elif st_state == "pending":
-                        pending_checks_count += 1
+                        pending_checks_count += int(count_ci)
                         st_rationale = f"Commit status '{st_context}' đang chờ xử lý."
                     else:
-                        other_checks_count += 1
+                        other_checks_count += int(count_ci)
                         st_rationale = (
                             f"Commit status '{st_context}' ở trạng thái {st_state}."
                         )
@@ -643,6 +688,10 @@ async def analyze_repository_collaboration(
                             "created_at": _parse_timestamp(st_created_at),
                         }
                     )
+            except GitHubTokenRevokedError as exc:
+                raise HTTPException(
+                    401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+                ) from exc
             except GitHubRateLimitError:
                 coverage_status = "partial"
                 confidence = "uncertain"
@@ -1221,6 +1270,7 @@ def get_collaboration_evidence_list(
     pr_number: int | None = None,
     page: int = 1,
     per_page: int = 50,
+    analysis_id: int | None = None,
 ) -> CollaborationEvidenceListResponse:
     """Truy xuất danh sách bằng chứng cộng tác phân trang và lọc (PBI-014)."""
 
@@ -1230,20 +1280,21 @@ def get_collaboration_evidence_list(
         _, scopes = get_user_github_token(db, user.id)
         verify_private_repo_consent(repo, scopes, db, user.id)
 
+    query = select(CollaborationAnalysis.id).where(
+        CollaborationAnalysis.repository_id == repository_id,
+        CollaborationAnalysis.user_id == user.id,
+    )
+    if analysis_id is not None:
+        query = query.where(CollaborationAnalysis.id == analysis_id)
     latest_analysis = db.scalar(
-        select(CollaborationAnalysis.id)
-        .where(
-            CollaborationAnalysis.repository_id == repository_id,
-            CollaborationAnalysis.user_id == user.id,
-        )
-        .order_by(
+        query.order_by(
             desc(CollaborationAnalysis.analyzed_at),
             desc(CollaborationAnalysis.id),
-        )
-        .limit(1)
+        ).limit(1)
     )
-
     if latest_analysis is None:
+        if analysis_id is not None:
+            raise HTTPException(404, "Không tìm thấy báo cáo cộng tác.")
         return CollaborationEvidenceListResponse(
             repository_id=repository_id,
             total=0,
@@ -1261,16 +1312,21 @@ def get_collaboration_evidence_list(
     if evidence_type and evidence_type != "all":
         stmt = stmt.where(CollaborationEvidence.evidence_type == evidence_type)
     if state and state != "all":
-        stmt = stmt.where(CollaborationEvidence.state == state)
+        stmt = stmt.where(
+            or_(
+                CollaborationEvidence.state == state,
+                CollaborationEvidence.conclusion == state,
+            )
+        )
     if pr_number is not None:
         stmt = stmt.where(CollaborationEvidence.pr_number == pr_number)
 
-    all_rows = db.scalars(stmt.order_by(CollaborationEvidence.id.asc())).all()
-    total = len(all_rows)
-
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = all_rows[start:end]
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    paginated = db.scalars(
+        stmt.order_by(CollaborationEvidence.id)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    ).all()
 
     items = [
         CollaborationEvidenceItem(

@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.core.time_range import resolve_range
 from app.modules.analysis.evidence import UTC
 from app.modules.analysis.inspector import (
     RepositoryContentSource,
@@ -19,13 +20,15 @@ from app.modules.analysis.inspector import (
 )
 from app.modules.analysis.limits import AnalysisLimits
 from app.modules.analysis.models import AnalysisJob
+from app.modules.analysis.schemas import VerificationRequest
 from app.modules.analysis.service import (
     GitHubRepositoryContentSource,
     cache_analysis_result,
     event,
+    redact_private_evidence,
     save_analysis_result,
 )
-from app.modules.github.client import GitHubApiClient
+from app.modules.github.client import GitHubApiClient, GitHubNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ def run_analysis(
     from app.modules.github.models import Repository, user_repository
 
     job_uuid = uuid.UUID(job_id)
+    cancelled_before_start = False
     token = uuid.uuid4()
     with session_scope() as db:
         job = db.scalar(
@@ -84,15 +88,41 @@ def run_analysis(
             job.status = "cancelled"
             job.finished_at = datetime.now(UTC)
             event(db, job, "cancelled")
-            return None
-        job.status = "running"
-        job.execution_token = token
-        job.heartbeat_at = datetime.now(UTC)
-        event(db, job, "started")
+            cancelled_before_start = True
+        else:
+            job.status = "running"
+            job.execution_token = token
+            job.heartbeat_at = datetime.now(UTC)
+            event(db, job, "started")
         user_id, repo_id = job.user_id, job.repo_id
         scope = job.scope
+        request_options = job.request_options or {}
 
     try:
+        if cancelled_before_start:
+            return None
+        verification_request = VerificationRequest(
+            scope=scope if scope in ("public", "private") else "all",
+            **request_options,
+        )
+        end_utc = None
+        time_range = None
+        if verification_request.mode:
+            start_utc, end_utc = resolve_range(
+                mode=verification_request.mode,
+                preset=verification_request.preset,
+                month=verification_request.month,
+                year=verification_request.year,
+                start_date=verification_request.start_date,
+                end_date=verification_request.end_date,
+                timezone_name=verification_request.timezone,
+            )
+            time_range = {
+                "start_utc": start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+                "timezone": verification_request.timezone,
+            }
+
         # 1. Tải và kiểm tra tính hợp lệ của repository & quyền truy cập GitHub token
         # (PBI-009/PBI-011)
         with session_scope() as db:
@@ -104,6 +134,11 @@ def run_analysis(
             access_token, token_scope = get_user_github_token(db, user_id)
             if repo is None or not access_token:
                 raise PermissionError("Repository access revoked or token missing")
+
+            if (scope == "public" and repo.private) or (
+                scope == "private" and not repo.private
+            ):
+                raise PermissionError("Repository visibility does not match job scope")
 
             # Kiểm tra quyền và sự đồng thuận đối với private repository
             if repo.private:
@@ -154,10 +189,14 @@ def run_analysis(
                 latest_sha = await client.get_latest_commit_sha(
                     owner=owner,
                     repo=r_name,
-                    branch_or_ref=default_branch,
+                    branch_or_ref=verification_request.branch or default_branch,
+                    until=end_utc,
                 )
-                if latest_sha:
-                    commit_sha = latest_sha
+                if not latest_sha:
+                    raise GitHubNotFoundError(
+                        "Không tìm thấy commit trên nhánh trong khoảng đã chọn."
+                    )
+                commit_sha = latest_sha
                 content_source = GitHubRepositoryContentSource(
                     client=client,
                     owner=owner,
@@ -171,6 +210,7 @@ def run_analysis(
                 commit_sha=commit_sha,
                 limits=limits,
                 scope=scope,
+                time_range=time_range,
             )
             return await inspector.inspect(
                 source=content_source,
@@ -190,7 +230,6 @@ def run_analysis(
 
         if custom_source is None and access_token:
             try:
-                from app.modules.analysis.schemas import VerificationRequest
                 from app.modules.analysis.verification_service import (
                     verify_repository_contributions,
                 )
@@ -209,7 +248,7 @@ def run_analysis(
                             db=verif_db,
                             repository_id=repo_id,
                             user=user_record,
-                            request=VerificationRequest(scope=scope),
+                            request=verification_request,
                             job_id=str(job_uuid),
                             persist=False,
                         )
@@ -286,6 +325,9 @@ def run_analysis(
                     repo_id,
                 )
 
+            if repo.private:
+                redact_private_evidence(analysis_result)
+
             # Không commit ở đây.
             report = save_analysis_result(
                 db,
@@ -310,6 +352,7 @@ def run_analysis(
                     commit=False,
                 )
 
+            job.report_id = report.id
             job.status = "succeeded"
             job.progress = 100
             job.step = "completed"
@@ -317,9 +360,7 @@ def run_analysis(
 
             event(db, job, "succeeded")
 
-        # Đã ra khỏi session_scope: transaction commit thành công.
         cache_analysis_result(analysis_result)
-
         return analysis_result
 
     except Cancelled:
@@ -348,12 +389,15 @@ def run_analysis(
             from app.modules.consent.cleanup import purge_job_directory
 
             purge_job_directory(job_uuid)
+            from app.modules.consent.cleanup_service import finish_cleanup
+
+            with session_scope() as db:
+                finish_cleanup(db, job_uuid)
         except Exception as exc:
             logger.error(
                 "Lỗi dọn dẹp thư mục tạm của job %s: %s",
                 job_uuid,
-                exc,
-                exc_info=True,
+                type(exc).__name__,
             )
             try:
                 from app.modules.consent.cleanup_service import request_cleanup
@@ -368,5 +412,5 @@ def run_analysis(
                 logger.error(
                     "Không thể ghi outbox cleanup cho job %s: %s",
                     job_uuid,
-                    outbox_exc,
+                    type(outbox_exc).__name__,
                 )

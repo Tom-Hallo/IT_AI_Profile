@@ -81,7 +81,6 @@ def _create_mock_repo(
     r.github_repo_id = 8888 + repo_id
     r.name = name
     r.full_name = full_name
-    r.owner_login = full_name.split("/")[0]
     r.private = private
     r.owner_id = owner_id
     r.default_branch = default_branch
@@ -907,8 +906,32 @@ def test_09_evidence_filtering_and_pagination(in_memory_db):
     assert merged.total == 1
     assert merged.items[0].target_identifier == "PR #1"
 
+    failed_checks = get_collaboration_evidence_list(
+        in_memory_db, repo.id, user, evidence_type="check_run", state="failure"
+    )
+    assert failed_checks.total == 1
+
+    newer = CollaborationAnalysis(
+        repository_id=repo.id,
+        user_id=user.id,
+        coverage_status="complete",
+        confidence="high",
+        limitations=[],
+        collaboration_observations=[],
+        problem_solving_observations=[],
+        summary_data={},
+    )
+    in_memory_db.add(newer)
+    in_memory_db.commit()
+    pinned = get_collaboration_evidence_list(
+        in_memory_db, repo.id, user, analysis_id=collab.id, state="failure"
+    )
+    assert pinned.total == 1
+
     # Filter by pr_number = 1
-    by_pr = get_collaboration_evidence_list(in_memory_db, repo.id, user, pr_number=1)
+    by_pr = get_collaboration_evidence_list(
+        in_memory_db, repo.id, user, pr_number=1, analysis_id=collab.id
+    )
     assert by_pr.total == 3
 
 
@@ -1357,3 +1380,99 @@ async def test_16_branch_filter_uses_pr_base_branch(monkeypatch):
 
     assert len(pr_evidence) == 1
     assert pr_evidence[0].pr_number == 2
+
+
+@pytest.mark.anyio
+async def test_collaboration_custom_dates_include_only_in_window_events(monkeypatch):
+    repo = _create_mock_repo()
+    db = make_mock_db(repo)
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda *_: ("valid-token", "read:user"),
+    )
+    client = MagicMock(spec=GitHubApiClient)
+    client.get_authenticated_user.return_value = {"id": 12345, "login": "mydev"}
+    client.list_pull_requests.return_value = [
+        {
+            "number": 1,
+            "state": "closed",
+            "created_at": "2026-11-01T10:00:00Z",
+            "merged_at": "2026-11-02T00:00:00Z",
+            "head": {"sha": "abc"},
+        },
+    ]
+    client.list_pull_request_reviews.return_value = [
+        {
+            "id": 1,
+            "state": "APPROVED",
+            "submitted_at": "2026-11-01T11:00:00Z",
+            "user": {"id": 12345},
+        },
+        {"id": 2, "state": "APPROVED", "submitted_at": "2026-11-02T00:00:00Z"},
+    ]
+    client.list_check_runs_for_ref.return_value = [
+        {
+            "id": 1,
+            "name": "build",
+            "conclusion": "success",
+            "completed_at": "2026-11-01T11:00:00Z",
+        },
+        {
+            "id": 2,
+            "name": "deploy",
+            "conclusion": "failure",
+            "completed_at": "2026-11-02T00:00:00Z",
+        },
+    ]
+    client.list_commit_statuses_for_ref.return_value = []
+
+    result = await analyze_repository_collaboration(
+        db,
+        repo.id,
+        _create_mock_user(),
+        CollaborationAnalysisRequest(
+            mode="custom", start_date="2026-11-01", end_date="2026-11-01"
+        ),
+        persist=False,
+        custom_client=client,
+    )
+
+    assert result.total_prs_analyzed == result.open_prs_count == 1
+    assert result.total_reviews_analyzed == result.user_reviews_conducted_count == 1
+    assert result.total_checks_analyzed == result.successful_checks_count == 1
+
+
+@pytest.mark.anyio
+async def test_same_sha_ci_is_fetched_and_counted_once(monkeypatch):
+    repo = _create_mock_repo()
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda *_: ("valid-token", "read:user"),
+    )
+    client = MagicMock(spec=GitHubApiClient)
+    client.get_authenticated_user.return_value = {"id": 12345, "login": "mydev"}
+    client.list_pull_requests.return_value = [
+        {"number": n, "state": "open", "head": {"sha": "same-sha"}} for n in (1, 2)
+    ]
+    client.list_pull_request_reviews.return_value = []
+    client.list_check_runs_for_ref.return_value = [
+        {"id": 10, "name": "build", "conclusion": "failure"}
+    ]
+    client.list_commit_statuses_for_ref.return_value = []
+
+    result = await analyze_repository_collaboration(
+        make_mock_db(repo),
+        repo.id,
+        _create_mock_user(),
+        CollaborationAnalysisRequest(),
+        persist=False,
+        custom_client=client,
+    )
+
+    client.list_check_runs_for_ref.assert_awaited_once()
+    client.list_commit_statuses_for_ref.assert_awaited_once()
+    assert result.total_checks_analyzed == result.failed_checks_count == 1
+    assert {e.pr_number for e in result.evidence if e.evidence_type == "check_run"} == {
+        1,
+        2,
+    }

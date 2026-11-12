@@ -372,3 +372,27 @@ IT_AI_Profile/
 ---
 
 **Phạm vi tài liệu:** Hướng dẫn môi trường phát triển PBI-001. Khi các tính năng AI/GitHub/CV/JD được bổ sung, tài liệu sẽ cần được cập nhật tương ứng.
+
+### Điểm vai trò theo phạm vi (PBI-018)
+
+Đăng nhập và mở **Điểm năng lực theo vai trò** ở trang chính. Chọn vai trò
+và phạm vi **Công khai**, **Riêng tư** hoặc **Kết hợp**. Riêng tư chỉ xuất hiện
+khi tài khoản có repository được phép sử dụng với consent hiện hành.
+
+- `GET /api/v1/role-scoring/roles/{role_key}/score/scoped` trả ba phạm vi
+  riêng, cùng phiên bản rubric. Phản hồi yêu cầu phiên đăng nhập và dùng
+  `Cache-Control: no-store`.
+- Mỗi phạm vi sử dụng báo cáo gần nhất và điểm PBI-016 gắn với báo cáo đó.
+  Snapshot ref được dẫn xuất từ ID của các bản ghi điểm, báo cáo và rubric.
+- Confidence dựa trên bằng chứng đã liên kết hoặc phần confidence của PBI-016
+  đã xác thực nguồn. Coverage là phần trọng số rubric có đủ bằng chứng.
+  Khi dữ liệu thiếu, điểm là `null` và giao diện hiện **Chưa đủ bằng chứng**.
+- Combined chạy lại rubric trên bằng chứng đã khử trùng. Bằng chứng kiến trúc
+  cùng commit/vị trí chỉ tính một lần. Điểm skill có bộ evidence giống hệt
+  chỉ đưa vào rubric một lần. Mỗi phạm vi giới hạn 50 repo theo giới hạn của
+  provider và báo rõ nếu danh sách bị cắt.
+- Kiểm thử có PostgreSQL riêng chạy bằng
+  `RUN_INTEGRATION=1 pytest tests/modules/role_scoring/test_scoped_postgres.py`.
+  Fixture tạo và xóa database tạm qua Alembic.
+
+Đối chiếu SRS 2.0 FR-013 và FR-014. Endpoint chỉ đọc từ schema hiện hành.
