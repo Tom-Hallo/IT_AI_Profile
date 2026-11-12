@@ -503,7 +503,6 @@ def test_get_user_sync_status_detects_expired_running_job(
     assert "Quá thời gian" in status_info["error_message"]
 
 
-
 @pytest.mark.anyio
 async def test_private_sync_counts_only_private_repositories(
     in_memory_db: Session, sample_user: User, fake_sync_redis

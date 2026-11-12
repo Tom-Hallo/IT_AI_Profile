@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def sync_user_repositories_task(
-    user_id: int, visibility: RepositoryVisibility | None = None,
+    user_id: int,
+    visibility: RepositoryVisibility | None = None,
 ) -> dict[str, Any]:
     """Task RQ thực thi đồng bộ repositories cho người dùng."""
     if not isinstance(user_id, int) or user_id <= 0:

@@ -333,7 +333,6 @@ def test_tokens_never_leaked_in_responses(app, test_user, mock_db):
     assert "secret" not in response_text.lower()
 
 
-
 @pytest.mark.parametrize("background", ["true", "false"])
 def test_private_sync_rejects_public_only_connection(app, test_user, background):
     app.dependency_overrides[get_current_user] = lambda: test_user

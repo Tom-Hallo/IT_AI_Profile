@@ -227,8 +227,10 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
                         )
 
     synced_visibility = cached.get("synced_visibility") if cached else None
-    if status != "completed" or not is_connected or (
-        synced_visibility in ("all", "private") and not can_access_private
+    if (
+        status != "completed"
+        or not is_connected
+        or (synced_visibility in ("all", "private") and not can_access_private)
     ):
         synced_visibility = None
 
@@ -292,7 +294,8 @@ async def _sync_repositories_for_user_impl(
         repos_data = await client.list_repositories(visibility=effective_visibility)
         if effective_visibility != "all":
             repos_data = [
-                repo for repo in repos_data
+                repo
+                for repo in repos_data
                 if isinstance(repo, dict)
                 and bool(repo.get("private")) == (effective_visibility == "private")
             ]
