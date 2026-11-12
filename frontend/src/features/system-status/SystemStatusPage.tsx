@@ -59,6 +59,10 @@ export function SystemStatusPage() {
             <strong>Phân tích hoạt động</strong>
             <span>Commit, pull request và đóng góp theo thời gian</span>
           </Link>
+          <Link to="/role-scores" className="workspace-action">
+            <strong>Điểm năng lực theo vai trò</strong>
+            <span>Public, Private và Combined</span>
+          </Link>
         </nav>
       )}
 
