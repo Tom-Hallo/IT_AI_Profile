@@ -94,15 +94,18 @@ class TestDatabaseSkillSnapshotSourceScopeFilter:
 
         assert result is None
 
-    def test_snapshot_ref_set_from_param(self) -> None:
+    def test_scoped_snapshot_ref_is_derived_from_source_records(self) -> None:
         s1 = _make_score(id=1)
         db = self._make_db([s1])
 
         source = DatabaseSkillSnapshotSource(db, repo_id_filter=frozenset({10}))
         result = source.fetch(1, snapshot_ref="my_ref")
+        same_source = source.fetch(1, snapshot_ref="another_ref")
 
         assert result is not None
-        assert result.payload.snapshot_ref == "my_ref"  # type: ignore[union-attr]
+        assert same_source is not None
+        assert result.payload.snapshot_ref.startswith("pbi016_")
+        assert result.payload.snapshot_ref == same_source.payload.snapshot_ref
 
     def test_snapshot_ref_default_includes_user_id(self) -> None:
         s1 = _make_score(id=1, user_id=42)
