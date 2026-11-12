@@ -22,11 +22,13 @@ import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from hashlib import sha256
+from statistics import fmean
 from typing import Any, Protocol
 
 from pydantic import ValidationError
-from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc, select
+from sqlalchemy.orm import Session, aliased
 
 from app.ai.scoring import (
     EvidenceRef,
@@ -37,7 +39,12 @@ from app.ai.scoring import (
 )
 from app.ai.scoring.evidence_catalog import normalize_key
 from app.ai.scoring.schemas import Limitation
-from app.modules.analysis.models import AnalysisEvidence
+from app.modules.analysis.models import (
+    AnalysisEvidence,
+    AnalysisReport,
+    RepositoryVerification,
+    VerificationEvidence,
+)
 from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.errors import (
     SkillSnapshotSourceError,
@@ -92,10 +99,20 @@ class UnconfiguredSkillSnapshotSource:
 
 
 class DatabaseSkillSnapshotSource:
-    """Nguồn đọc Skill Scores thực tế từ bảng ita.skill_scores của PBI-016."""
+    """Nguồn đọc Skill Scores thực tế từ bảng ita.skill_scores của PBI-016.
 
-    def __init__(self, db: Session) -> None:
+    ``repo_id_filter``: nếu được cung cấp, chỉ lấy scores từ các repository có
+    id trong tập này (dùng cho scope public/private của PBI-018). ``None`` = không lọc.
+    """
+
+    def __init__(
+        self,
+        db: Session,
+        *,
+        repo_id_filter: frozenset[int] | None = None,
+    ) -> None:
         self._db = db
+        self._repo_id_filter = repo_id_filter
 
     def fetch(
         self, user_id: int, *, snapshot_ref: str | None = None
@@ -107,6 +124,20 @@ class DatabaseSkillSnapshotSource:
                 .order_by(desc(SkillScore.created_at), desc(SkillScore.id))
                 .limit(MAX_SNAPSHOT_ITEMS)
             )
+            if self._repo_id_filter is not None:
+                latest = aliased(AnalysisReport)
+                report_id = (
+                    select(latest.id)
+                    .where(latest.repository_id == SkillScore.repository_id)
+                    .order_by(latest.analyzed_at.desc(), latest.id.desc())
+                    .limit(1)
+                    .correlate(SkillScore)
+                    .scalar_subquery()
+                )
+                query = query.where(
+                    SkillScore.repository_id.in_(self._repo_id_filter),
+                    SkillScore.report_id == report_id,
+                )
             scores = self._db.scalars(query).all()
             if not scores:
                 return None
@@ -114,19 +145,34 @@ class DatabaseSkillSnapshotSource:
             score_ids = [s.id for s in scores]
             evidence_by_score: dict[int, list[EvidenceRef]] = {}
             if score_ids:
-                link_rows = self._db.execute(
+                links = (
                     select(ScoreEvidenceLink.score_id, AnalysisEvidence)
                     .join(
                         AnalysisEvidence,
                         ScoreEvidenceLink.evidence_id == AnalysisEvidence.id,
                     )
                     .where(ScoreEvidenceLink.score_id.in_(score_ids))
-                ).all()
-                for sid, ev in link_rows:
+                )
+                if self._repo_id_filter is not None:
+                    links = links.join(
+                        SkillScore,
+                        and_(
+                            SkillScore.id == ScoreEvidenceLink.score_id,
+                            SkillScore.repository_id == AnalysisEvidence.repository_id,
+                            SkillScore.report_id == AnalysisEvidence.report_id,
+                            SkillScore.commit_sha == AnalysisEvidence.commit_sha,
+                        ),
+                    )
+                for sid, ev in self._db.execute(links).all():
                     evidence_by_score.setdefault(sid, []).append(
                         EvidenceRef.from_record(ev)
                     )
 
+            contributions = (
+                self._verification_refs(scores, user_id)
+                if self._repo_id_filter is not None
+                else {}
+            )
             items: list[SkillScoreItem] = []
             repo_ids: set[str] = set()
 
@@ -149,7 +195,29 @@ class DatabaseSkillSnapshotSource:
                     confidence_val = None
 
                 refs = evidence_by_score.get(s.id, [])
-                if not refs and status == ScoreStatus.SCORED:
+                if self._repo_id_filter is not None and status == ScoreStatus.SCORED:
+                    verified_refs, verified_confidence = contributions.get(
+                        s.id, ([], None)
+                    )
+                    refs = [*refs, *verified_refs]
+                    # Derive confidence from distinct evidence references.
+                    confidence_by_ref: dict[str, float] = {}
+                    for ref in refs:
+                        key = ref.dedup_key
+                        confidence_by_ref[key] = min(
+                            confidence_by_ref.get(key, 1.0), ref.confidence_score
+                        )
+                    confidence_val = (
+                        100 * fmean(confidence_by_ref.values())
+                        if confidence_by_ref
+                        else None
+                    )
+                    if verified_confidence is not None:
+                        confidence_val = verified_confidence
+                    if not refs:
+                        status = ScoreStatus.INSUFFICIENT
+                        score_val = None
+                elif not refs and status == ScoreStatus.SCORED:
                     refs = [
                         EvidenceRef(
                             evidence_id=f"skill_score_{s.id}",
@@ -175,20 +243,108 @@ class DatabaseSkillSnapshotSource:
                     )
                 )
 
+            actual_ref = snapshot_ref or f"pbi016_user_{user_id}"
+            if self._repo_id_filter is not None:
+                source = "|".join(
+                    f"{row.report_id}:{row.rubric_id}:{row.id}" for row in scores
+                )
+                actual_ref = "pbi016_" + sha256(source.encode()).hexdigest()[:24]
             snapshot = SkillSnapshotInput(
-                snapshot_ref=snapshot_ref or f"pbi016_user_{user_id}",
+                snapshot_ref=actual_ref,
                 status=SnapshotStatus.COMPLETE,
                 repository_ids=sorted(repo_ids),
                 items=items,
             )
             return RawSkillSnapshot(owner_user_id=user_id, payload=snapshot)
         except Exception as exc:
-            logger.exception(
-                "Lỗi khi đọc skill scores từ database cho user %s", user_id
-            )
+            logger.error("Không thể đọc skill scores: %s", type(exc).__name__)
             raise SkillSnapshotSourceError(
                 "Không thể truy vấn skill scores từ database"
             ) from exc
+
+    def _verification_refs(
+        self, scores: list[SkillScore], user_id: int
+    ) -> dict[int, tuple[list[EvidenceRef], float | None]]:
+        ids_by_score: dict[int, set[int]] = {}
+        for score in scores:
+            ids = {
+                ref
+                for part in score.breakdown or []
+                if part.get("evidence_kind") == "verification"
+                for ref in part.get("evidence_ids", [])
+                if type(ref) is int and ref > 0
+            }
+            if ids:
+                ids_by_score[score.id] = ids
+        if not ids_by_score:
+            return {}
+
+        rows = self._db.execute(
+            select(
+                VerificationEvidence.id,
+                VerificationEvidence.repository_id,
+                VerificationEvidence.evidence_type,
+                VerificationEvidence.target_identifier,
+                RepositoryVerification.report_id,
+            )
+            .join(
+                RepositoryVerification,
+                RepositoryVerification.id == VerificationEvidence.verification_id,
+            )
+            .where(
+                VerificationEvidence.id.in_(set().union(*ids_by_score.values())),
+                VerificationEvidence.user_id == user_id,
+                VerificationEvidence.verification_status == "verified",
+                VerificationEvidence.is_bot.is_(False),
+                VerificationEvidence.is_fork_inherited.is_(False),
+                VerificationEvidence.evidence_type.in_(("commit", "pull_request")),
+                RepositoryVerification.user_id == user_id,
+                RepositoryVerification.repository_id
+                == VerificationEvidence.repository_id,
+            )
+        ).all()
+        by_id = {row.id: row for row in rows}
+        result = {}
+        for score in scores:
+            ids = ids_by_score.get(score.id)
+            if not ids:
+                continue
+            refs = []
+            for identifier in sorted(ids):
+                row = by_id.get(identifier)
+                if (
+                    row is None
+                    or row.repository_id != score.repository_id
+                    or row.report_id != score.report_id
+                ):
+                    continue
+                sha = row.target_identifier if row.evidence_type == "commit" else None
+                refs.append(
+                    EvidenceRef(
+                        evidence_id=f"verification-commit:{sha}"
+                        if sha
+                        else f"verification:{row.id}",
+                        repository_id=row.repository_id,
+                        commit_sha=sha,
+                        finding_type=row.evidence_type,
+                        classification=score.technology,
+                    )
+                )
+            if len(refs) != len(ids):
+                continue
+            confidence = next(
+                (
+                    part.get("normalized_value")
+                    for part in score.breakdown
+                    if part.get("criterion") == "confidence"
+                    and part.get("evidence_kind") == "verification"
+                ),
+                None,
+            )
+            if not isinstance(confidence, (float, int)) or not 0 <= confidence <= 1:
+                continue
+            result[score.id] = (refs, float(confidence) * 100)
+        return result
 
 
 @dataclass(frozen=True)
