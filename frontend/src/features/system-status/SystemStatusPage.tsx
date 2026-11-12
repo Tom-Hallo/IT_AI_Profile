@@ -48,6 +48,7 @@ export function SystemStatusPage() {
       </header>
 
       <AuthPanel auth={auth} />
+      <p><Link to="/dashboard">Mở Dashboard hồ sơ</Link></p>
 
       {user && (
         <nav className="workspace-actions" aria-label="Công cụ phân tích">
@@ -62,6 +63,10 @@ export function SystemStatusPage() {
           <Link to="/role-scores" className="workspace-action">
             <strong>Điểm năng lực theo vai trò</strong>
             <span>Public, Private và Combined</span>
+          </Link>
+          <Link to="/mentor" className="workspace-action">
+            <strong>AI Mentor</strong>
+            <span>Hỏi về GitHub, CV, JD và roadmap</span>
           </Link>
         </nav>
       )}

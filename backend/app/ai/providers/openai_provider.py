@@ -4,6 +4,7 @@ Không ghi API key, prompt hoặc nội dung phản hồi vào log.
 """
 
 import asyncio
+from collections.abc import Callable
 from typing import TypedDict
 
 import httpx
@@ -51,6 +52,7 @@ class OpenAIProvider:
         *,
         instructions: str,
         input_text: str,
+        before_send: Callable[[], None] | None = None,
     ) -> AIProviderResult:
         """Gửi yêu cầu và trả về nội dung cùng token usage."""
 
@@ -84,6 +86,9 @@ class OpenAIProvider:
             "input": build_secure_input(input_text),
         }
 
+        if before_send is not None:
+            payload["store"] = False
+
         result = None
         last_error: AIProviderError | None = None
 
@@ -92,6 +97,8 @@ class OpenAIProvider:
         ) as client:
             for attempt in range(self.MAX_ATTEMPTS):
                 try:
+                    if before_send is not None:
+                        before_send()
                     response = await client.post(
                         self.API_URL,
                         headers=headers,

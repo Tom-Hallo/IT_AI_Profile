@@ -135,4 +135,6 @@ def score_role_scoped(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Skill snapshot source temporarily unavailable.",
         ) from exc
+    except (RepositoryNotFoundError, PrivateConsentRequiredError) as exc:
+        raise HTTPException(403, "Repository access changed.") from exc
     return ScopedRoleScoreResponse.from_scoped_outcome(outcome)
