@@ -31,11 +31,16 @@ from app.ai.scoring import (
     RoleScoreResult,
     RoleScoringEngine,
     RoleScoringInput,
+    ScoreStatus,
     SkillSnapshotInput,
 )
 from app.ai.scoring.schemas import Limitation
+from app.modules.analysis.models import AnalysisReport
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.github.models import Repository, user_repository
+from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.architecture_provider import (
+    MAX_REPOSITORIES,
     ArchitectureEvidencePort,
     ArchitectureEvidenceResult,
     ArchitectureStatus,
@@ -100,13 +105,15 @@ class ScopedRoleScoringService:
         *,
         db: Session,
         user_id: int,
-        base_service: RoleScoringService,
+        guard: RepositoryAccessGuard,
+        window: ReportWindow,
         engine: RoleScoringEngine,
         architecture_provider: ArchitectureEvidencePort,
     ) -> None:
         self._db = db
         self._user_id = user_id
-        self._base = base_service
+        self._guard = guard
+        self._window = window
         self._engine = engine
         self._arch_provider = architecture_provider
 
@@ -164,7 +171,19 @@ class ScopedRoleScoringService:
                 user_repository.c.user_id == self._user_id,
                 Repository.private == private,
             )
-            .order_by(user_repository.c.repository_id)
+            .order_by(
+                select(AnalysisReport.analyzed_at)
+                .where(
+                    AnalysisReport.repository_id == Repository.id,
+                    *self._window.conditions(AnalysisReport.analyzed_at),
+                )
+                .order_by(AnalysisReport.analyzed_at.desc())
+                .limit(1)
+                .scalar_subquery()
+                .desc()
+                .nulls_last(),
+                user_repository.c.repository_id,
+            )
         ).all()
         return [int(r) for r in rows]
 
@@ -176,64 +195,70 @@ class ScopedRoleScoringService:
         rubric_version: str | None,
         repo_ids: list[int],
     ) -> ScopeResult:
-        if not repo_ids:
+        allowed = [
+            repo_id
+            for repo_id in repo_ids
+            if self._guard.check(repo_id) == AccessDecision.ALLOWED
+        ]
+        limitations = []
+        if len(allowed) < len(repo_ids):
+            limitations.append(
+                Limitation(
+                    code="SCOPE_ACCESS_FILTERED",
+                    message="Đã loại repository thiếu quyền hoặc consent.",
+                )
+            )
+        if len(allowed) > MAX_REPOSITORIES:
+            limitations.append(
+                Limitation(
+                    code="SCOPE_REPOSITORY_LIMIT",
+                    message=f"Tối đa {MAX_REPOSITORIES} repository mỗi phạm vi.",
+                )
+            )
+            allowed = allowed[:MAX_REPOSITORIES]
+        if not allowed:
             return ScopeResult(
                 scope=scope,
                 available=False,
                 outcome=None,
                 limitations=[
+                    *limitations,
                     Limitation(
                         code=f"SCOPE_{scope.upper()}_NO_REPOSITORIES",
                         message=(
                             f"Không có repository {scope} nào thuộc người dùng "
                             "này; scope không khả dụng."
                         ),
-                    )
+                    ),
                 ],
             )
 
         # DatabaseSkillSnapshotSource với filter repo
         scoped_source = DatabaseSkillSnapshotSource(
             self._db,
-            repo_id_filter=frozenset(repo_ids),
+            repo_id_filter=frozenset(allowed),
+            window=self._window,
         )
-        from app.modules.role_scoring.access import DbRepositoryAccessGuard
-
-        guard = DbRepositoryAccessGuard(self._db, self._user_id)
         adapter = SkillSnapshotAdapter(scoped_source)
-        from app.modules.role_scoring.service import RoleScoringService
 
         scoped_service = RoleScoringService(
             user_id=self._user_id,
             engine=self._engine,
             skill_adapter=adapter,
             architecture_provider=self._arch_provider,
-            guard=guard,
+            guard=self._guard,
         )
 
-        try:
-            outcome = scoped_service.score(
-                RoleScoringRequest(
-                    role_key=role_key,
-                    repository_ids=repo_ids,
-                    rubric_version=rubric_version,
-                )
+        outcome = scoped_service.score(
+            RoleScoringRequest(
+                role_key=role_key,
+                repository_ids=allowed,
+                rubric_version=rubric_version,
             )
-        except Exception:
-            logger.exception("Lỗi khi tính scope '%s'", scope)
-            return ScopeResult(
-                scope=scope,
-                available=False,
-                outcome=None,
-                limitations=[
-                    Limitation(
-                        code=f"SCOPE_{scope.upper()}_SCORING_FAILED",
-                        message=f"Tính điểm scope {scope} thất bại.",
-                    )
-                ],
-            )
-
-        return ScopeResult(scope=scope, available=True, outcome=outcome)
+        )
+        if outcome.result.status == ScoreStatus.UNKNOWN:
+            outcome.result.status = ScoreStatus.INSUFFICIENT
+        return ScopeResult(scope, True, outcome, limitations)
 
     def _score_combined(
         self,
@@ -370,6 +395,9 @@ class ScopedRoleScoringService:
                 ),
                 dedup_summary,
             )
+
+        if result.status == ScoreStatus.UNKNOWN:
+            result.status = ScoreStatus.INSUFFICIENT
 
         # Thêm limitation nếu chỉ 1 scope khả dụng
         limitations: list[Limitation] = []

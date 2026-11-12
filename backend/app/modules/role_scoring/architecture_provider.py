@@ -46,6 +46,7 @@ from app.modules.analysis.models import (
     AnalysisReport,
     RepositoryVerification,
 )
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.github.models import user_repository
 from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.errors import (
@@ -141,11 +142,14 @@ class DbArchitectureEvidenceProvider:
         user_id: int,
         guard: RepositoryAccessGuard,
         policy: ArchitectureEvidencePolicy | None = None,
+        *,
+        window: ReportWindow | None = None,
     ) -> None:
         self._db = db
         self._user_id = user_id
         self._guard = guard
         self._policy = policy or ArchitectureEvidencePolicy()
+        self._window = window or ReportWindow()
 
     # ------------------------------------------------------------------ public
 
@@ -310,7 +314,10 @@ class DbArchitectureEvidenceProvider:
     def _latest_report(self, repository_id: int) -> AnalysisReport | None:
         return self._db.scalar(
             select(AnalysisReport)
-            .where(AnalysisReport.repository_id == repository_id)
+            .where(
+                AnalysisReport.repository_id == repository_id,
+                *self._window.conditions(AnalysisReport.analyzed_at),
+            )
             .order_by(desc(AnalysisReport.analyzed_at), desc(AnalysisReport.id))
             .limit(1)
         )

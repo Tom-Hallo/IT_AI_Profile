@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from redis.exceptions import RedisError
 from sqlalchemy import select
@@ -22,7 +22,8 @@ from app.db.session import get_session
 from app.modules.analysis import service
 from app.modules.analysis.collaboration_router import collaboration_router
 from app.modules.analysis.finding_router import router as finding_router
-from app.modules.analysis.models import AnalysisJobEvent
+from app.modules.analysis.models import AnalysisJobEvent, AnalysisReport
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     EvidenceListResponse,
     RepositoryAnalysisRequest,
@@ -32,6 +33,8 @@ from app.modules.analysis.service import (
     analyze_repository,
     get_analysis_evidence,
     get_latest_analysis,
+    verify_private_repo_consent,
+    verify_repository_access,
 )
 from app.modules.analysis.verification_router import verification_router
 from app.modules.users.models import User
@@ -321,6 +324,39 @@ def get_repository_evidence_records(
         commit_sha=actual_sha,
         total=len(evidence_items),
         items=evidence_items,
+    )
+
+
+class DashboardReport(BaseModel):
+    id: int
+    commit_sha: str
+    analyzed_at: datetime
+
+
+@repo_router.get("/{repository_id}/analysis/dashboard-report")
+def get_dashboard_report(
+    repository_id: int,
+    response: Response,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
+) -> DashboardReport | None:
+    repo = verify_repository_access(db, repository_id, user)
+    verify_private_repo_consent(repo, None, db=db, user_id=user.id)
+    response.headers["Cache-Control"] = "no-store"
+    report = db.execute(
+        select(AnalysisReport.id, AnalysisReport.commit_sha, AnalysisReport.analyzed_at)
+        .where(
+            AnalysisReport.repository_id == repository_id,
+            *window.conditions(AnalysisReport.analyzed_at),
+        )
+        .order_by(AnalysisReport.analyzed_at.desc(), AnalysisReport.id.desc())
+        .limit(1)
+    ).one_or_none()
+    if report is None:
+        return None
+    return DashboardReport(
+        id=report.id, commit_sha=report.commit_sha, analyzed_at=report.analyzed_at
     )
 
 

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.ai.scoring import RoleScoringEngine
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.role_scoring.access import DbRepositoryAccessGuard
 from app.modules.role_scoring.architecture_provider import (
     DbArchitectureEvidenceProvider,
@@ -62,22 +63,16 @@ def get_scoped_role_scoring_service(
     db: Annotated[Session, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     engine: Annotated[RoleScoringEngine, Depends(get_role_scoring_engine)],
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
 ) -> ScopedRoleScoringService:
-    """Dependency cho endpoint /score/scoped (PBI-018)."""
     guard = DbRepositoryAccessGuard(db, user)
-    arch_provider = DbArchitectureEvidenceProvider(db, user.id, guard)
-    base_source = DatabaseSkillSnapshotSource(db)
-    base_service = RoleScoringService(
-        user_id=user.id,
-        engine=engine,
-        skill_adapter=SkillSnapshotAdapter(base_source),
-        architecture_provider=arch_provider,
-        guard=guard,
-    )
     return ScopedRoleScoringService(
         db=db,
         user_id=user.id,
-        base_service=base_service,
+        guard=guard,
         engine=engine,
-        architecture_provider=arch_provider,
+        architecture_provider=DbArchitectureEvidenceProvider(
+            db, user.id, guard, window=window
+        ),
+        window=window,
     )
