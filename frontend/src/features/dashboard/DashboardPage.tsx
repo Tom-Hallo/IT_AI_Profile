@@ -44,24 +44,20 @@ const SCOPE_LABELS: Record<Scope, string> = {
 export function DashboardPage() {
   const { user, isLoading: authLoading, error: authError } = useAuth()
 
-  // Roles
-  const [roles, setRoles] = useState<RoleSummary[]>([])
+  const [roles, setRoles] = useState<RoleSummary[] | null>(null)
   const [selectedRole, setSelectedRole] = useState<string>('')
   const [scope, setScope] = useState<Scope>('public')
   const [roleResult, setRoleResult] = useState<ScopedResult | null>(null)
-  const [loadingRoles, setLoadingRoles] = useState(true)
-  const [loadingScore, setLoadingScore] = useState(false)
+  const [roleFailed, setRoleFailed] = useState(false)
 
-  // Repositories + Skills + Evidence
-  const [repos, setRepos] = useState<Repository[]>([])
+  const [repos, setRepos] = useState<Repository[] | null>(null)
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
-  const [skillScores, setSkillScores] = useState<SkillScore[]>([])
-  const [loadingSkills, setLoadingSkills] = useState(false)
+  const [skillScores, setSkillScores] = useState<SkillScore[] | null>(null)
   const [latestReport, setLatestReport] = useState<{
     id: number
     commit_sha: string
   } | null>(null)
-  const [loadingReport, setLoadingReport] = useState(false)
+  const [skillsFailed, setSkillsFailed] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
 
@@ -69,21 +65,18 @@ export function DashboardPage() {
   useEffect(() => {
     if (!user) return
     const controller = new AbortController()
-    setLoadingRoles(true)
     apiFetch<{ roles: RoleSummary[] }>('/role-scoring/roles', { signal: controller.signal })
       .then((data) => {
-        setRoles(data.roles ?? [])
-        if (data.roles?.length && !selectedRole) {
-          setSelectedRole(data.roles[0].role_key)
-        }
+        if (controller.signal.aborted) return
+        const list = data.roles ?? []
+        setRoles(list)
+        setSelectedRole((current) => current || list[0]?.role_key || '')
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
           setError(err instanceof Error ? err.message : 'Không tải được danh sách role')
+          setRoles([])
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingRoles(false)
       })
     return () => controller.abort()
   }, [user])
@@ -92,22 +85,21 @@ export function DashboardPage() {
   useEffect(() => {
     if (!user || !selectedRole) return
     const controller = new AbortController()
-    setLoadingScore(true)
-    setRoleResult(null)
     apiFetch<ScopedResult>(
       `/role-scoring/roles/${encodeURIComponent(selectedRole)}/score/scoped`,
       { signal: controller.signal },
     )
       .then((data) => {
-        if (!controller.signal.aborted) setRoleResult(data)
-      })
-      .catch((err) => {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : 'Không tải được điểm role')
+          setRoleResult(data)
+          setRoleFailed(false)
         }
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingScore(false)
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setRoleFailed(true)
+          setRoleResult(null)
+        }
       })
     return () => controller.abort()
   }, [user, selectedRole])
@@ -118,65 +110,53 @@ export function DashboardPage() {
     const controller = new AbortController()
     fetchRepositories({ per_page: 50 }, controller.signal)
       .then((res) => {
+        if (controller.signal.aborted) return
         const list = res.items ?? []
         setRepos(list)
-        if (list.length && selectedRepoId === null) {
-          setSelectedRepoId(list[0].id)
-        }
+        setSelectedRepoId((current) => current ?? list[0]?.id ?? null)
       })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          // Không chặn toàn bộ dashboard nếu chưa sync GitHub
-          console.warn('Không tải được repository list', err)
-        }
+      .catch(() => {
+        if (!controller.signal.aborted) setRepos([])
       })
     return () => controller.abort()
   }, [user])
 
   // 4. Load skill scores + latest analysis khi chọn repo
   useEffect(() => {
-    if (!user || !selectedRepoId) {
-      setSkillScores([])
-      setLatestReport(null)
-      return
-    }
+    if (!user || !selectedRepoId) return
 
     const controller = new AbortController()
-    setLoadingSkills(true)
-    setLoadingReport(true)
-    setSkillScores([])
-    setLatestReport(null)
 
-    // Skill scores
     apiFetch<SkillScore[]>(
       `/scoring/repositories/${selectedRepoId}/skills?limit=50`,
       { signal: controller.signal },
     )
       .then((data) => {
-        if (!controller.signal.aborted) setSkillScores(Array.isArray(data) ? data : [])
+        if (!controller.signal.aborted) {
+          setSkillScores(Array.isArray(data) ? data : [])
+          setSkillsFailed(false)
+        }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setSkillScores([])
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingSkills(false)
+        if (!controller.signal.aborted) {
+          setSkillScores([])
+          setSkillsFailed(true)
+        }
       })
 
-    // Latest analysis (để lấy reportId + commitSha cho Evidence)
     fetchLatestAnalysis(selectedRepoId, undefined, controller.signal)
       .then((report) => {
-        if (!controller.signal.aborted && report) {
+        if (!controller.signal.aborted && report?.report_id) {
           setLatestReport({
-            id: report.report_id ?? 0,
+            id: report.report_id,
             commit_sha: report.commit_sha,
           })
+        } else if (!controller.signal.aborted) {
+          setLatestReport(null)
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) setLatestReport(null)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingReport(false)
       })
 
     return () => controller.abort()
@@ -211,6 +191,11 @@ export function DashboardPage() {
     ...(score?.limitations ?? []),
   ]
 
+  const loadingRoles = roles === null
+  const loadingScore = Boolean(selectedRole) && roleResult === null && !roleFailed
+  const loadingSkills = Boolean(selectedRepoId) && skillScores === null && !skillsFailed
+  const repoList = repos ?? []
+
   return (
     <div className="dashboard-page">
       <header className="dashboard-header">
@@ -236,7 +221,6 @@ export function DashboardPage() {
 
       <ProfileSummary user={user} />
 
-      {/* Filters */}
       <Card className="dashboard-filters">
         <div className="filter-row">
           <label htmlFor="role-select">
@@ -244,11 +228,15 @@ export function DashboardPage() {
             <select
               id="role-select"
               value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              disabled={loadingRoles || roles.length === 0}
+              onChange={(e) => {
+                setSelectedRole(e.target.value)
+                setRoleResult(null)
+                setRoleFailed(false)
+              }}
+              disabled={loadingRoles || (roles?.length ?? 0) === 0}
             >
-              {roles.length === 0 && <option value="">Chưa có role</option>}
-              {roles.map((r) => (
+              {(roles?.length ?? 0) === 0 && <option value="">Chưa có role</option>}
+              {(roles ?? []).map((r) => (
                 <option key={r.role_key} value={r.role_key}>
                   {r.name}
                 </option>
@@ -280,13 +268,17 @@ export function DashboardPage() {
             <select
               id="repo-select"
               value={selectedRepoId ?? ''}
-              onChange={(e) =>
-                setSelectedRepoId(e.target.value ? Number(e.target.value) : null)
-              }
-              disabled={repos.length === 0}
+              onChange={(e) => {
+                const next = e.target.value ? Number(e.target.value) : null
+                setSelectedRepoId(next)
+                setSkillScores(null)
+                setLatestReport(null)
+                setSkillsFailed(false)
+              }}
+              disabled={repoList.length === 0}
             >
-              {repos.length === 0 && <option value="">Chưa có repository</option>}
-              {repos.map((repo) => (
+              {repoList.length === 0 && <option value="">Chưa có repository</option>}
+              {repoList.map((repo) => (
                 <option key={repo.id} value={repo.id}>
                   {repo.full_name || repo.name || `#${repo.id}`}
                 </option>
@@ -296,10 +288,24 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      {/* Role Score */}
       <section className="dashboard-section">
         <h2>Điểm vai trò & độ tin cậy</h2>
         {loadingScore && <p role="status">Đang tính điểm…</p>}
+        {roleFailed && (
+          <p role="alert">
+            Không tải được điểm vai trò.{' '}
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => {
+                setRoleResult(null)
+                setRoleFailed(false)
+              }}
+            >
+              Thử lại
+            </button>
+          </p>
+        )}
         {!loadingScore && roleResult && (
           <div className="score-grid">
             <Card className="score-card">
@@ -340,19 +346,18 @@ export function DashboardPage() {
             </Card>
           </div>
         )}
-        {!loadingScore && !roleResult && !error && (
+        {!loadingScore && !roleResult && !roleFailed && (
           <p className="muted">Chưa có dữ liệu điểm cho vai trò này.</p>
         )}
       </section>
 
-      {/* Skill Scores */}
       <section className="dashboard-section">
         <h2>Kỹ năng (Skill Scores)</h2>
         {loadingSkills && <p role="status">Đang tải skill scores…</p>}
-        {!loadingSkills && skillScores.length > 0 && (
+        {!loadingSkills && skillScores && skillScores.length > 0 && (
           <SkillScores scores={skillScores} />
         )}
-        {!loadingSkills && skillScores.length === 0 && (
+        {!loadingSkills && skillScores && skillScores.length === 0 && (
           <p className="muted">
             {selectedRepoId
               ? 'Chưa có skill score cho repository này. Hãy chạy phân tích trước.'
@@ -361,18 +366,16 @@ export function DashboardPage() {
         )}
       </section>
 
-      {/* Evidence Explorer */}
       <section className="dashboard-section">
         <h2>Evidence Explorer</h2>
-        {loadingReport && <p role="status">Đang tải báo cáo phân tích…</p>}
-        {!loadingReport && selectedRepoId && latestReport && latestReport.id > 0 && (
+        {selectedRepoId && latestReport && latestReport.id > 0 && (
           <FindingEvidenceExplorer
             repositoryId={selectedRepoId}
             reportId={latestReport.id}
             commitSha={latestReport.commit_sha}
           />
         )}
-        {!loadingReport && selectedRepoId && !latestReport && (
+        {selectedRepoId && !latestReport && !loadingSkills && (
           <Card>
             <p className="muted">
               Chưa có báo cáo phân tích cho repository này. Vào trang Phân tích để chạy
