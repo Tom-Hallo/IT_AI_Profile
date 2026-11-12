@@ -1,4 +1,3 @@
-
 """Ollama provider adapter.
 
 Không ghi prompt, nội dung code hoặc dữ liệu riêng tư vào log.

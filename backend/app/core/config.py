@@ -1,4 +1,4 @@
-﻿"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
+"""Cấu hình ứng dụng (Blueprint mục 1.4 và 5).
 
 Quy tắc:
 - Đây là NƠI DUY NHẤT đọc biến môi trường. Module khác chỉ `from app.core.config import
