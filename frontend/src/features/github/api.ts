@@ -8,6 +8,7 @@ import type {
   RepositoryCollaborationResult,
   RepositoryListResponse,
   RepositoryQueryParams,
+  RepositoryVisibility,
   RepositoryVerificationResult,
   SyncStatusResponse,
   SyncTriggerResponse,
@@ -25,9 +26,11 @@ export function fetchSyncStatus(signal?: AbortSignal): Promise<SyncStatusRespons
  * Kích hoạt đồng bộ repository GitHub.
  * Mặc định kích hoạt background worker qua Redis + RQ.
  */
-export function triggerSync(background = true): Promise<SyncTriggerResponse> {
-  return apiFetch<SyncTriggerResponse>(`/github/sync?background=${background}`, {
+export function triggerSync(background: boolean, visibility: RepositoryVisibility): Promise<SyncTriggerResponse> {
+  const query = new URLSearchParams({ background: String(background), visibility })
+  return apiFetch<SyncTriggerResponse>(`/github/sync?${query}`, {
     method: 'POST',
+    timeoutMs: 360_000,
   })
 }
 
