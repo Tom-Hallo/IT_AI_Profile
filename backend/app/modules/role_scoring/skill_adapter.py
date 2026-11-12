@@ -28,7 +28,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 from sqlalchemy import and_, desc, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from app.ai.scoring import (
     EvidenceRef,
@@ -41,7 +41,6 @@ from app.ai.scoring.evidence_catalog import normalize_key
 from app.ai.scoring.schemas import Limitation
 from app.modules.analysis.models import (
     AnalysisEvidence,
-    AnalysisReport,
     RepositoryVerification,
     VerificationEvidence,
 )
