@@ -1,3 +1,4 @@
+import { MentorPage } from '@/features/mentor/MentorPage'
 import { createBrowserRouter } from 'react-router'
 import { SystemStatusPage } from '@/features/system-status/SystemStatusPage'
 import { ActivityAnalysisPage } from '@/features/github/ActivityAnalysisPage'
@@ -13,6 +14,7 @@ export const router = createBrowserRouter([
   { path: '/repositories/:repositoryId/activity', element: <ActivityAnalysisPage /> },
   { path: '/activity', element: <ActivityAnalysisPage /> },
   { path: '/activity/:repositoryId', element: <ActivityAnalysisPage /> },
+  { path: '/mentor', element: <MentorPage /> },
   { path: '/repositories/:repositoryId/analysis', element: <RepositoryAnalysisPage /> },
   { path: '/analysis', element: <RepositoryAnalysisPage /> },
   { path: '/analysis/:repositoryId', element: <RepositoryAnalysisPage /> },
