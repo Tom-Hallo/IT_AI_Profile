@@ -1,4 +1,4 @@
-"""Response schema công khai của API Role Scoring (PBI-017).
+"""Response schema công khai của API Role Scoring (PBI-017 / PBI-018).
 
 Whitelist tường minh: KHÔNG đưa ``matched_content``, ``line_number`` hay ``rationale``
 của evidence (kể cả evidence do PBI-016 cung cấp) ra API. Chỉ trả tham chiếu truy xuất
@@ -234,3 +234,86 @@ class RoleSummary(BaseModel):
 
 class RoleListResponse(BaseModel):
     roles: list[RoleSummary]
+
+
+# ---------------------------------------------------------------------------- PBI-018
+
+
+class DedupSummaryOut(BaseModel):
+    total_public_refs: int
+    total_private_refs: int
+    deduped_combined_refs: int
+    duplicates_removed: int
+
+
+class ScopeScoreOut(BaseModel):
+    """Kết quả của một scope đơn (public / private / combined).
+
+    ``available=False``: scope này không có repo nào (ví dụ user không có
+    private repo); ``score`` sẽ là ``None`` và ``limitations`` giải thích lý do.
+    """
+
+    scope: str
+    available: bool
+    score: RoleScoreResponse | None = None
+    limitations: list[Limitation] = Field(default_factory=list)
+
+
+class ScopedRoleScoreResponse(BaseModel):
+    """Phản hồi điểm role cho cả 3 scope: Public / Private / Combined.
+
+    ``combined`` luôn được tính bằng engine riêng với evidence đã dedup —
+    KHÔNG phải trung bình hay tổng của public + private.
+    """
+
+    role_key: str
+    role_name: str
+    rubric_version: str
+    public: ScopeScoreOut
+    private: ScopeScoreOut
+    combined: ScopeScoreOut
+    dedup_summary: DedupSummaryOut
+
+    @classmethod
+    def from_scoped_outcome(
+        cls,
+        outcome: ScopedScoringOutcome,  # noqa: F821 — imported lazily below
+    ) -> ScopedRoleScoreResponse:
+        from app.modules.role_scoring.scoped_service import ScopedScoringOutcome
+
+        assert isinstance(outcome, ScopedScoringOutcome)
+        rubric = outcome.rubric
+
+        def _scope_out(scope_result: ScopeResult) -> ScopeScoreOut:  # noqa: F821
+            from app.modules.role_scoring.scoped_service import ScopeResult
+
+            assert isinstance(scope_result, ScopeResult)
+            if not scope_result.available or scope_result.outcome is None:
+                return ScopeScoreOut(
+                    scope=scope_result.scope,
+                    available=False,
+                    score=None,
+                    limitations=list(scope_result.limitations),
+                )
+            return ScopeScoreOut(
+                scope=scope_result.scope,
+                available=True,
+                score=RoleScoreResponse.from_outcome(scope_result.outcome),
+                limitations=list(scope_result.limitations),
+            )
+
+        ds = outcome.dedup_summary
+        return cls(
+            role_key=rubric.role_key,
+            role_name=rubric.name,
+            rubric_version=rubric.rubric_version,
+            public=_scope_out(outcome.public),
+            private=_scope_out(outcome.private),
+            combined=_scope_out(outcome.combined),
+            dedup_summary=DedupSummaryOut(
+                total_public_refs=ds.total_public_refs,
+                total_private_refs=ds.total_private_refs,
+                deduped_combined_refs=ds.deduped_combined_refs,
+                duplicates_removed=ds.duplicates_removed,
+            ),
+        )
