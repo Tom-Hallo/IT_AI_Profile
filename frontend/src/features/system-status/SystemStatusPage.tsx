@@ -48,6 +48,7 @@ export function SystemStatusPage() {
       </header>
 
       <AuthPanel auth={auth} />
+      <p><Link to="/dashboard">Mở Dashboard hồ sơ</Link></p>
 
       {user && (
         <nav className="workspace-actions" aria-label="Công cụ phân tích">

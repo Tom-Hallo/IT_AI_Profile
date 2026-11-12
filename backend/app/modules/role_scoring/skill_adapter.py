@@ -41,9 +41,11 @@ from app.ai.scoring.evidence_catalog import normalize_key
 from app.ai.scoring.schemas import Limitation
 from app.modules.analysis.models import (
     AnalysisEvidence,
+    AnalysisReport,
     RepositoryVerification,
     VerificationEvidence,
 )
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.role_scoring.access import AccessDecision, RepositoryAccessGuard
 from app.modules.role_scoring.errors import (
     SkillSnapshotSourceError,
@@ -109,9 +111,11 @@ class DatabaseSkillSnapshotSource:
         db: Session,
         *,
         repo_id_filter: frozenset[int] | None = None,
+        window: ReportWindow | None = None,
     ) -> None:
         self._db = db
         self._repo_id_filter = repo_id_filter
+        self._window = window
 
     def fetch(
         self, user_id: int, *, snapshot_ref: str | None = None
@@ -125,6 +129,21 @@ class DatabaseSkillSnapshotSource:
             )
             if self._repo_id_filter is not None:
                 query = query.where(SkillScore.repository_id.in_(self._repo_id_filter))
+            if self._window is not None:
+                latest_report_id = (
+                    select(AnalysisReport.id)
+                    .where(
+                        AnalysisReport.repository_id == SkillScore.repository_id,
+                        *self._window.conditions(AnalysisReport.analyzed_at),
+                    )
+                    .order_by(
+                        AnalysisReport.analyzed_at.desc(), AnalysisReport.id.desc()
+                    )
+                    .limit(1)
+                    .correlate(SkillScore)
+                    .scalar_subquery()
+                )
+                query = query.where(SkillScore.report_id == latest_report_id)
             scores = self._db.scalars(query).all()
             if not scores:
                 return None

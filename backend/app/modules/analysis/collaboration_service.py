@@ -30,6 +30,7 @@ from app.modules.analysis.models import (
     CollaborationAnalysis,
     CollaborationEvidence,
 )
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     CollaborationAnalysisRequest,
     CollaborationAnalysisResponse,
@@ -1271,6 +1272,7 @@ def get_collaboration_evidence_list(
     page: int = 1,
     per_page: int = 50,
     analysis_id: int | None = None,
+    window: ReportWindow | None = None,
 ) -> CollaborationEvidenceListResponse:
     """Truy xuất danh sách bằng chứng cộng tác phân trang và lọc (PBI-014)."""
 
@@ -1284,8 +1286,25 @@ def get_collaboration_evidence_list(
         CollaborationAnalysis.repository_id == repository_id,
         CollaborationAnalysis.user_id == user.id,
     )
+    date_conditions = (
+        window.conditions(CollaborationEvidence.recorded_at) if window else []
+    )
     if analysis_id is not None:
         query = query.where(CollaborationAnalysis.id == analysis_id)
+    elif date_conditions:
+        candidates = select(CollaborationEvidence.id).where(
+            CollaborationEvidence.analysis_id == CollaborationAnalysis.id,
+            CollaborationEvidence.repository_id == repository_id,
+            CollaborationEvidence.user_id == user.id,
+            *date_conditions,
+        )
+        if evidence_type and evidence_type != "all":
+            candidates = candidates.where(
+                CollaborationEvidence.evidence_type == evidence_type
+            )
+        if pr_number is not None:
+            candidates = candidates.where(CollaborationEvidence.pr_number == pr_number)
+        query = query.where(candidates.exists())
     latest_analysis = db.scalar(
         query.order_by(
             desc(CollaborationAnalysis.analyzed_at),
@@ -1309,6 +1328,7 @@ def get_collaboration_evidence_list(
         CollaborationEvidence.analysis_id == latest_analysis,
     )
 
+    stmt = stmt.where(*date_conditions)
     if evidence_type and evidence_type != "all":
         stmt = stmt.where(CollaborationEvidence.evidence_type == evidence_type)
     if state and state != "all":

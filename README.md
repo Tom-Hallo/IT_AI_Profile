@@ -396,3 +396,20 @@ khi tài khoản có repository được phép sử dụng với consent hiện 
   Fixture tạo và xóa database tạm qua Alembic.
 
 Đối chiếu SRS 2.0 FR-013 và FR-014. Endpoint chỉ đọc từ schema hiện hành.
+
+### Dashboard hồ sơ và bằng chứng (PBI-019)
+
+Mở **Dashboard hồ sơ** tại `/dashboard`. Chọn vai trò, phạm vi Công khai /
+Riêng tư / Kết hợp và khoảng ngày UTC. Các thanh điểm lấy dữ liệu trực tiếp
+từ API. Điểm vai trò và confidence cùng dùng thang 0–100; độ phủ được chuyển
+từ tỷ lệ sang thang 0–100 khi hiển thị.
+
+- Bộ lọc thời gian lấy báo cáo gần nhất theo ngày phân tích trong khoảng đã
+  chọn, bao gồm cả hai ngày. Điểm kỹ năng và Finding dùng cùng ID báo cáo.
+- Bằng chứng PR lấy từ báo cáo cộng tác gần nhất có sự kiện trong khoảng
+  ngày đã chọn. Dùng ô **Số PR** để xem một PR cụ thể.
+- Quyền repository và consent được kiểm tra trên server khi đọc báo cáo và
+  bằng chứng. Trang **Tài khoản và kết nối GitHub** tại `/system-status`
+  vẫn là nơi quản lý đồng bộ, kết nối và đăng xuất.
+- Kiểm thử API với PostgreSQL riêng:
+  `RUN_INTEGRATION=1 pytest tests/modules/role_scoring/test_dashboard_postgres.py`.

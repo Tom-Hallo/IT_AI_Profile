@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -14,6 +15,7 @@ from app.modules.analysis.collaboration_service import (
     get_collaboration_evidence_list,
     get_stored_collaboration,
 )
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     CollaborationAnalysisRequest,
     CollaborationAnalysisResponse,
@@ -86,6 +88,8 @@ def get_collaboration(
 )
 def get_collaboration_evidence(
     repository_id: int,
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
+    response: Response,
     analysis_id: int | None = Query(default=None, gt=0),
     evidence_type: str = Query(
         default="all",
@@ -105,6 +109,7 @@ def get_collaboration_evidence(
     db: Session = Depends(get_session),  # noqa: B008
 ) -> CollaborationEvidenceListResponse:
     """Truy xuất danh sách bằng chứng cộng tác phân trang và lọc (PBI-014)."""
+    response.headers["Cache-Control"] = "no-store"
     return get_collaboration_evidence_list(
         db=db,
         repository_id=repository_id,
@@ -115,4 +120,5 @@ def get_collaboration_evidence(
         page=page,
         per_page=per_page,
         analysis_id=analysis_id,
+        window=window,
     )
