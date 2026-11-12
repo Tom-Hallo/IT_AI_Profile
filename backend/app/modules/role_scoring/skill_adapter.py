@@ -92,10 +92,20 @@ class UnconfiguredSkillSnapshotSource:
 
 
 class DatabaseSkillSnapshotSource:
-    """Nguồn đọc Skill Scores thực tế từ bảng ita.skill_scores của PBI-016."""
+    """Nguồn đọc Skill Scores thực tế từ bảng ita.skill_scores của PBI-016.
 
-    def __init__(self, db: Session) -> None:
+    ``repo_id_filter``: nếu được cung cấp, chỉ lấy scores từ các repository có
+    id trong tập này (dùng cho scope public/private của PBI-018). ``None`` = không lọc.
+    """
+
+    def __init__(
+        self,
+        db: Session,
+        *,
+        repo_id_filter: frozenset[int] | None = None,
+    ) -> None:
         self._db = db
+        self._repo_id_filter = repo_id_filter
 
     def fetch(
         self, user_id: int, *, snapshot_ref: str | None = None
@@ -107,6 +117,8 @@ class DatabaseSkillSnapshotSource:
                 .order_by(desc(SkillScore.created_at), desc(SkillScore.id))
                 .limit(MAX_SNAPSHOT_ITEMS)
             )
+            if self._repo_id_filter is not None:
+                query = query.where(SkillScore.repository_id.in_(self._repo_id_filter))
             scores = self._db.scalars(query).all()
             if not scores:
                 return None
