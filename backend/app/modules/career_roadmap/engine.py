@@ -42,15 +42,16 @@ def generate(goal: str, assessments: list[dict[str, Any]]) -> dict[str, Any]:
         evidence = a.get("evidence", []) if a else []
         confidence = a.get("confidence", "unknown") if a else "unknown"
         verified = (
-            bool(evidence)
-            and confidence in {"high", "medium"}
-            and score is not None
+            bool(evidence) and confidence in {"high", "medium"} and score is not None
         )
         if not verified:
             gap_type, priority, action = (
                 "missing_evidence",
                 1,
-                f"Create and document a {skill} project with reviewable commits and tests",
+                (
+                    f"Create and document a {skill} project "
+                    "with reviewable commits and tests"
+                ),
             )
             gap = None
         else:
@@ -74,7 +75,10 @@ def generate(goal: str, assessments: list[dict[str, Any]]) -> dict[str, Any]:
                 "gap_type": gap_type,
                 "priority": priority,
                 "objective": action,
-                "metric": f"Reach verified {skill} assessment >= {target}/100 with at least one accessible evidence reference",
+                "metric": (
+                    f"Reach verified {skill} assessment >= {target}/100 "
+                    "with at least one accessible evidence reference"
+                ),
                 "evidence": evidence if verified else [],
                 "confidence": confidence if verified else "unknown",
                 "status": "todo",

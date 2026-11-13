@@ -19,7 +19,10 @@ class AssessmentProvider(Protocol):
 
 
 class RealAssessmentProvider:
-    """Conservative adapter for PBI-016 scores; private scope is excluded until consent integration."""
+    """Adapter for PBI-016 scores.
+
+    Private scope is excluded until consent integration.
+    """
 
     def load(self, db: Session, user_id: int) -> list[dict[str, Any]]:
         rows = db.execute(
