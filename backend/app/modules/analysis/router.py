@@ -90,8 +90,8 @@ def csrf(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid Origin")
 
 
-def dispatch(job: Any, db: Session) -> None:
-    """Fail closed if Redis cannot accept the job; do not leave it queued."""
+def dispatch(job: Any, db: Session, *, recoverable: bool = False) -> None:
+    """Dispatch a job, optionally leaving it queued for maintenance on failure."""
     try:
         enqueue_task(
             "app.workers.tasks.analysis.run_analysis",
@@ -100,7 +100,8 @@ def dispatch(job: Any, db: Session) -> None:
         )
     except (RedisError, ConnectionError, TimeoutError, OSError) as exc:
         logger.error("Analysis enqueue failed: %s", type(exc).__name__)
-        service.fail_dispatch(db, job.id)
+        if not recoverable:
+            service.fail_dispatch(db, job.id)
         raise HTTPException(
             status_code=503,
             detail="Analysis queue unavailable. Please retry later.",

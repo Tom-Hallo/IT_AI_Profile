@@ -312,3 +312,42 @@ def test_empty_selection_and_empty_owned_cv_do_not_call_provider(db, transport):
     assert chat(db, user, transport).limitations[0].code == "no_sources"
     assert chat(db, user, transport, cv_ids=[1]).limitations[0].code == "cv_unavailable"
     assert transport[0] == []
+
+
+def test_revocation_during_successful_response_suppresses_private_evidence(
+    db, transport
+):
+    user, repo = private_world(db)
+    grant(db, user, repo)
+
+    def revoke_then_respond(_):
+        db.get(PrivateConsent, 2).revoked_at = datetime.now(UTC)
+        db.commit()
+        return httpx.Response(
+            200,
+            json={
+                "output_text": json.dumps(
+                    {
+                        "claims": [{"text": "Private finding", "evidence_ids": ["E1"]}],
+                        "limitations": [],
+                    }
+                )
+            },
+        )
+
+    transport[1].side_effect = revoke_then_respond
+    result = chat(db, user, transport, github_repo_ids=[repo.id])
+    assert result.evidence == []
+    assert "Private finding" not in result.answer
+    assert [item.code for item in result.limitations] == ["consent_changed"]
+
+
+def test_action_fields_count_towards_budget_and_only_list_packed_repositories():
+    small = service.Context("github", "allowed", {"language": "Python"}, repo_id=1)
+    large = service.Context("github", "large", {"data": "x" * 500}, repo_id=2)
+    input_text, packed = service._pack_context(
+        "Analyze", [large, small], 128, enable_actions=True
+    )
+    assert len(input_text) <= 128
+    assert json.loads(input_text)["selected_repository_ids"] == [1]
+    assert list(packed.values()) == [small]

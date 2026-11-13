@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import configure_mappers
 
+import app.modules.ai_mentor.action_models  # noqa: F401
 import app.modules.ai_mentor.usage_models  # noqa: F401
 
 # Import all business models to register them on Base.registry and Base.metadata

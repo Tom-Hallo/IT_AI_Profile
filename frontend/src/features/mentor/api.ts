@@ -1,5 +1,5 @@
 import { apiFetch } from '@/shared/api/client'
-import type { MentorChatRequest, MentorChatResponse, MentorSourceOptions } from './types'
+import type { MentorActionDecision, MentorActionResult, MentorChatRequest, MentorChatResponse, MentorSourceOptions } from './types'
 
 export function sendMentorChat(
   payload: MentorChatRequest,
@@ -15,4 +15,11 @@ export function sendMentorChat(
 
 export function fetchMentorSources(signal: AbortSignal): Promise<MentorSourceOptions> {
   return apiFetch<MentorSourceOptions>('/mentor/sources', { signal })
+}
+
+export function decideMentorAction(id: string, decision: MentorActionDecision) {
+  const operation = decision === 'confirm' ? 'approve' : 'decline'
+  return apiFetch<MentorActionResult>(`/agent/actions/${encodeURIComponent(id)}/${operation}`, {
+    method: 'POST',
+  })
 }

@@ -7,6 +7,7 @@ import { Card } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { fetchMentorSources, sendMentorChat } from './api'
 import type { ChatMessage, MentorSourceOptions, MentorSources } from './types'
+import { MentorActionCard } from './MentorActionCard'
 import './MentorPage.css'
 
 const emptySources = (): MentorSources => ({
@@ -80,6 +81,9 @@ function MentorWorkspace() {
     const text = message.trim()
     if (!text || sending) return
 
+    const submitter = (event.nativeEvent as SubmitEvent).submitter
+    const enableActions = submitter?.getAttribute('value') === 'propose-action'
+
     setError(null)
     setSending(true)
     const userMsg: ChatMessage = {
@@ -95,11 +99,14 @@ function MentorWorkspace() {
         ...sources,
         jd_text: sources.jd_text?.trim() || null,
       }
-      const result = await sendMentorChat({ message: text, sources: payloadSources })
+      const result = await sendMentorChat({
+        message: text, sources: payloadSources, enable_actions: enableActions,
+      })
       const botMsg: ChatMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
         content: result.answer,
+        action: result.action,
         evidence: result.evidence,
         sourcesUsed: result.sources_used,
         limitations: result.limitations,
@@ -111,6 +118,13 @@ function MentorWorkspace() {
     } finally {
       setSending(false)
     }
+  }
+
+  function refreshSourceOptions() {
+    const controller = new AbortController()
+    fetchMentorSources(controller.signal)
+      .then(setOptions)
+      .catch(() => setOptionsError(true))
   }
 
   function toggleSource(key: 'github_repo_ids' | 'cv_ids' | 'roadmap_ids', id: number) {
@@ -243,6 +257,9 @@ function MentorWorkspace() {
                 className={`chat-bubble chat-bubble--${msg.role}`}
               >
                 <p className="chat-content">{msg.content}</p>
+                {msg.action && (
+                  <MentorActionCard action={msg.action} onCompleted={refreshSourceOptions} />
+                )}
                 {Boolean(msg.sourcesUsed?.length) && (
                   <p className="chat-meta">Nguồn đã gửi: {msg.sourcesUsed?.join(', ')}</p>
                 )}
@@ -290,9 +307,14 @@ function MentorWorkspace() {
               placeholder="Nhập câu hỏi cho mentor…"
               disabled={sending}
             />
-            <Button type="submit" variant="primary" disabled={sending || !message.trim()}>
-              {sending ? 'Đang hỏi…' : 'Gửi'}
-            </Button>
+            <div className="mentor-action-buttons">
+              <Button type="submit" variant="primary" disabled={sending || !message.trim()}>
+                {sending ? 'Đang hỏi…' : 'Gửi'}
+              </Button>
+              <Button type="submit" value="propose-action" disabled={sending || !message.trim()}>
+                Đề xuất hành động
+              </Button>
+            </div>
           </form>
         </section>
       </div>

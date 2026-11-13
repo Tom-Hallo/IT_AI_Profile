@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import OrderedDict
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, nullcontext
 from datetime import datetime
 from threading import Lock
 from typing import Any
@@ -183,8 +183,9 @@ def create(
     retry_of: uuid.UUID | None = None,
     *,
     request_options: dict[str, Any] | None = None,
+    commit: bool = True,
 ) -> tuple[AnalysisJob, bool]:
-    """Create a new analysis job if one is not already active."""
+    """Create or reuse a job. With commit=False, the caller owns the transaction."""
     require_access(db, user_id, repo_id)
 
     def reuse(existing: AnalysisJob) -> tuple[AnalysisJob, bool]:
@@ -205,14 +206,16 @@ def create(
         retry_of=retry_of,
         request_options=request_options,
     )
-    db.add(job)
-
     try:
-        db.flush()
-        event(db, job, "created")
-        db.commit()
+        with nullcontext() if commit else db.begin_nested():
+            db.add(job)
+            db.flush()
+            event(db, job, "created")
+        if commit:
+            db.commit()
     except IntegrityError:
-        db.rollback()
+        if commit:
+            db.rollback()
         existing = active_job(db, user_id, repo_id, scope)
         if existing:
             return reuse(existing)
