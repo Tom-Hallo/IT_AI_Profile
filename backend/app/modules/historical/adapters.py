@@ -12,7 +12,12 @@ class FakeAnalysisAdapter:
     """Deterministic fixture ONLY for test/development; never production."""
 
     def analyze(self, owner_id: int, request: ReanalysisRequest) -> AnalysisResult:
-        return AnalysisResult(score=74, skills={"python": 82.0, "testing": 66.0}, evidence_summary={"fixture": True}, source_fingerprint="fixture-only")
+        return AnalysisResult(
+            score=74,
+            skills={"python": 82.0, "testing": 66.0},
+            evidence_summary={"fixture": True},
+            source_fingerprint="fixture-only",
+        )
 
 
 def get_analysis_adapter() -> AnalysisAdapter:

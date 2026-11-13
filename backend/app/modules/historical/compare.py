@@ -26,8 +26,12 @@ def compare_snapshots(old: SnapshotView, new: SnapshotView) -> dict[str, Any]:
         "comparable": comparable,
         "warnings": warnings,
         "score_delta": new.score - old.score if comparable else None,
-        "skill_deltas": {k: round(new.skills[k] - old.skills[k], 4) for k in shared} if comparable else {},
+        "skill_deltas": {k: round(new.skills[k] - old.skills[k], 4) for k in shared}
+        if comparable
+        else {},
         "added_skills": sorted(new.skills.keys() - old.skills.keys()),
         "removed_skills": sorted(old.skills.keys() - new.skills.keys()),
-        "interpretation": "Comparable within identical scope/rubric/time window" if comparable else "Comparison limited; raw scores must not be interpreted as progress",
+        "interpretation": "Comparable within identical scope/rubric/time window"
+        if comparable
+        else "Comparison limited; raw scores must not be interpreted as progress",
     }

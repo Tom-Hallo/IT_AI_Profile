@@ -10,7 +10,11 @@ from .models import HistoricalReanalysisJob, HistoricalSnapshot
 
 def process_job(session: Session, job_id: UUID) -> None:
     """RQ entrypoint wrapper must provide a fresh session and call this function."""
-    job = session.execute(select(HistoricalReanalysisJob).where(HistoricalReanalysisJob.id == job_id).with_for_update()).scalar_one()
+    job = session.execute(
+        select(HistoricalReanalysisJob)
+        .where(HistoricalReanalysisJob.id == job_id)
+        .with_for_update()
+    ).scalar_one()
     if job.status == "succeeded":
         return
     if job.status not in {"queued", "failed"}:
@@ -23,10 +27,16 @@ def process_job(session: Session, job_id: UUID) -> None:
         result = get_analysis_adapter().analyze(job.owner_id, request)
         # Atomic success: snapshot INSERT and job status update in one transaction.
         snapshot = HistoricalSnapshot(
-            owner_id=job.owner_id, source_job_id=job.id, visibility=request.visibility,
-            scope=request.scope, rubric_version=request.rubric_version,
-            window_start=request.window_start, window_end=request.window_end,
-            score=result.score, skills=result.skills, evidence_summary=result.evidence_summary,
+            owner_id=job.owner_id,
+            source_job_id=job.id,
+            visibility=request.visibility,
+            scope=request.scope,
+            rubric_version=request.rubric_version,
+            window_start=request.window_start,
+            window_end=request.window_end,
+            score=result.score,
+            skills=result.skills,
+            evidence_summary=result.evidence_summary,
             source_fingerprint=result.source_fingerprint,
         )
         session.add(snapshot)

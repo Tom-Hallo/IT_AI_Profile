@@ -1,72 +1,126 @@
-"""Fixture dùng chung cho test database (Database Engineer, D1).
+"""Builder dùng chung cho test PBI-017 (chỉ dùng trong test)."""
 
-Alembic luôn được chạy bằng TIẾN TRÌNH CON (`python -m alembic`) giống hệt cách người
-dùng gõ lệnh:
-vừa kiểm tra đúng đường chạy thật, vừa tránh `fileConfig` của Alembic làm đổi cấu hình
-logging
-của tiến trình pytest.
-"""
+from __future__ import annotations
 
-import os
-import subprocess
-import sys
-import uuid
-from collections.abc import Callable, Iterator
-from pathlib import Path
+from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 
-from app.core.config import settings
+from app.ai.scoring import (
+    ArchitectureEvidenceSet,
+    EvidenceRef,
+    RoleScoringEngine,
+    RoleScoringInput,
+    SkillScoreItem,
+    SkillSnapshotInput,
+    load_default_registry,
+)
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-
-AlembicRunner = Callable[..., subprocess.CompletedProcess[str]]
-
-
-@pytest.fixture
-def alembic_cli() -> AlembicRunner:
-    def run(
-        *args: str, database_url: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        env = dict(os.environ)
-        if database_url is not None:
-            env["DATABASE_URL"] = database_url
-        return subprocess.run(
-            [sys.executable, "-m", "alembic", *args],
-            cwd=BACKEND_DIR,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-
-    return run
+FIXED_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
 
 
-@pytest.fixture
-def temp_database_url() -> Iterator[str]:
-    """Tạo một database TẠM trên cùng máy chủ PostgreSQL rồi xóa khi xong.
-
-    Nhờ vậy test migration (kể cả downgrade) không bao giờ đụng vào dữ liệu dev thật.
-    Cần RUN_INTEGRATION=1 và tài khoản có quyền CREATEDB (user trong .env.example là
-    superuser).
-    """
-    if os.environ.get("RUN_INTEGRATION") != "1":
-        pytest.skip("cần RUN_INTEGRATION=1 và PostgreSQL đang chạy")
-
-    base_url = make_url(settings.database_url.get_secret_value())
-    name = f"ita_migration_test_{uuid.uuid4().hex[:10]}"
-    admin = create_engine(
-        base_url.set(database="postgres"), isolation_level="AUTOCOMMIT"
+def arch_ref(
+    classification: str,
+    path: str = "backend/app/x.py",
+    *,
+    confidence: float = 0.9,
+    commit: str = "a" * 40,
+    verified: bool = True,
+) -> EvidenceRef:
+    return EvidenceRef(
+        repository_id=1,
+        commit_sha=commit,
+        file_path=path,
+        finding_type="architecture",
+        classification=classification,
+        confidence_score=confidence,
+        verified=verified,
     )
-    try:
-        with admin.connect() as connection:
-            connection.execute(text(f'CREATE DATABASE "{name}"'))
-        yield base_url.set(database=name).render_as_string(hide_password=False)
-    finally:
-        with admin.connect() as connection:
-            connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
+
+
+def skill(
+    key: str,
+    score: float | None = 80,
+    *,
+    confidence: float | None = 80,
+    status: str = "SCORED",
+    refs: int = 1,
+    ref_prefix: str | None = None,
+) -> SkillScoreItem:
+    prefix = ref_prefix or key
+    return SkillScoreItem(
+        skill_key=key,
+        score=score,
+        confidence=confidence,
+        status=status,
+        evidence_refs=[
+            EvidenceRef(
+                evidence_id=f"{prefix}-{i}",
+                file_path=f"src/{prefix}_{i}",
+                finding_type="language",
+                classification=key,
+            )
+            for i in range(refs)
+        ],
+    )
+
+
+def snapshot(items: list[SkillScoreItem], **kw) -> SkillSnapshotInput:
+    kw.setdefault("snapshot_ref", "snap-1")
+    return SkillSnapshotInput(items=items, **kw)
+
+
+def arch_set(refs: list[EvidenceRef], **kw) -> ArchitectureEvidenceSet:
+    return ArchitectureEvidenceSet(evidence=refs, **kw)
+
+
+def backend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="backend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("python", 80, confidence=80),
+                skill("fastapi", 70, confidence=60),
+                skill("sqlalchemy", 60, confidence=60),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+            repository_ids=["1"],
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("api_service", "backend/app/api/router.py"),
+                arch_ref("layered_architecture", "backend/app/services/s.py"),
+                arch_ref("database_integration", "backend/alembic.ini"),
+                arch_ref("background_workers", "backend/app/workers/worker.py"),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+        ),
+    )
+
+
+def frontend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="frontend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("typescript", 90, confidence=80),
+                skill("react", 80, confidence=70),
+                skill("vite", 50, confidence=60),
+            ]
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("frontend_backend_separation", "frontend/package.json"),
+                arch_ref("frontend_backend_separation", "backend/pyproject.toml"),
+            ]
+        ),
+    )
+
+
+@pytest.fixture
+def engine() -> RoleScoringEngine:
+    return RoleScoringEngine(load_default_registry(), clock=lambda: FIXED_NOW)
