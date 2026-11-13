@@ -13,6 +13,7 @@ from app.modules.consent.router import router as consent_router
 from app.modules.github.router import router as github_router
 from app.modules.github.selection_router import router as selection_router
 from app.modules.jobs.router import router as jobs_router
+from app.modules.profile_sharing.router import router as profile_sharing_router
 from app.modules.roadmap_tracking.router import router as roadmap_tracking_router
 from app.modules.role_scoring.router import router as role_scoring_router
 from app.modules.scoring.router import router as scoring_router
