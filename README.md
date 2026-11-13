@@ -372,3 +372,44 @@ IT_AI_Profile/
 ---
 
 **Phạm vi tài liệu:** Hướng dẫn môi trường phát triển PBI-001. Khi các tính năng AI/GitHub/CV/JD được bổ sung, tài liệu sẽ cần được cập nhật tương ứng.
+
+### Điểm vai trò theo phạm vi (PBI-018)
+
+Đăng nhập và mở **Điểm năng lực theo vai trò** ở trang chính. Chọn vai trò
+và phạm vi **Công khai**, **Riêng tư** hoặc **Kết hợp**. Riêng tư chỉ xuất hiện
+khi tài khoản có repository được phép sử dụng với consent hiện hành.
+
+- `GET /api/v1/role-scoring/roles/{role_key}/score/scoped` trả ba phạm vi
+  riêng, cùng phiên bản rubric. Phản hồi yêu cầu phiên đăng nhập và dùng
+  `Cache-Control: no-store`.
+- Mỗi phạm vi sử dụng báo cáo gần nhất và điểm PBI-016 gắn với báo cáo đó.
+  Snapshot ref được dẫn xuất từ ID của các bản ghi điểm, báo cáo và rubric.
+- Confidence dựa trên bằng chứng đã liên kết hoặc phần confidence của PBI-016
+  đã xác thực nguồn. Coverage là phần trọng số rubric có đủ bằng chứng.
+  Khi dữ liệu thiếu, điểm là `null` và giao diện hiện **Chưa đủ bằng chứng**.
+- Combined chạy lại rubric trên bằng chứng đã khử trùng. Bằng chứng kiến trúc
+  cùng commit/vị trí chỉ tính một lần. Điểm skill có bộ evidence giống hệt
+  chỉ đưa vào rubric một lần. Mỗi phạm vi giới hạn 50 repo theo giới hạn của
+  provider và báo rõ nếu danh sách bị cắt.
+- Kiểm thử có PostgreSQL riêng chạy bằng
+  `RUN_INTEGRATION=1 pytest tests/modules/role_scoring/test_scoped_postgres.py`.
+  Fixture tạo và xóa database tạm qua Alembic.
+
+Đối chiếu SRS 2.0 FR-013 và FR-014. Endpoint chỉ đọc từ schema hiện hành.
+
+### Dashboard hồ sơ và bằng chứng (PBI-019)
+
+Mở **Dashboard hồ sơ** tại `/dashboard`. Chọn vai trò, phạm vi Công khai /
+Riêng tư / Kết hợp và khoảng ngày UTC. Các thanh điểm lấy dữ liệu trực tiếp
+từ API. Điểm vai trò và confidence cùng dùng thang 0–100; độ phủ được chuyển
+từ tỷ lệ sang thang 0–100 khi hiển thị.
+
+- Bộ lọc thời gian lấy báo cáo gần nhất theo ngày phân tích trong khoảng đã
+  chọn, bao gồm cả hai ngày. Điểm kỹ năng và Finding dùng cùng ID báo cáo.
+- Bằng chứng PR lấy từ báo cáo cộng tác gần nhất có sự kiện trong khoảng
+  ngày đã chọn. Dùng ô **Số PR** để xem một PR cụ thể.
+- Quyền repository và consent được kiểm tra trên server khi đọc báo cáo và
+  bằng chứng. Trang **Tài khoản và kết nối GitHub** tại `/system-status`
+  vẫn là nơi quản lý đồng bộ, kết nối và đăng xuất.
+- Kiểm thử API với PostgreSQL riêng:
+  `RUN_INTEGRATION=1 pytest tests/modules/role_scoring/test_dashboard_postgres.py`.

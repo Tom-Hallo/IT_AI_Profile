@@ -36,6 +36,7 @@ from app.modules.analysis.schemas import (
 )
 from app.modules.auth.models import OAuthAccount
 from app.modules.auth.service import get_user_github_token, has_private_access
+from app.modules.consent.guards import require_private_access_consent
 from app.modules.github.client import (
     GitHubApiClient,
     GitHubApiError,
@@ -44,6 +45,7 @@ from app.modules.github.client import (
     GitHubPermissionError,
     GitHubRateLimitError,
     GitHubServerError,
+    GitHubTokenRevokedError,
 )
 from app.modules.github.models import Repository, user_repository
 from app.modules.users.models import User
@@ -111,9 +113,20 @@ def verify_private_repo_consent(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Phân tích repository riêng tư yêu cầu token có scope 'repo'.",
         )
-    from app.modules.consent.guards import require_private_access_consent
-
     require_private_access_consent(db, user_id, repo.id)
+
+
+def _scoring_files(files: Any) -> list[dict[str, Any]]:
+    if not isinstance(files, list) or len(files) > 300:
+        return []
+    return [
+        {"path": item["filename"], "changes": item["changes"]}
+        for item in files
+        if isinstance(item, dict)
+        and isinstance(item.get("filename"), str)
+        and isinstance(item.get("changes"), int)
+        and item["changes"] > 0
+    ]
 
 
 async def verify_repository_contributions(
@@ -159,8 +172,9 @@ async def verify_repository_contributions(
     auth_github_user_id = str(p_uid) if p_uid is not None else None
     auth_github_login: str | None = None
 
-    # Khởi tạo client
-    api_client = client or GitHubApiClient(access_token=token or "")
+    if not token and client is None:
+        raise HTTPException(401, "Vui lòng liên kết lại tài khoản GitHub để xác minh.")
+    api_client = client or GitHubApiClient(access_token=token)
 
     try:
         if token or client:
@@ -169,6 +183,10 @@ async def verify_repository_contributions(
                 auth_github_login = user_profile.get("login")
                 if user_profile.get("id"):
                     auth_github_user_id = str(user_profile.get("id"))
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubApiError:
         pass
 
@@ -206,6 +224,10 @@ async def verify_repository_contributions(
                     limitations.append(
                         "Không thể lấy metadata repository gốc từ GitHub API."
                     )
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except (GitHubNotFoundError, GitHubPermissionError, GitHubApiError) as exc:
         if is_fork:
             parent_repo_name = repo.fork_source
@@ -260,6 +282,8 @@ async def verify_repository_contributions(
     coverage_status = "complete"
     confidence = "high"
     collection_truncated = False
+    collect_score_files = report_id is not None or job_id is not None
+    scoring_files_partial = False
 
     def mark_collection_truncated() -> None:
         nonlocal collection_truncated
@@ -282,6 +306,7 @@ async def verify_repository_contributions(
         async def _inspect_commit(
             c: dict[str, Any],
         ) -> VerificationEvidenceItem | None:
+            nonlocal scoring_files_partial
             sha = c.get("sha", "")
             if not sha or sha in seen_commit_shas:
                 return None
@@ -339,8 +364,13 @@ async def verify_repository_contributions(
 
             additions = None
             deletions = None
+            changed_files = []
             c_stats = c.get("stats")
-            if isinstance(c_stats, dict) and "additions" in c_stats:
+            if (
+                isinstance(c_stats, dict)
+                and "additions" in c_stats
+                and not (collect_score_files and is_author_verified and not is_merge)
+            ):
                 additions = int(c_stats.get("additions", 0))
                 deletions = int(c_stats.get("deletions", 0))
             else:
@@ -349,11 +379,19 @@ async def verify_repository_contributions(
                         details = await api_client.get_commit_details(
                             owner, repo_name, sha
                         )
+                        if collect_score_files and is_author_verified and not is_merge:
+                            files = details.get("files")
+                            changed_files = _scoring_files(files)
+                            if not isinstance(files, list) or len(files) > 300:
+                                scoring_files_partial = True
                         stats = details.get("stats") or {}
                         additions = int(stats.get("additions", 0))
                         deletions = int(stats.get("deletions", 0))
+                except GitHubTokenRevokedError:
+                    raise
                 except Exception:
-                    pass
+                    if collect_score_files and is_author_verified and not is_merge:
+                        scoring_files_partial = True
 
             parent_contains_commit: bool | None = None
 
@@ -372,6 +410,8 @@ async def verify_repository_contributions(
                 except GitHubNotFoundError:
                     parent_contains_commit = False
 
+                except GitHubTokenRevokedError:
+                    raise
                 except GitHubApiError:
                     parent_contains_commit = None
 
@@ -436,6 +476,7 @@ async def verify_repository_contributions(
                 metadata={
                     "sha": sha,
                     "parents_count": len(c.get("parents", [])),
+                    "changed_files": changed_files if v_status == "verified" else [],
                 },
             )
 
@@ -453,6 +494,10 @@ async def verify_repository_contributions(
                     else:
                         unverified_commits_count += 1
 
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubRateLimitError:
         coverage_status = "partial"
         confidence = "uncertain"
@@ -483,6 +528,7 @@ async def verify_repository_contributions(
             on_truncated=mark_collection_truncated,
         )
 
+        requested_pr_files = 0
         for pr in raw_prs:
             pr_num = pr.get("number")
             if not pr_num or pr_num in seen_pr_numbers:
@@ -534,6 +580,27 @@ async def verify_repository_contributions(
                 rationale = f"Pull Request #{pr_num} do @{pr_user_login} tạo."
                 unverified_prs_count += 1
 
+            changed_files = []
+            if (
+                collect_score_files
+                and is_pr_author
+                and pr_user.get("type") != "Bot"
+                and base_data.get("ref") == target_branch
+            ):
+                if requested_pr_files >= 20:
+                    scoring_files_partial = True
+                else:
+                    requested_pr_files += 1
+                    try:
+                        changed_files = _scoring_files(
+                            await api_client.get_pull_request_files(
+                                owner, repo_name, int(pr_num)
+                            )
+                        )
+                    except GitHubTokenRevokedError:
+                        raise
+                    except GitHubApiError:
+                        scoring_files_partial = True
             evidence_list.append(
                 VerificationEvidenceItem(
                     evidence_type="pull_request",
@@ -554,10 +621,15 @@ async def verify_repository_contributions(
                         "number": pr_num,
                         "state": pr_state,
                         "merged": pr_merged,
+                        "changed_files": changed_files,
                     },
                 )
             )
 
+    except GitHubTokenRevokedError as exc:
+        raise HTTPException(
+            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+        ) from exc
     except GitHubRateLimitError:
         coverage_status = "partial"
         confidence = "uncertain"
@@ -713,7 +785,7 @@ async def verify_repository_contributions(
         anti_inflation_flag=anti_inflation_flag,
         time_range=time_range_info,
         limitations=limitations,
-        summary_data=summary_data,
+        summary_data={**summary_data, "scoring_files_partial": scoring_files_partial},
         verified_at=verified_at.isoformat(),
         evidence=evidence_list,
     )
@@ -728,24 +800,30 @@ def get_stored_verification(
     db: Session,
     repository_id: int,
     user: User,
+    *,
+    report_id: int | None = None,
 ) -> RepositoryVerificationResponse | None:
     """Truy xuất bản ghi xác minh gần nhất đã lưu trong cơ sở dữ liệu."""
-    verify_repository_access(db, repository_id, user)
+    repo = verify_repository_access(db, repository_id, user)
+    if repo.private:
+        require_private_access_consent(db, user.id, repo.id)
 
+    query = select(RepositoryVerification).where(
+        RepositoryVerification.repository_id == repository_id,
+        RepositoryVerification.user_id == user.id,
+    )
+    if report_id is not None:
+        query = query.where(RepositoryVerification.report_id == report_id)
     verif = db.scalar(
-        select(RepositoryVerification)
-        .where(
-            RepositoryVerification.repository_id == repository_id,
-            RepositoryVerification.user_id == user.id,
-        )
-        .order_by(desc(RepositoryVerification.verified_at))
+        query.order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        ).limit(1)
     )
     if not verif:
         return None
 
-    repo = db.scalar(select(Repository).where(Repository.id == repository_id))
-    repo_name = repo.name if repo else "unknown"
-    repo_full_name = repo.full_name or repo_name if repo else "unknown"
+    repo_name = repo.name
+    repo_full_name = repo.full_name or repo_name
 
     ev_rows = db.scalars(
         select(VerificationEvidence)
@@ -822,15 +900,21 @@ def get_verification_summary(
     db: Session,
     repository_id: int,
     user: User,
+    *,
+    report_id: int,
 ) -> RepositoryVerificationSummary | None:
-    """Lấy bản tóm tắt xác minh để nhúng vào báo cáo phân tích mã nguồn."""
+    """Return the caller's verification for this exact report."""
     verif = db.scalar(
         select(RepositoryVerification)
         .where(
             RepositoryVerification.repository_id == repository_id,
             RepositoryVerification.user_id == user.id,
+            RepositoryVerification.report_id == report_id,
         )
-        .order_by(desc(RepositoryVerification.verified_at))
+        .order_by(
+            desc(RepositoryVerification.verified_at), desc(RepositoryVerification.id)
+        )
+        .limit(1)
     )
     if not verif:
         return None
@@ -880,6 +964,7 @@ def persist_verification_result(
         select(RepositoryVerification).where(
             RepositoryVerification.repository_id == result.repository_id,
             RepositoryVerification.user_id == result.user_id,
+            RepositoryVerification.report_id == result.report_id,
         )
     )
 
@@ -960,6 +1045,10 @@ def persist_verification_result(
 
     db.flush()
 
+    if result.report_id is not None:
+        from app.modules.scoring.snapshots import save_skill_snapshots
+
+        save_skill_snapshots(db, result, verif.id)
     if commit:
         db.commit()
 

@@ -11,16 +11,21 @@ import asyncio
 import logging
 from typing import Any
 
+from rq import get_current_job
 from sqlalchemy import select
 
 from app.db.session import session_scope
+from app.modules.github.schemas import RepositoryVisibility
 from app.modules.github.service import set_sync_status_cache, sync_repositories_for_user
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
 
 
-def sync_user_repositories_task(user_id: int) -> dict[str, Any]:
+def sync_user_repositories_task(
+    user_id: int,
+    visibility: RepositoryVisibility | None = None,
+) -> dict[str, Any]:
     """Task RQ thực thi đồng bộ repositories cho người dùng."""
     if not isinstance(user_id, int) or user_id <= 0:
         raise ValueError("user_id không hợp lệ.")
@@ -31,7 +36,11 @@ def sync_user_repositories_task(user_id: int) -> dict[str, Any]:
             if not user:
                 raise ValueError(f"Không tìm thấy người dùng với id={user_id}")
 
-            result = asyncio.run(sync_repositories_for_user(db, user))
+            options = {"visibility": visibility} if visibility else {}
+            job = get_current_job()
+            if job is not None:
+                options["job_id"] = job.id
+            result = asyncio.run(sync_repositories_for_user(db, user, **options))
             logger.info(
                 f"Hoàn thành đồng bộ repositories cho user_id={user_id}: {result}"
             )
@@ -39,6 +48,7 @@ def sync_user_repositories_task(user_id: int) -> dict[str, Any]:
                 "user_id": user_id,
                 "status": result.get("status"),
                 "synced_count": result.get("synced_count"),
+                "synced_visibility": result.get("synced_visibility"),
                 "last_synced_at": result.get("last_synced_at"),
             }
     except BaseException as exc:

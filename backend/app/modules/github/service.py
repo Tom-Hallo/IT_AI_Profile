@@ -19,6 +19,7 @@ from typing import Any
 
 from dateutil.parser import ParserError, isoparse
 from redis.exceptions import RedisError
+from rq.exceptions import NoSuchJobError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from app.modules.github.client import (
     GitHubTokenRevokedError,
 )
 from app.modules.github.models import Repository, user_repository
+from app.modules.github.schemas import RepositoryVisibility
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -82,10 +84,11 @@ def get_sync_status_cache(user_id: int) -> dict[str, Any] | None:
 def set_sync_status_cache(
     user_id: int,
     status: str,
-    total_synced: int = 0,
+    total_synced: int | None = None,
     last_synced_at: str | None = None,
     error_message: str | None = None,
     job_id: str | None = None,
+    synced_visibility: RepositoryVisibility | None = None,
 ) -> None:
     """Lưu trạng thái đồng bộ vào Redis."""
     try:
@@ -93,6 +96,7 @@ def set_sync_status_cache(
         data = {
             "status": status,
             "total_synced": total_synced,
+            "synced_visibility": synced_visibility,
             "last_synced_at": last_synced_at,
             "error_message": error_message,
             "job_id": job_id,
@@ -148,7 +152,7 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
     last_synced_at = last_synced_dt.isoformat() if last_synced_dt else None
 
     # Đọc cache Redis nếu đang chạy hoặc có lỗi
-    cached = get_sync_status_cache(user_id)
+    cached = get_sync_status_cache(user_id) if is_connected else None
     status = "idle"
     error_message = None
 
@@ -167,7 +171,28 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
 
                     job = fetch_job(cached_job_id)
                     job_status = job.get_status(refresh=True).value
-                    if job_status in ("failed", "stopped", "canceled"):
+                    if job_status == "finished":
+                        result = job.return_value()
+                        if (
+                            isinstance(result, dict)
+                            and result.get("status") == "completed"
+                        ):
+                            status = "completed"
+                            last_synced_at = (
+                                result.get("last_synced_at") or last_synced_at
+                            )
+                            cached.update(
+                                total_synced=result.get("synced_count"),
+                                synced_visibility=result.get("synced_visibility"),
+                            )
+                            set_sync_status_cache(
+                                user_id,
+                                status=status,
+                                total_synced=cached["total_synced"],
+                                synced_visibility=cached["synced_visibility"],
+                                last_synced_at=last_synced_at,
+                            )
+                    elif job_status in ("failed", "stopped", "canceled"):
                         status = "failed"
                         error_message = (
                             "Tác vụ đồng bộ đã thất bại hoặc quá thời gian xử lý."
@@ -178,7 +203,7 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
                             error_message=error_message,
                             last_synced_at=last_synced_at,
                         )
-                except (RedisError, OSError, TypeError) as exc:
+                except (RedisError, NoSuchJobError, OSError, TypeError) as exc:
                     logger.debug(
                         "Không thể kiểm tra trạng thái RQ job %s: %s",
                         cached_job_id,
@@ -201,7 +226,19 @@ def get_user_sync_status(db: Session, user_id: int) -> dict[str, Any]:
                             last_synced_at=last_synced_at,
                         )
 
+    synced_visibility = cached.get("synced_visibility") if cached else None
+    if (
+        status != "completed"
+        or not is_connected
+        or (synced_visibility in ("all", "private") and not can_access_private)
+    ):
+        synced_visibility = None
+
     return {
+        "synced_count": (
+            cached.get("total_synced") if cached and synced_visibility else None
+        ),
+        "synced_visibility": synced_visibility,
         "status": status,
         "is_connected": is_connected,
         "has_private_scope": has_private_scope,
@@ -215,6 +252,9 @@ async def sync_repositories_for_user(
     db: Session,
     user: User,
     client: GitHubApiClient | None = None,
+    *,
+    visibility: RepositoryVisibility = "all",
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     """Thực hiện đồng bộ repositories từ GitHub API vào PostgreSQL.
 
@@ -228,28 +268,36 @@ async def sync_repositories_for_user(
 
     if hasattr(client, "__aenter__") and hasattr(client, "__aexit__"):
         async with client:
-            return await _sync_repositories_for_user_impl(db, user, client)
-    return await _sync_repositories_for_user_impl(db, user, client)
+            return await _sync_repositories_for_user_impl(
+                db, user, client, visibility, job_id
+            )
+    return await _sync_repositories_for_user_impl(db, user, client, visibility, job_id)
 
 
 async def _sync_repositories_for_user_impl(
     db: Session,
     user: User,
     client: GitHubApiClient,
+    visibility: RepositoryVisibility,
+    job_id: str | None,
 ) -> dict[str, Any]:
-    set_sync_status_cache(user.id, status="running")
+    set_sync_status_cache(user.id, status="running", job_id=job_id)
 
     try:
         can_access_private = has_private_access(db, user.id)
-        if can_access_private:
-            repos_data = await client.list_repositories()
-        else:
-            try:
-                repos_data = await client.list_repositories(visibility="public")
-            except TypeError:
-                repos_data = await client.list_repositories()
+        if visibility == "private" and not can_access_private:
+            raise GitHubPermissionError(
+                "GitHub hiện chỉ cấp quyền Public. "
+                "Hãy cấp quyền Private trước khi đồng bộ."
+            )
+        effective_visibility = visibility if can_access_private else "public"
+        repos_data = await client.list_repositories(visibility=effective_visibility)
+        if effective_visibility != "all":
             repos_data = [
-                r for r in repos_data if not (isinstance(r, dict) and r.get("private"))
+                repo
+                for repo in repos_data
+                if isinstance(repo, dict)
+                and bool(repo.get("private")) == (effective_visibility == "private")
             ]
         sync_timestamp = datetime.now(UTC)
 
@@ -494,12 +542,14 @@ async def _sync_repositories_for_user_impl(
             user.id,
             status="completed",
             total_synced=len(unique_repos_data),
+            synced_visibility=effective_visibility,
             last_synced_at=sync_timestamp.isoformat(),
         )
 
         return {
             "status": "completed",
             "synced_count": len(unique_repos_data),
+            "synced_visibility": effective_visibility,
             "last_synced_at": sync_timestamp.isoformat(),
         }
 

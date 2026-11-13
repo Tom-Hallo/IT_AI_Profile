@@ -36,12 +36,16 @@ export interface RepositoryListResponse {
   total_pages: number
 }
 
+export type RepositoryVisibility = 'all' | 'public' | 'private'
+
 export type SyncStatusType = 'idle' | 'running' | 'completed' | 'failed'
 
 export interface SyncStatusResponse {
   status: SyncStatusType
   is_connected: boolean
   has_private_scope: boolean
+  synced_count?: number | null
+  synced_visibility?: RepositoryVisibility | null
   total_repositories: number
   last_synced_at: string | null
   error_message: string | null
@@ -51,12 +55,15 @@ export interface SyncTriggerResponse {
   status: string
   message: string
   job_id: string | null
+  synced_count?: number | null
+  synced_visibility?: RepositoryVisibility | null
+  last_synced_at?: string | null
 }
 
 export interface RepositoryQueryParams {
   page?: number
   per_page?: number
-  visibility?: 'all' | 'public' | 'private'
+  visibility?: RepositoryVisibility
   search?: string
 }
 
@@ -145,6 +152,7 @@ export interface EvidenceListResult {
 }
 
 export interface AnalysisJobInfo {
+  report_id?: number | null
   id: string
   repo_id: number
   scope: string

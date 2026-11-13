@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isAbortError } from '@/shared/api/client'
 import {
   disconnectGitHub,
@@ -8,23 +8,37 @@ import {
 } from './api'
 import type {
   RepositoryListResponse,
-  RepositoryQueryParams,
+  RepositoryVisibility,
   SyncStatusResponse,
+  SyncTriggerResponse,
 } from './types'
+
+function completedMessage(result: SyncTriggerResponse | SyncStatusResponse) {
+  const labels = { public: ' công khai', private: ' riêng tư', all: '' }
+  if (result.synced_count == null || !result.synced_visibility) {
+    return 'Đồng bộ GitHub hoàn tất.'
+  }
+  const label = labels[result.synced_visibility]
+  return result.synced_count === 0
+    ? `Đồng bộ hoàn tất. Không tìm thấy repository${label}.`
+    : `Đồng bộ hoàn tất. Đã đồng bộ ${result.synced_count} repository${label}.`
+}
 
 export function useGitHubRepositories(isAuthenticated: boolean) {
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null)
-  const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
-
-  const [repoData, setRepoData] = useState<RepositoryListResponse | null>(null)
-  const [reposLoading, setReposLoading] = useState(false)
-  const [reposError, setReposError] = useState<string | null>(null)
+  const [statusRevision, setStatusRevision] = useState(0)
+  const [listRevision, setListRevision] = useState(0)
+  const [listResult, setListResult] = useState<{
+    key: string
+    data?: RepositoryListResponse
+    error?: string
+  } | null>(null)
 
   const [page, setPage] = useState(1)
-  const [perPage] = useState(10)
-  const [visibility, setVisibility] = useState<'all' | 'public' | 'private'>('all')
+  const [visibility, setVisibility] = useState<RepositoryVisibility>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const search = searchQuery.trim()
 
   const [isSyncTriggering, setIsSyncTriggering] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
@@ -33,230 +47,163 @@ export function useGitHubRepositories(isAuthenticated: boolean) {
     message: string
   } | null>(null)
 
-  const pollIntervalRef = useRef<number | null>(null)
+  const privateBlocked = visibility === 'private' && !syncStatus?.has_private_scope
+  const canLoadList = isAuthenticated && syncStatus?.is_connected && !privateBlocked
+  const listKey = JSON.stringify([visibility, page, search, listRevision])
+  const currentList = canLoadList && listResult?.key === listKey ? listResult : null
+  const repoData = currentList?.data
+  const running = syncStatus?.status === 'running'
 
-  // Tải trạng thái đồng bộ thủ công
-  const loadSyncStatus = useCallback(async () => {
-    if (!isAuthenticated) return
-    setStatusLoading(true)
-    setStatusError(null)
-    try {
-      const data = await fetchSyncStatus()
-      setSyncStatus(data)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Không thể tải trạng thái đồng bộ'
-      setStatusError(msg)
-    } finally {
-      setStatusLoading(false)
-    }
-  }, [isAuthenticated])
-
-  // Tải danh sách repositories thủ công
-  const loadRepositories = useCallback(
-    async (params?: Partial<RepositoryQueryParams>) => {
-      if (!isAuthenticated) return
-      setReposLoading(true)
-      setReposError(null)
-      try {
-        const queryParams: RepositoryQueryParams = {
-          page: params?.page ?? page,
-          per_page: params?.per_page ?? perPage,
-          visibility: params?.visibility ?? visibility,
-          search: params?.search !== undefined ? params.search : searchQuery,
-        }
-        const data = await fetchRepositories(queryParams)
-        setRepoData(data)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Không thể tải danh sách repository'
-        setReposError(msg)
-      } finally {
-        setReposLoading(false)
-      }
-    },
-    [isAuthenticated, page, perPage, visibility, searchQuery],
-  )
-
-  // Khởi tạo và đồng bộ dữ liệu khi authentication hoặc query thay đổi
   useEffect(() => {
-    if (!isAuthenticated) {
-      return
-    }
-
-    let cancelled = false
+    if (!isAuthenticated) return
     const controller = new AbortController()
+    fetchSyncStatus(controller.signal).then((data) => {
+      if (controller.signal.aborted) return
+      setSyncStatus(data)
+      setStatusError(null)
+    }).catch((err: unknown) => {
+      if (controller.signal.aborted || isAbortError(err)) return
+      setStatusError(err instanceof Error ? err.message : 'Không thể tải trạng thái đồng bộ')
+    })
+    return () => controller.abort()
+  }, [isAuthenticated, statusRevision])
 
-    fetchSyncStatus(controller.signal)
-      .then((data) => {
-        if (!cancelled) setSyncStatus(data)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled && !isAbortError(err)) {
-          const msg = err instanceof Error ? err.message : 'Không thể tải trạng thái đồng bộ'
-          setStatusError(msg)
-        }
-      })
-
-    fetchRepositories(
-      { page, per_page: perPage, visibility, search: searchQuery },
-      controller.signal,
-    )
-      .then((data) => {
-        if (!cancelled) setRepoData(data)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled && !isAbortError(err)) {
-          const msg = err instanceof Error ? err.message : 'Không thể tải danh sách repository'
-          setReposError(msg)
-        }
-      })
-
+  useEffect(() => {
+    if (!canLoadList) return
+    const controller = new AbortController()
+    const load = () => {
+      fetchRepositories({ page, per_page: 10, visibility, search }, controller.signal)
+        .then((data) => {
+          if (!controller.signal.aborted) setListResult({ key: listKey, data })
+        })
+        .catch((err: unknown) => {
+          if (controller.signal.aborted || isAbortError(err)) return
+          const error = err instanceof Error ? err.message : 'Không thể tải danh sách repository'
+          setListResult({ key: listKey, error })
+        })
+    }
+    const timer = window.setTimeout(load, search ? 250 : 0)
     return () => {
-      cancelled = true
+      window.clearTimeout(timer)
       controller.abort()
     }
-  }, [isAuthenticated, page, perPage, visibility, searchQuery])
+  }, [canLoadList, listKey, page, search, visibility])
 
-  // Polling khi trạng thái đồng bộ đang chạy ("running")
   useEffect(() => {
-    if (syncStatus?.status === 'running') {
-      let consecutiveErrors = 0
-      pollIntervalRef.current = window.setInterval(async () => {
-        try {
-          const updated = await fetchSyncStatus()
-          consecutiveErrors = 0
-          setSyncStatus(updated)
-          if (updated.status !== 'running') {
-            if (pollIntervalRef.current !== null) {
-              clearInterval(pollIntervalRef.current)
-              pollIntervalRef.current = null
-            }
-            // Đồng bộ xong, cập nhật lại danh sách repository
-            void loadRepositories()
-            if (updated.status === 'completed') {
-              setActionNotice({
-                type: 'success',
-                message: `Đồng bộ hoàn tất! Tìm thấy ${updated.total_repositories} repository.`,
-              })
-            } else if (updated.status === 'failed') {
-              setActionNotice({
-                type: 'error',
-                message: `Đồng bộ thất bại: ${updated.error_message ?? 'Đã xảy ra lỗi'}`,
-              })
-            }
+    if (!isAuthenticated || !running) return
+    const controller = new AbortController()
+    let timer: number
+    let consecutiveErrors = 0
+    const poll = async () => {
+      try {
+        const updated = await fetchSyncStatus(controller.signal)
+        if (controller.signal.aborted) return
+        consecutiveErrors = 0
+        setStatusError(null)
+        setSyncStatus(updated)
+        if (updated.status !== 'running') {
+          setListRevision((n) => n + 1)
+          if (updated.status === 'completed') {
+            setActionNotice({ type: 'success', message: completedMessage(updated) })
           }
-        } catch {
-          consecutiveErrors += 1
-          if (consecutiveErrors >= 5) {
-            if (pollIntervalRef.current !== null) {
-              clearInterval(pollIntervalRef.current)
-              pollIntervalRef.current = null
-            }
-            setStatusError('Không thể tiếp tục theo dõi tiến trình đồng bộ (lỗi mạng hoặc máy chủ).')
-          }
+          return
         }
-      }, 2500)
-    }
-
-    return () => {
-      if (pollIntervalRef.current !== null) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
+      } catch {
+        if (controller.signal.aborted) return
+        consecutiveErrors += 1
+        if (consecutiveErrors >= 5) {
+          setStatusError('Đang mất kết nối khi theo dõi đồng bộ. Hệ thống sẽ tự kiểm tra lại.')
+        }
       }
+      timer = window.setTimeout(poll, consecutiveErrors >= 5 ? 10000 : 2500)
     }
-  }, [syncStatus?.status, loadRepositories])
+    timer = window.setTimeout(poll, 1000)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [isAuthenticated, running])
 
-  // Kích hoạt đồng bộ
-  const handleTriggerSync = async (background = true) => {
+  const handleTriggerSync = async (background: boolean) => {
+    if (!syncStatus?.is_connected || privateBlocked || running || isSyncTriggering || isDisconnecting) return
     setIsSyncTriggering(true)
     setActionNotice(null)
     try {
-      const resp = await apiTriggerSync(background)
-      setActionNotice({
-        type: 'info',
-        message: resp.message || 'Đã gửi yêu cầu đồng bộ repositories.',
+      const resp = await apiTriggerSync(background, visibility)
+      setSyncStatus((previous) => previous && {
+        ...previous,
+        status: resp.status === 'completed' ? 'completed' : 'running',
+        last_synced_at: resp.last_synced_at ?? previous.last_synced_at,
+        error_message: null,
       })
-      await loadSyncStatus()
-      if (!background) {
-        await loadRepositories()
+      if (resp.status === 'completed') {
+        setActionNotice({ type: 'success', message: completedMessage(resp) })
+        setListRevision((n) => n + 1)
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Không thể kích hoạt đồng bộ'
-      setActionNotice({ type: 'error', message: msg })
+      const message = err instanceof Error ? err.message : 'Không thể kích hoạt đồng bộ'
+      setActionNotice({ type: 'error', message })
+      setStatusRevision((n) => n + 1)
     } finally {
       setIsSyncTriggering(false)
     }
   }
 
-  // Hủy kết nối GitHub
   const handleDisconnect = async () => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy liên kết GitHub? Token đã lưu sẽ bị xóa.')) {
-      return
-    }
+    if (!window.confirm('Bạn có chắc chắn muốn hủy liên kết GitHub? Token đã lưu sẽ bị xóa.')) return
     setIsDisconnecting(true)
     setActionNotice(null)
     try {
       const res = await disconnectGitHub()
       setActionNotice({ type: 'success', message: res.message })
-      setSyncStatus((prev) => (prev ? { ...prev, is_connected: false, status: 'idle' } : null))
-      setRepoData(null)
-      await loadSyncStatus()
+      setSyncStatus((prev) => prev && { ...prev, is_connected: false, status: 'idle' })
+      setListResult(null)
+      setPage(1)
+      setVisibility('all')
+      setSearchQuery('')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Không thể hủy liên kết GitHub'
-      setActionNotice({ type: 'error', message: msg })
+      const message = err instanceof Error ? err.message : 'Không thể hủy liên kết GitHub'
+      setActionNotice({ type: 'error', message })
     } finally {
       setIsDisconnecting(false)
     }
   }
 
-  // Thay đổi bộ lọc visibility
-  const handleVisibilityChange = (newVisibility: 'all' | 'public' | 'private') => {
-    setVisibility(newVisibility)
-    setPage(1)
-    void loadRepositories({ visibility: newVisibility, page: 1 })
-  }
-
-  // Tìm kiếm repository
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query)
-    setPage(1)
-    void loadRepositories({ search: query, page: 1 })
-  }
-
-  // Chuyển trang
-  const handlePageChange = (newPage: number) => {
-    setPage(newPage)
-    void loadRepositories({ page: newPage })
-  }
-
   return {
     syncStatus,
-    statusLoading,
+    statusLoading: !syncStatus && !statusError,
     statusError,
     repositories: repoData?.items ?? [],
     pagination: repoData
       ? {
           total: repoData.total,
           page: repoData.page,
-          perPage: repoData.per_page,
           totalPages: repoData.total_pages,
         }
       : null,
-    reposLoading,
-    reposError,
+    reposLoading: Boolean(canLoadList && !currentList),
+    reposError: currentList?.error,
+    privateBlocked,
     visibility,
     searchQuery,
     page,
     isSyncTriggering,
     isDisconnecting,
     actionNotice,
+    dismissNotice: () => setActionNotice(null),
     triggerSync: handleTriggerSync,
     disconnect: handleDisconnect,
-    changeVisibility: handleVisibilityChange,
-    changeSearch: handleSearchChange,
-    changePage: handlePageChange,
-    refresh: () => {
-      void loadSyncStatus()
-      void loadRepositories()
+    changeVisibility: (next: RepositoryVisibility) => {
+      setVisibility(next)
+      setPage(1)
+      setActionNotice(null)
     },
+    changeSearch: (query: string) => {
+      setSearchQuery(query)
+      setPage(1)
+    },
+    changePage: setPage,
+    retryList: () => setListRevision((n) => n + 1),
+    retryStatus: () => setStatusRevision((n) => n + 1),
   }
 }

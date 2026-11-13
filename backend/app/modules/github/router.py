@@ -24,6 +24,7 @@ from app.modules.github.models import Repository, user_repository
 from app.modules.github.schemas import (
     RepositoryItemResponse,
     RepositoryListResponse,
+    RepositoryVisibility,
     SyncStatusResponse,
     SyncTriggerResponse,
 )
@@ -50,6 +51,7 @@ async def trigger_repository_sync(
         default=True,
         description="Chạy tác vụ trong nền với RQ (mặc định: True)",
     ),
+    visibility: RepositoryVisibility | None = None,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> SyncTriggerResponse:
@@ -65,6 +67,16 @@ async def trigger_repository_sync(
             ),
         )
 
+    if visibility == "private" and not has_private_access(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "GitHub hiện chỉ cấp quyền Public. "
+                "Hãy cấp quyền Private trước khi đồng bộ."
+            ),
+        )
+
+    scope_args = (visibility,) if visibility is not None else ()
     current_status = get_user_sync_status(db, current_user.id)
     if current_status["status"] == "running":
         raise HTTPException(
@@ -77,6 +89,7 @@ async def trigger_repository_sync(
             job = enqueue_task(
                 "app.workers.tasks.sync_repositories.sync_user_repositories_task",
                 current_user.id,
+                *scope_args,
                 job_timeout=settings.github_sync_timeout_seconds,
             )
             set_sync_status_cache(
@@ -96,11 +109,14 @@ async def trigger_repository_sync(
             )
 
     try:
-        result = await sync_repositories_for_user(db, current_user)
+        result = await sync_repositories_for_user(
+            db, current_user, **({"visibility": visibility} if visibility else {})
+        )
         return SyncTriggerResponse(
             status="completed",
             message="Đồng bộ repositories thành công.",
             synced_count=result.get("synced_count"),
+            synced_visibility=result.get("synced_visibility"),
             last_synced_at=result.get("last_synced_at"),
         )
     except GitHubTokenRevokedError as exc:
@@ -151,6 +167,10 @@ def list_user_repositories(
     """Lấy danh sách repositories đã đồng bộ thuộc quyền truy cập của người dùng."""
 
     can_access_private = has_private_access(db, current_user.id)
+    if visibility == "private" and not can_access_private:
+        return RepositoryListResponse(
+            items=[], total=0, page=page, per_page=per_page, total_pages=1
+        )
 
     base_query = (
         select(Repository)
@@ -161,20 +181,10 @@ def list_user_repositories(
         .where(user_repository.c.user_id == current_user.id)
     )
 
-    if not can_access_private:
-        # Khi không có quyền private, nếu yêu cầu 'private' trả về rỗng;
-        # ngược lại chỉ hiển thị public
-        if visibility == "private":
-            base_query = base_query.where(
-                Repository.private.is_(True), Repository.private.is_(False)
-            )
-        else:
-            base_query = base_query.where(Repository.private.is_(False))
-    else:
-        if visibility == "public":
-            base_query = base_query.where(Repository.private.is_(False))
-        elif visibility == "private":
-            base_query = base_query.where(Repository.private.is_(True))
+    if not can_access_private or visibility == "public":
+        base_query = base_query.where(Repository.private.is_(False))
+    elif visibility == "private":
+        base_query = base_query.where(Repository.private.is_(True))
 
     if search and search.strip():
         search_pattern = f"%{search.strip()}%"
@@ -198,6 +208,7 @@ def list_user_repositories(
         base_query.order_by(
             Repository.pushed_at.desc().nullslast(),
             Repository.updated_at.desc(),
+            Repository.id.desc(),
         )
         .offset(offset)
         .limit(per_page)

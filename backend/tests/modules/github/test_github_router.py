@@ -331,3 +331,26 @@ def test_tokens_never_leaked_in_responses(app, test_user, mock_db):
     assert "token" not in response_text.lower()
     assert "gho_" not in response_text
     assert "secret" not in response_text.lower()
+
+
+@pytest.mark.parametrize("background", ["true", "false"])
+def test_private_sync_rejects_public_only_connection(app, test_user, background):
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    app.dependency_overrides[get_session] = lambda: object()
+
+    with (
+        patch(
+            "app.modules.github.router.get_user_github_token",
+            return_value=("token", "read:user"),
+        ),
+        patch("app.modules.github.router.has_private_access", return_value=False),
+        patch("app.modules.github.router.enqueue_task") as enqueue,
+        patch("app.modules.github.router.sync_repositories_for_user") as sync,
+    ):
+        response = TestClient(app).post(
+            f"/api/v1/github/sync?background={background}&visibility=private"
+        )
+
+    assert response.status_code == 403
+    enqueue.assert_not_called()
+    sync.assert_not_called()

@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from redis.exceptions import RedisError
 from sqlalchemy import select
@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
+from app.core.time_range import resolve_range
 from app.db.session import get_session
 from app.modules.analysis import service
 from app.modules.analysis.collaboration_router import collaboration_router
 from app.modules.analysis.finding_router import router as finding_router
-from app.modules.analysis.models import AnalysisJobEvent
+from app.modules.analysis.models import AnalysisJobEvent, AnalysisReport
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     EvidenceListResponse,
     RepositoryAnalysisRequest,
@@ -31,6 +33,8 @@ from app.modules.analysis.service import (
     analyze_repository,
     get_analysis_evidence,
     get_latest_analysis,
+    verify_private_repo_consent,
+    verify_repository_access,
 )
 from app.modules.analysis.verification_router import verification_router
 from app.modules.users.models import User
@@ -86,13 +90,18 @@ def csrf(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid Origin")
 
 
-def dispatch(job: Any, db: Session) -> None:
-    """Fail closed if Redis cannot accept the job; do not leave it queued."""
+def dispatch(job: Any, db: Session, *, recoverable: bool = False) -> None:
+    """Dispatch a job, optionally leaving it queued for maintenance on failure."""
     try:
-        enqueue_task("app.workers.tasks.analysis.run_analysis", str(job.id))
+        enqueue_task(
+            "app.workers.tasks.analysis.run_analysis",
+            str(job.id),
+            job_id=f"analysis-{job.id}",
+        )
     except (RedisError, ConnectionError, TimeoutError, OSError) as exc:
         logger.error("Analysis enqueue failed: %s", type(exc).__name__)
-        service.fail_dispatch(db, job.id)
+        if not recoverable:
+            service.fail_dispatch(db, job.id)
         raise HTTPException(
             status_code=503,
             detail="Analysis queue unavailable. Please retry later.",
@@ -108,8 +117,25 @@ def create_job(
 ):
     csrf(request)
     assert body.repo_id is not None
-    job, created = service.create(db, user.id, body.repo_id, body.scope)
-    if created:
+    options = body.model_dump(
+        mode="json", exclude={"repo_id", "repository_id", "scope"}, exclude_none=True
+    )
+    if body.mode:
+        resolve_range(
+            mode=body.mode,
+            preset=body.preset,
+            month=body.month,
+            year=body.year,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            timezone_name=body.timezone or "UTC",
+        )
+    else:
+        options = {"branch": body.branch} if body.branch else {}
+    job, created = service.create(
+        db, user.id, body.repo_id, body.scope, request_options=options or None
+    )
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 
@@ -168,7 +194,7 @@ def retry_job(
 ):
     csrf(request)
     job, created = service.retry(db, user.id, job_id)
-    if created:
+    if created or job.status == "queued":
         dispatch(job, db)
     return service.serialize(job)
 
@@ -212,7 +238,8 @@ async def trigger_repository_analysis(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 
@@ -243,6 +270,7 @@ def get_repository_analysis_report(
         repository_id=repository_id,
         user=current_user,
         commit_sha=commit_sha,
+        include_evidence=False,
     )
     return RepositoryAnalysisResponse(
         report_id=result.get("report_id"),
@@ -255,7 +283,8 @@ def get_repository_analysis_report(
         languages=result["languages"],
         frameworks=result["frameworks"],
         architecture=result["architecture"],
-        evidence_count=len(result.get("evidence", [])),
+        evidence_count=result.get("evidence_count", len(result.get("evidence", []))),
+        verification=result.get("verification"),
         budget=result["budget"],
     )
 
@@ -296,6 +325,39 @@ def get_repository_evidence_records(
         commit_sha=actual_sha,
         total=len(evidence_items),
         items=evidence_items,
+    )
+
+
+class DashboardReport(BaseModel):
+    id: int
+    commit_sha: str
+    analyzed_at: datetime
+
+
+@repo_router.get("/{repository_id}/analysis/dashboard-report")
+def get_dashboard_report(
+    repository_id: int,
+    response: Response,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
+) -> DashboardReport | None:
+    repo = verify_repository_access(db, repository_id, user)
+    verify_private_repo_consent(repo, None, db=db, user_id=user.id)
+    response.headers["Cache-Control"] = "no-store"
+    report = db.execute(
+        select(AnalysisReport.id, AnalysisReport.commit_sha, AnalysisReport.analyzed_at)
+        .where(
+            AnalysisReport.repository_id == repository_id,
+            *window.conditions(AnalysisReport.analyzed_at),
+        )
+        .order_by(AnalysisReport.analyzed_at.desc(), AnalysisReport.id.desc())
+        .limit(1)
+    ).one_or_none()
+    if report is None:
+        return None
+    return DashboardReport(
+        id=report.id, commit_sha=report.commit_sha, analyzed_at=report.analyzed_at
     )
 
 

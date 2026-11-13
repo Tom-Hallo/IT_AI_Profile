@@ -52,9 +52,18 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     github_token_encryption_key: SecretStr | None = None
     frontend_url: str = "http://localhost:5173"
-    ita_analysis_tmp_root: str = "/var/lib/ita/analysis-tmp"
+    ita_analysis_tmp_root: str = "/tmp/ita-private-code"
     github_sync_timeout_seconds: int = 300
     github_api_concurrency: int = 8
+    # AI Provider
+    ai_provider: Literal["openai", "ollama"] = "ollama"
+    ai_api_key: SecretStr | None = None
+    ai_model: str | None = None
+    ai_base_url: str = "http://localhost:11434"
+    ai_timeout_seconds: int = 120
+    ai_max_input_chars: int = 50000
+    ai_max_output_tokens: int = 2000
+    ai_max_requests_per_day: int = 50
 
     @field_validator(
         "github_client_id",
@@ -74,6 +83,31 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("phải lớn hơn 0")
         return value
+
+    @field_validator("ai_timeout_seconds")
+    @classmethod
+    def _validate_ai_timeout(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("phải lớn hơn 0")
+        return value
+
+    @field_validator(
+        "ai_max_input_chars",
+        "ai_max_output_tokens",
+        "ai_max_requests_per_day",
+    )
+    @classmethod
+    def _validate_ai_limits(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("phải lớn hơn 0")
+        return value
+
+    @field_validator("ai_model")
+    @classmethod
+    def _validate_ai_model(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            return None
+        return value.strip() if value else None
 
     @field_validator("github_api_concurrency")
     @classmethod

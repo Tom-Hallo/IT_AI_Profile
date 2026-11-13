@@ -1,0 +1,106 @@
+{
+  "role_key": "backend_developer",
+  "rubric_version": "1.0.0",
+  "name": "Backend Developer",
+  "description": "Mức độ phù hợp với vai trò Backend Developer từ điểm kỹ năng (PBI-016) và bằng chứng kiến trúc (PBI-012).",
+  "calibration_status": "proposed_unvalidated",
+  "calibration_note": "Trọng số và ngưỡng là giá trị ĐỀ XUẤT BAN ĐẦU, chưa được kiểm chứng hay hiệu chỉnh; không phải chuẩn nghề nghiệp. Cần thử nghiệm, phân tích bias và review trước production (SRS Phụ lục B). skill key phải khớp danh mục skill của PBI-016 (chưa xác nhận).",
+  "thresholds": {
+    "min_coverage": 0.6,
+    "confidence_high": 75,
+    "confidence_medium": 50
+  },
+  "criteria": [
+    {
+      "key": "backend_language",
+      "name": "Ngôn ngữ backend",
+      "description": "Điểm kỹ năng của ngôn ngữ backend mạnh nhất trong các ngôn ngữ ứng viên.",
+      "type": "SKILL",
+      "source_skill_key": "python",
+      "alternative_skill_keys": ["java", "go", "c#", "kotlin", "php", "ruby", "rust", "typescript", "javascript"],
+      "weight": 0.20,
+      "required": true,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "backend_framework",
+      "name": "Framework backend",
+      "description": "Điểm kỹ năng của framework web/backend mạnh nhất trong các framework ứng viên.",
+      "type": "SKILL",
+      "source_skill_key": "fastapi",
+      "alternative_skill_keys": ["django", "flask", "express", "nestjs", "spring_boot", "asp_net_core", "gin", "actix_web", "axum"],
+      "weight": 0.20,
+      "required": true,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "orm_data_access",
+      "name": "ORM / truy cập dữ liệu",
+      "description": "Điểm kỹ năng ORM/truy cập dữ liệu.",
+      "type": "SKILL",
+      "source_skill_key": "sqlalchemy",
+      "alternative_skill_keys": ["entity_framework_core"],
+      "weight": 0.10,
+      "required": false,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "api_service_design",
+      "name": "Dịch vụ API",
+      "description": "Có thành phần định tuyến/dịch vụ API được phát hiện trong repository.",
+      "type": "ARCHITECTURE",
+      "architecture_patterns": ["api_service"],
+      "weight": 0.15,
+      "required": true,
+      "evidence_exclusive": true,
+      "scoring_rule": {"method": "architecture_pattern_coverage", "full_score_pattern_count": 1, "conflict_tolerance": 0.3},
+      "minimum_evidence": {"min_evidence_refs": 1, "min_distinct_patterns": 1},
+      "confidence_rule": {"min_confidence": 50, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "layered_structure",
+      "name": "Cấu trúc phân tầng",
+      "description": "Có cấu trúc phân tầng (API/service/data) hoặc MVC được xác nhận qua cấu trúc thư mục.",
+      "type": "ARCHITECTURE",
+      "architecture_patterns": ["layered_architecture", "mvc_architecture"],
+      "weight": 0.15,
+      "required": true,
+      "evidence_exclusive": true,
+      "scoring_rule": {"method": "architecture_pattern_coverage", "full_score_pattern_count": 1, "conflict_tolerance": 0.3},
+      "minimum_evidence": {"min_evidence_refs": 1, "min_distinct_patterns": 1},
+      "confidence_rule": {"min_confidence": 50, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "database_migration",
+      "name": "Quản lý schema/migration",
+      "description": "Có cấu hình quản lý schema hoặc migration cơ sở dữ liệu.",
+      "type": "ARCHITECTURE",
+      "architecture_patterns": ["database_integration"],
+      "weight": 0.10,
+      "required": false,
+      "evidence_exclusive": true,
+      "scoring_rule": {"method": "architecture_pattern_coverage", "full_score_pattern_count": 1, "conflict_tolerance": 0.3},
+      "minimum_evidence": {"min_evidence_refs": 1, "min_distinct_patterns": 1},
+      "confidence_rule": {"min_confidence": 50, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "background_processing",
+      "name": "Xử lý nền / hàng đợi",
+      "description": "Có thành phần worker/hàng đợi xử lý tác vụ nền.",
+      "type": "ARCHITECTURE",
+      "architecture_patterns": ["background_workers"],
+      "weight": 0.10,
+      "required": false,
+      "evidence_exclusive": true,
+      "scoring_rule": {"method": "architecture_pattern_coverage", "full_score_pattern_count": 1, "conflict_tolerance": 0.3},
+      "minimum_evidence": {"min_evidence_refs": 1, "min_distinct_patterns": 1},
+      "confidence_rule": {"min_confidence": 50, "evidence_for_full_confidence": 1}
+    }
+  ]
+}

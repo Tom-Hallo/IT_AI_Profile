@@ -35,6 +35,25 @@ services:
       retries: 10
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: ./backend
+    working_dir: /app
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ========================================
+  # 3. BACKEND - FASTAPI
+  # ========================================
   backend:
     build:
       context: ./backend
@@ -59,6 +78,14 @@ services:
       GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:8000/api/v1/auth/github/callback}
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?GITHUB_TOKEN_ENCRYPTION_KEY is required}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-qwen2.5:3b}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:11434}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+      AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-50000}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2000}
+      AI_MAX_REQUESTS_PER_DAY: ${AI_MAX_REQUESTS_PER_DAY:-50}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -66,6 +93,8 @@ services:
     networks:
       - internal
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -82,7 +111,10 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  worker:
+  # ========================================
+  # 4. WORKER - RQ
+  # ========================================
+  worker: &worker
     build:
       context: ./backend
     working_dir: /app
@@ -98,17 +130,34 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       WORKER_QUEUES: ${WORKER_QUEUES:-default}
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?GITHUB_TOKEN_ENCRYPTION_KEY is required}
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-qwen2.5:3b}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:11434}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+      AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-50000}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2000}
+      AI_MAX_REQUESTS_PER_DAY: ${AI_MAX_REQUESTS_PER_DAY:-50}
     volumes:
       - ./backend:/app
-    networks:
-      - internal
+      - analysis_temp:/tmp/ita-private-code
+
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
 
+  maintenance:
+    <<: *worker
+    command: ["python", "-m", "app.workers.maintenance"]
+
+  # ========================================
+  # 5. FRONTEND - REACT + VITE
+  # ========================================
   frontend:
     build:
       context: ./frontend
@@ -150,6 +199,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  analysis_temp:
   postgres_data:
   frontend_node_modules:
 

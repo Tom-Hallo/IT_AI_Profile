@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from sqlalchemy.orm import configure_mappers
 
+import app.modules.ai_mentor.action_models  # noqa: F401
+import app.modules.ai_mentor.usage_models  # noqa: F401
+
 # Import all business models to register them on Base.registry and Base.metadata
 import app.modules.analysis.finding_models
 import app.modules.analysis.models
@@ -18,6 +21,7 @@ import app.modules.cvs.models
 import app.modules.github.models
 import app.modules.github.selection_models
 import app.modules.roadmaps.models
+import app.modules.scoring.models
 import app.modules.users.models  # noqa: F401
 from app.db.base import Base
 

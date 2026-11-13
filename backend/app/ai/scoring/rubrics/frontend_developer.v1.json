@@ -1,0 +1,66 @@
+{
+  "role_key": "frontend_developer",
+  "rubric_version": "1.0.0",
+  "name": "Frontend Developer",
+  "description": "Mức độ phù hợp với vai trò Frontend Developer từ điểm kỹ năng (PBI-016) và bằng chứng kiến trúc (PBI-012).",
+  "calibration_status": "proposed_unvalidated",
+  "calibration_note": "Trọng số và ngưỡng là giá trị ĐỀ XUẤT BAN ĐẦU, chưa được kiểm chứng hay hiệu chỉnh; không phải chuẩn nghề nghiệp. Analyzer hiện chỉ cung cấp một loại bằng chứng kiến trúc liên quan frontend (frontend_backend_separation) nên các tiêu chí còn lại dựa vào skill score. skill key phải khớp danh mục skill của PBI-016 (chưa xác nhận).",
+  "thresholds": {
+    "min_coverage": 0.6,
+    "confidence_high": 75,
+    "confidence_medium": 50
+  },
+  "criteria": [
+    {
+      "key": "frontend_language",
+      "name": "Ngôn ngữ frontend",
+      "description": "Điểm kỹ năng của ngôn ngữ frontend mạnh nhất trong các ngôn ngữ ứng viên.",
+      "type": "SKILL",
+      "source_skill_key": "typescript",
+      "alternative_skill_keys": ["javascript"],
+      "weight": 0.30,
+      "required": true,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "frontend_framework",
+      "name": "Framework frontend",
+      "description": "Điểm kỹ năng của framework frontend mạnh nhất trong các framework ứng viên.",
+      "type": "SKILL",
+      "source_skill_key": "react",
+      "alternative_skill_keys": ["vue", "angular", "next_js"],
+      "weight": 0.35,
+      "required": true,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "build_tooling",
+      "name": "Công cụ build",
+      "description": "Điểm kỹ năng công cụ build frontend.",
+      "type": "SKILL",
+      "source_skill_key": "vite",
+      "weight": 0.15,
+      "required": false,
+      "scoring_rule": {"method": "skill_score", "conflict_tolerance": 15},
+      "minimum_evidence": {"min_evidence_refs": 1},
+      "confidence_rule": {"min_confidence": 40, "evidence_for_full_confidence": 1}
+    },
+    {
+      "key": "frontend_backend_separation",
+      "name": "Tách biệt frontend/backend",
+      "description": "Frontend là thành phần độc lập có manifest riêng, tách khỏi backend.",
+      "type": "ARCHITECTURE",
+      "architecture_patterns": ["frontend_backend_separation"],
+      "weight": 0.20,
+      "required": false,
+      "evidence_exclusive": true,
+      "scoring_rule": {"method": "architecture_pattern_coverage", "full_score_pattern_count": 1, "conflict_tolerance": 0.3},
+      "minimum_evidence": {"min_evidence_refs": 1, "min_distinct_patterns": 1},
+      "confidence_rule": {"min_confidence": 50, "evidence_for_full_confidence": 1}
+    }
+  ]
+}

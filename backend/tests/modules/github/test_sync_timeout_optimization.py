@@ -501,3 +501,51 @@ def test_get_user_sync_status_detects_expired_running_job(
 
     assert status_info["status"] == "failed"
     assert "Quá thời gian" in status_info["error_message"]
+
+
+@pytest.mark.anyio
+async def test_private_sync_counts_only_private_repositories(
+    in_memory_db: Session, sample_user: User, fake_sync_redis
+):
+    account = in_memory_db.scalar(select(OAuthAccount))
+    account.access_mode = "private_enabled"
+    in_memory_db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["visibility"] == "private"
+        return httpx.Response(200, json=[{"id": 701, "private": False}])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = GitHubApiClient("test-token", client=http)
+        result = await sync_repositories_for_user(
+            in_memory_db, sample_user, client=client, visibility="private"
+        )
+
+    assert result["synced_count"] == 0
+    status = get_user_sync_status(in_memory_db, sample_user.id)
+    assert status["synced_count"] == 0
+    assert status["synced_visibility"] == "private"
+    assert in_memory_db.scalar(select(func.count(Repository.id))) == 0
+
+
+def test_sync_status_recovers_completed_rq_result(
+    in_memory_db: Session, sample_user: User, fake_sync_redis
+):
+    key = f"ita:github:sync:{sample_user.id}"
+    fake_sync_redis[key] = json.dumps({"status": "running", "job_id": "job"})
+    job = SimpleNamespace(
+        get_status=lambda refresh: SimpleNamespace(value="finished"),
+        return_value=lambda: {
+            "status": "completed",
+            "synced_count": 0,
+            "synced_visibility": "public",
+            "last_synced_at": "2026-11-08T12:00:00Z",
+        },
+    )
+    with patch("app.workers.enqueue.fetch_job", return_value=job):
+        result = get_user_sync_status(in_memory_db, sample_user.id)
+
+    assert result["status"] == "completed"
+    assert result["synced_count"] == 0
+    assert result["synced_visibility"] == "public"
+    assert json.loads(fake_sync_redis[key])["status"] == "completed"

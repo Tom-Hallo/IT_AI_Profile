@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -14,6 +15,7 @@ from app.modules.analysis.collaboration_service import (
     get_collaboration_evidence_list,
     get_stored_collaboration,
 )
+from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     CollaborationAnalysisRequest,
     CollaborationAnalysisResponse,
@@ -58,7 +60,7 @@ async def trigger_collaboration(
     status_code=status.HTTP_200_OK,
     summary="Get latest collaboration analysis result",
 )
-async def get_collaboration(
+def get_collaboration(
     repository_id: int,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
@@ -86,6 +88,9 @@ async def get_collaboration(
 )
 def get_collaboration_evidence(
     repository_id: int,
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
+    response: Response,
+    analysis_id: int | None = Query(default=None, gt=0),
     evidence_type: str = Query(
         default="all",
         description="Lọc theo loại: pull_request, review, check_run, etc.",
@@ -104,6 +109,7 @@ def get_collaboration_evidence(
     db: Session = Depends(get_session),  # noqa: B008
 ) -> CollaborationEvidenceListResponse:
     """Truy xuất danh sách bằng chứng cộng tác phân trang và lọc (PBI-014)."""
+    response.headers["Cache-Control"] = "no-store"
     return get_collaboration_evidence_list(
         db=db,
         repository_id=repository_id,
@@ -113,4 +119,6 @@ def get_collaboration_evidence(
         pr_number=pr_number,
         page=page,
         per_page=per_page,
+        analysis_id=analysis_id,
+        window=window,
     )

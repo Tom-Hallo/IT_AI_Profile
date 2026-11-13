@@ -40,6 +40,7 @@ def enqueue_task(
     *args: Any,
     queue_name: str | None = None,
     job_timeout: int | None = None,
+    job_id: str | None = None,
 ) -> Job:
     """Đưa một hàm (hoặc đường dẫn dạng chuỗi tới hàm) vào hàng đợi.
 
@@ -47,13 +48,20 @@ def enqueue_task(
     để thời hạn và serializer luôn nhất quán.
     """
     timeout = job_timeout if job_timeout is not None else JOB_TIMEOUT_SECONDS
-    return get_queue(queue_name).enqueue(
-        func,
-        *args,
-        job_timeout=timeout,
-        result_ttl=RESULT_TTL_SECONDS,
-        failure_ttl=FAILURE_TTL_SECONDS,
-    )
+    queue = get_queue(queue_name)
+    options = {
+        "job_timeout": timeout,
+        "result_ttl": RESULT_TTL_SECONDS,
+        "failure_ttl": FAILURE_TTL_SECONDS,
+    }
+    if job_id is None:
+        return queue.enqueue(func, *args, **options)
+    # Keep the check and enqueue atomic across the API and recovery process.
+    with queue.connection.lock(f"ita:enqueue:{job_id}", timeout=30, blocking_timeout=2):
+        existing = queue.fetch_job(job_id)
+        if existing is not None:
+            return existing
+        return queue.enqueue(func, *args, job_id=job_id, **options)
 
 
 def enqueue_ping(message: str = "ping", queue_name: str | None = None) -> Job:

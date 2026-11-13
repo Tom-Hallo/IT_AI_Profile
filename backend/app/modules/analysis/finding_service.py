@@ -48,6 +48,7 @@ def build_findings(db: Session, report: AnalysisReport) -> None:
     groups = defaultdict(list)
     for row in evidence:
         groups[(row.finding_type, row.classification)].append(row)
+    pending = []
     for (kind, label), rows in groups.items():
         unique = {evidence_identity(r): r for r in rows}
         finding = AnalysisFinding(
@@ -61,8 +62,11 @@ def build_findings(db: Session, report: AnalysisReport) -> None:
             status="published" if unique else "draft",
         )
         db.add(finding)
+        pending.append((finding, unique.values()))
+    if pending:
         db.flush()
-        for row in unique.values():
+    for finding, rows in pending:
+        for row in rows:
             db.add(
                 FindingEvidenceLink(
                     finding_id=finding.id, evidence_id=row.id, report_id=report.id

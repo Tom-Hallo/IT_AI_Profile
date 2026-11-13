@@ -9,10 +9,13 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.modules.analysis.models import ACTIVE, AnalysisJob
 
 # This is a dedicated disposable root, not a Git checkout or project directory.
-ROOT = Path(os.environ.get("ITA_TEMP_CODE_ROOT", "/tmp/ita-private-code")).resolve()
+ROOT = Path(
+    os.environ.get("ITA_TEMP_CODE_ROOT", settings.ita_analysis_tmp_root)
+).resolve()
 
 
 def job_directory(job_id: uuid.UUID) -> Path:
@@ -20,17 +23,11 @@ def job_directory(job_id: uuid.UUID) -> Path:
     return ROOT / str(job_id)
 
 
-def purge_job_directory(job_id: uuid.UUID) -> None:
+def purge_job_directory(job_id: uuid.UUID | str) -> None:
     """Only purge a single UUID-named child of the dedicated temporary root."""
-    path = job_directory(job_id)
-    if path.is_symlink():
-        path.unlink()
-        return
-    if not path.exists():
-        return
-    if not path.is_dir() or path.parent != ROOT:
-        raise ValueError("Unsafe temporary path")
-    shutil.rmtree(path)
+    cleanup_job_directory(
+        ROOT, uuid.UUID(job_id) if isinstance(job_id, str) else job_id
+    )
 
 
 def cleanup_terminal_jobs(db, user_id: int, repository_id: int) -> int:

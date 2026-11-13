@@ -812,7 +812,7 @@ async def test_11_incomplete_github_api_response(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_12_github_rate_limit_and_error_handling(monkeypatch):
+async def test_12_revoked_token_returns_401(monkeypatch):
     """Scenario 12: GitHub 401/404 translates properly to standard HTTPException."""
     user = _create_mock_user(user_id=1)
     repo = _create_mock_repo(repo_id=12, owner_id=1)
@@ -834,15 +834,13 @@ async def test_12_github_rate_limit_and_error_handling(monkeypatch):
         lambda *args, **kwargs: mock_client,
     )
 
-    # When token is revoked, service falls back to unauthenticated profile or marks 401
-    ver = await verify_repository_contributions(
-        mock_db, repo.id, user, VerificationRequest()
-    )
-    assert ver.verification_status in (
-        "unverified",
-        "no_contribution",
-        "unknown",
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_repository_contributions(
+            mock_db, repo.id, user, VerificationRequest()
+        )
+
+    assert exc_info.value.status_code == 401
+    mock_client.get_repository_details.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -1274,7 +1272,7 @@ def test_22_backend_api_router_integration(monkeypatch):
     # For evidence endpoint
     mock_ver_orm = MagicMock(spec=RepositoryVerification)
     mock_ver_orm.id = 50
-    mock_db.scalar.return_value = mock_ver_orm
+    mock_db.scalar.side_effect = [mock_ver_orm, 1]
 
     mock_ev_orm = MagicMock(spec=VerificationEvidence)
     mock_ev_orm.id = 1
