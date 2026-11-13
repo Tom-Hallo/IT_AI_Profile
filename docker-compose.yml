@@ -50,6 +50,8 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    networks:
+      - internal
 
   # ========================================
   # 3. BACKEND - FASTAPI
