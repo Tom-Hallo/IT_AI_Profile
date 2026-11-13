@@ -1,0 +1,8 @@
+{
+  "assessments": [
+    {"skill":"python","score":52,"confidence":"high","evidence":[{"id":101,"repository_id":1,"commit_sha":"0123456789abcdef0123456789abcdef01234567","file_path":"app/main.py"}]},
+    {"skill":"fastapi","score":72,"confidence":"medium","evidence":[{"id":102,"repository_id":1,"commit_sha":"0123456789abcdef0123456789abcdef01234567","file_path":"app/api.py"}]},
+    {"skill":"postgresql","score":null,"confidence":"unknown","evidence":[]},
+    {"skill":"testing","score":25,"confidence":"low","evidence":[]}
+  ]
+}
