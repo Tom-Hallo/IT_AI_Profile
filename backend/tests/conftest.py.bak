@@ -1,0 +1,127 @@
+"""Builder dùng chung cho test PBI-017 (chỉ dùng trong test)."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+
+from app.ai.scoring import (
+    ArchitectureEvidenceSet,
+    EvidenceRef,
+    RoleScoringEngine,
+    RoleScoringInput,
+    SkillScoreItem,
+    SkillSnapshotInput,
+    load_default_registry,
+)
+
+FIXED_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
+
+
+def arch_ref(
+    classification: str,
+    path: str = "backend/app/x.py",
+    *,
+    confidence: float = 0.9,
+    commit: str = "a" * 40,
+    verified: bool = True,
+) -> EvidenceRef:
+    return EvidenceRef(
+        repository_id=1,
+        commit_sha=commit,
+        file_path=path,
+        finding_type="architecture",
+        classification=classification,
+        confidence_score=confidence,
+        verified=verified,
+    )
+
+
+def skill(
+    key: str,
+    score: float | None = 80,
+    *,
+    confidence: float | None = 80,
+    status: str = "SCORED",
+    refs: int = 1,
+    ref_prefix: str | None = None,
+) -> SkillScoreItem:
+    prefix = ref_prefix or key
+    return SkillScoreItem(
+        skill_key=key,
+        score=score,
+        confidence=confidence,
+        status=status,
+        evidence_refs=[
+            EvidenceRef(
+                evidence_id=f"{prefix}-{i}",
+                file_path=f"src/{prefix}_{i}",
+                finding_type="language",
+                classification=key,
+            )
+            for i in range(refs)
+        ],
+    )
+
+
+def snapshot(items: list[SkillScoreItem], **kw) -> SkillSnapshotInput:
+    kw.setdefault("snapshot_ref", "snap-1")
+    return SkillSnapshotInput(items=items, **kw)
+
+
+def arch_set(refs: list[EvidenceRef], **kw) -> ArchitectureEvidenceSet:
+    return ArchitectureEvidenceSet(evidence=refs, **kw)
+
+
+def backend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="backend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("python", 80, confidence=80),
+                skill("fastapi", 70, confidence=60),
+                skill("sqlalchemy", 60, confidence=60),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+            repository_ids=["1"],
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("api_service", "backend/app/api/router.py"),
+                arch_ref("layered_architecture", "backend/app/services/s.py"),
+                arch_ref("database_integration", "backend/alembic.ini"),
+                arch_ref("background_workers", "backend/app/workers/worker.py"),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+        ),
+    )
+
+
+def frontend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="frontend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("typescript", 90, confidence=80),
+                skill("react", 80, confidence=70),
+                skill("vite", 50, confidence=60),
+            ]
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("frontend_backend_separation", "frontend/package.json"),
+                arch_ref("frontend_backend_separation", "backend/pyproject.toml"),
+            ]
+        ),
+    )
+
+
+@pytest.fixture
+def engine() -> RoleScoringEngine:
+    return RoleScoringEngine(load_default_registry(), clock=lambda: FIXED_NOW)

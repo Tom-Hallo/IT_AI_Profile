@@ -1,11 +1,4 @@
-"""Fixture dùng chung cho test database (Database Engineer, D1).
-
-Alembic luôn được chạy bằng TIẾN TRÌNH CON (`python -m alembic`) giống hệt cách người
-dùng gõ lệnh:
-vừa kiểm tra đúng đường chạy thật, vừa tránh `fileConfig` của Alembic làm đổi cấu hình
-logging
-của tiến trình pytest.
-"""
+"""Database tests use shared fixtures from tests/conftest.py."""
 
 import os
 import subprocess
