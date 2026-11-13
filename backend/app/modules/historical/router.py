@@ -6,7 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 # ADAPTER: replace with actual PBI auth + DB dependencies, preserving user identity.
-from app.api.deps import get_current_user, get_db  # project-specific integration seam
+from app.api.dependencies import get_current_user
+from app.db.session import get_session
+from app.modules.users.models import User
 
 from .compare import SnapshotView, compare_snapshots
 from .contracts import ReanalysisRequest
@@ -14,8 +16,8 @@ from .models import HistoricalReanalysisJob, HistoricalSnapshot
 
 router = APIRouter(prefix="/historical", tags=["Historical Snapshots"])
 
-SessionDep = Annotated[Session, Depends(get_db)]
-CurrentUserDep = Annotated[object, Depends(get_current_user)]
+SessionDep = Annotated[Session, Depends(get_session)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 IdempotencyKey = Annotated[str, Header(min_length=8, max_length=128)]
 
 

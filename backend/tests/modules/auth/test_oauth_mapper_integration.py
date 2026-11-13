@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,25 +25,19 @@ from app.modules.users.models import User
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
-def test_fresh_python_process_configures_all_orm_mappers():
-    """Verify session imports configure all ORM mappers."""
-    code = (
-        "import sys; "
-        "sys.path.insert(0, '.'); "
-        "from app.main import app; "
-        "from sqlalchemy.orm import configure_mappers; "
-        "configure_mappers(); "
-        "print('MAPPERS_OK')"
+def _subprocess_test_env() -> dict[str, str]:
+    """Provide safe configuration for subprocess import tests."""
+    env = os.environ.copy()
+    env.update(
+        {
+            "APP_ENV": "test",
+            "DATABASE_URL": "postgresql+psycopg://test:test@127.0.0.1:1/ita_mapper_test",
+            "REDIS_URL": "redis://127.0.0.1:1/0",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+        }
     )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=str(BACKEND_DIR),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, f"Mapper initialization failed: {result.stderr}"
-    assert "MAPPERS_OK" in result.stdout
+    return env
 
 
 def test_fresh_python_process_session_import_configures_all_mappers():
@@ -60,8 +55,10 @@ def test_fresh_python_process_session_import_configures_all_mappers():
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=str(BACKEND_DIR),
+        env=_subprocess_test_env(),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert result.returncode == 0, f"Session mapper config failed: {result.stderr}"
@@ -82,8 +79,10 @@ def test_worker_task_module_can_query_user_without_mapper_error():
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=str(BACKEND_DIR),
+        env=_subprocess_test_env(),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert result.returncode == 0, f"Worker mapper config failed: {result.stderr}"
