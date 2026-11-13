@@ -71,9 +71,7 @@ def reanalyze(
 
 
 @router.get("/jobs/{job_id}")
-def get_job(
-    job_id: UUID, session: SessionDep, user: CurrentUserDep
-):
+def get_job(job_id: UUID, session: SessionDep, user: CurrentUserDep):
     job = session.scalar(
         select(HistoricalReanalysisJob).where(
             HistoricalReanalysisJob.id == job_id,

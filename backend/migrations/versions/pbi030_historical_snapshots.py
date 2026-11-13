@@ -96,10 +96,7 @@ def upgrade():
 
 
 def downgrade():
-    op.execute(
-        "DROP TRIGGER IF EXISTS pbi030_no_mutation "
-        "ON ita.historical_snapshots"
-    )
+    op.execute("DROP TRIGGER IF EXISTS pbi030_no_mutation ON ita.historical_snapshots")
     op.execute("DROP FUNCTION IF EXISTS ita.pbi030_immutable()")
     op.drop_index(
         "ix_snapshot_owner_created", table_name="historical_snapshots", schema="ita"
