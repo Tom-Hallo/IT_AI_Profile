@@ -4,6 +4,9 @@ from app.api import health
 from app.api.activity import router as activity_router
 from app.modules.analysis.router import router as analysis_router
 from app.modules.auth.router import router as auth_router
+from app.modules.career_roadmap.router import (
+    router as career_roadmap_router,
+)
 from app.modules.consent.router import router as consent_router
 from app.modules.github.router import router as github_router
 from app.modules.github.selection_router import router as selection_router
@@ -21,3 +24,4 @@ api_router.include_router(selection_router)
 api_router.include_router(analysis_router)
 api_router.include_router(consent_router)
 api_router.include_router(scoring_router)
+api_router.include_router(career_roadmap_router)
