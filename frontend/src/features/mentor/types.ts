@@ -10,6 +10,7 @@ export type MentorSources = {
 
 export type MentorChatRequest = {
   message: string
+  enable_actions?: boolean
   sources: MentorSources
 }
 
@@ -37,14 +38,36 @@ export type MentorChatResponse = {
   sources_used: SourceKey[]
   confidence: number | null
   provider_available: boolean
+  action?: MentorAction | null
 }
 
 export type ChatMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  action?: MentorAction | null
   sourcesUsed?: SourceKey[]
   evidence?: EvidenceRef[]
   limitations?: MentorLimitation[]
   confidence?: number | null
+}
+
+export type MentorToolProposal =
+  | { tool: 'create_cv'; title: string; summary: string; skills: string[] }
+  | { tool: 'create_roadmap'; title: string; steps: string[] }
+  | { tool: 'reanalyze_repository'; repository_id: number }
+
+export type MentorAction = {
+  id: string
+  tool: MentorToolProposal['tool']
+  sources: string[]
+  impact: string
+  proposal: MentorToolProposal
+  expires_at: string
+}
+
+export type MentorActionDecision = 'confirm' | 'decline'
+export type MentorActionResult = {
+  status: 'pending' | 'declined' | 'expired' | 'succeeded' | 'denied' | 'failed'
+  result_id: string | null
 }

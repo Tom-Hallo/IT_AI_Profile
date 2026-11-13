@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.session import session_scope
+from app.modules.ai_mentor.actions import expire_pending_actions
 from app.modules.analysis.models import ACTIVE, AnalysisJob
 from app.modules.analysis.service import event
 from app.modules.consent.cleanup_service import request_cleanup
@@ -66,10 +67,19 @@ def recover_analysis_jobs() -> None:
             request_cleanup(db, job, reason="worker_interrupted")
 
 
+def clear_expired_mentor_actions() -> None:
+    with session_scope() as db:
+        expire_pending_actions(db)
+
+
 def main() -> None:
     configure_logging(settings.log_level)
     while True:
-        for task in (recover_analysis_jobs, dispatch_once):
+        for task in (
+            recover_analysis_jobs,
+            dispatch_once,
+            clear_expired_mentor_actions,
+        ):
             try:
                 task()
             except Exception as exc:

@@ -138,3 +138,21 @@
     grid-template-columns: 1fr;
   }
 }
+
+.mentor-action {
+  margin-block: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid currentColor;
+  border-radius: 0.625rem;
+  overflow-wrap: anywhere;
+}
+
+.mentor-action h3 {
+  margin-top: 0;
+}
+
+.mentor-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

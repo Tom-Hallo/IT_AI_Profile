@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.modules.ai_mentor.action_schemas import ActionPreview
+
 SourceId = Annotated[int, Field(gt=0, le=2**63 - 1)]
 SourceKey = Literal["github", "cv", "jd", "roadmap"]
 
@@ -36,6 +38,7 @@ class MentorSources(BaseModel):
 
 class MentorChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    enable_actions: bool = False
     sources: MentorSources = Field(default_factory=MentorSources)
 
     @field_validator("message")
@@ -66,6 +69,7 @@ class MentorChatResponse(BaseModel):
     sources_used: list[SourceKey] = Field(default_factory=list)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     provider_available: bool = True
+    action: ActionPreview | None = None
 
 
 class MentorCVOption(BaseModel):

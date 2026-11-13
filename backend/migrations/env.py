@@ -25,6 +25,7 @@ if config.config_file_name is not None:
 # Import tat ca models nghiep vu de Alembic phat hien cac bang
 # (PBI-002: them models tu day tro di)
 # ---------------------------------------------------------------------------
+import app.modules.ai_mentor.action_models  # noqa: F401, E402
 import app.modules.ai_mentor.usage_models  # noqa: F401, E402
 import app.modules.analysis.finding_models  # noqa: F401, E402
 import app.modules.analysis.models  # noqa: F401, E402
