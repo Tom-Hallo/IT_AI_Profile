@@ -15,45 +15,93 @@ from app.modules.scoring.models import RubricVersion, SkillScore
 VERSION = "2.0.0"
 
 
-def language_metrics(
-    rows: list[VerificationEvidence], language: str
-) -> dict[str, Metric]:
-    commits = {}
-    prs = {}
-    for row in rows:
-        if row.verification_status != "verified" or row.is_bot or row.is_fork_inherited:
+DEFAULT_SATURATION = {
+    "changed_lines": 200,
+    "commits": 10,
+    "pull_requests": 5,
+    "distinct_source_files": 8,
+    "verified_events": 8,
+}
+
+
+def _verified_changes(row, language: str) -> list[dict]:
+    if row.verification_status != "verified" or row.is_bot or row.is_fork_inherited:
+        return []
+    if row.evidence_type not in {"commit", "pull_request"}:
+        return []
+    if row.evidence_type == "commit" and row.is_merge:
+        return []
+    metadata = row.metadata_ or {}
+    files = metadata.get("changed_files", [])
+    if not isinstance(files, list) or len(files) > 300:
+        return []
+    valid = []
+    for item in files:
+        if not isinstance(item, dict):
             continue
-        if row.evidence_type == "commit" and row.is_merge:
+        path, changes = item.get("path"), item.get("changes")
+        if not isinstance(path, str) or type(changes) is not int or changes <= 0:
             continue
-        changes = [
-            item
-            for item in (row.metadata_ or {}).get("changed_files", [])
-            if is_safe_path(item["path"])
-            and not is_ignored_path(item["path"])
-            and EXTENSION_TO_LANGUAGE.get(PurePosixPath(item["path"]).suffix.lower())
+        if (
+            is_safe_path(path)
+            and not is_ignored_path(path)
+            and EXTENSION_TO_LANGUAGE.get(PurePosixPath(path).suffix.lower())
             == language
-        ]
+        ):
+            valid.append({"path": path, "changes": changes})
+    return valid
+
+
+def language_metrics(
+    rows: list[VerificationEvidence],
+    language: str,
+    *,
+    saturation: dict | None = None,
+) -> dict[str, Metric]:
+    """PR evidence supports code scope; it never fabricates commit frequency.
+
+    PR aggregate diffs and commit diffs may overlap: use PR diffs preferentially
+    for code volume, while verified non-merge commits independently establish
+    commit frequency. Never sum both diff sources.
+    """
+    thresholds = dict(DEFAULT_SATURATION if saturation is None else saturation)
+    if set(thresholds) != set(DEFAULT_SATURATION) or any(
+        type(v) is not int or v <= 0 for v in thresholds.values()
+    ):
+        raise ValueError("Invalid rubric saturation")
+    commits, prs = {}, {}
+    for row in rows:
+        changes = _verified_changes(row, language)
         if changes and row.evidence_type == "commit":
             commits[row.id] = changes
         elif changes and row.evidence_type == "pull_request":
             prs[row.id] = changes
     metrics = {}
-    if commits:
-        ids = tuple(commits)
+    source = prs if prs else commits
+    if source:
+        ids = tuple(source)
         changed_lines = sum(
-            item["changes"] for files in commits.values() for item in files
+            item["changes"] for files in source.values() for item in files
         )
-        paths = {item["path"] for files in commits.values() for item in files}
-        metrics.update(
-            code_contribution=Metric(min(changed_lines / 200, 1), ids),
-            commit_frequency=Metric(min(len(commits) / 10, 1), ids),
-            complexity=Metric(min(len(paths) / 8, 1), ids),
+        paths = {item["path"] for files in source.values() for item in files}
+        metrics["code_contribution"] = Metric(
+            min(changed_lines / thresholds["changed_lines"], 1), ids
+        )
+        metrics["complexity"] = Metric(
+            min(len(paths) / thresholds["distinct_source_files"], 1), ids
+        )
+    if commits:
+        metrics["commit_frequency"] = Metric(
+            min(len(commits) / thresholds["commits"], 1), tuple(commits)
         )
     if prs:
-        metrics["pr_contribution"] = Metric(min(len(prs) / 5, 1), tuple(prs))
+        metrics["pr_contribution"] = Metric(
+            min(len(prs) / thresholds["pull_requests"], 1), tuple(prs)
+        )
     if commits and prs:
         metrics["confidence"] = Metric(
-            min((len(commits) + len(prs)) / 8, 1), tuple(commits) + tuple(prs)
+            min((len(commits) + len(prs)) / thresholds["verified_events"], 1),
+            tuple(commits) + tuple(prs),
         )
     return metrics
 
