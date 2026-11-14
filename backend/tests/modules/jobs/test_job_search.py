@@ -12,7 +12,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from app.modules.jobs.schemas import AllowedJobSource, JobItem, JobSearchRequest
 from app.modules.jobs.search_service import JobSearchService
@@ -135,7 +134,10 @@ class TestJobSearchService:
 
         assert result.total == 0
         assert any(s.status == "timeout" for s in result.source_status)
-        assert any("thời gian chờ" in w.lower() or "timeout" in w.lower() for w in result.warnings)
+        assert any(
+            "thời gian chờ" in w.lower() or "timeout" in w.lower()
+            for w in result.warnings
+        )
 
     def test_http_error_returns_error_status(self) -> None:
         service = JobSearchService()

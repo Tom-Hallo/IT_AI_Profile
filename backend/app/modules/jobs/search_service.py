@@ -107,7 +107,7 @@ class JobSearchService:
             return [], SourceStatus(
                 source=AllowedJobSource.REMOTIVE,
                 status="timeout",
-                message=f"Nguồn Remotive vượt quá thời gian chờ ({SOURCE_TIMEOUT_SECONDS}s).",
+                message=f"Nguồn Remotive timeout ({SOURCE_TIMEOUT_SECONDS}s).",
                 jobs_found=0,
             )
         except httpx.HTTPStatusError as exc:

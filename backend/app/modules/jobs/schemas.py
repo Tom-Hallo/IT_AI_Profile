@@ -150,7 +150,7 @@ class JobSearchRequest(BaseModel):
         Field(
             None,
             max_length=100,
-            description="Địa điểm mong muốn (vd: remote, vietnam, hanoi). Mặc định remote.",
+            description="Địa điểm mong muốn (vd: remote, vietnam, hanoi).",
         ),
     ] = "remote"
     sources: Annotated[
