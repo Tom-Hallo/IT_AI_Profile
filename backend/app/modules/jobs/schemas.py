@@ -1,10 +1,5 @@
-"""Pydantic schemas cho module Job Description Analysis (PBI-025).
-
-Hỗ trợ phân tích JD từ Text hoặc URL:
-- Phân loại Required vs Preferred skills
-- Gắn confidence score, canonical skill key, đoạn trích ngữ cảnh
-- Cho phép preview và chỉnh sửa kết quả trước khi lưu/match
-- Cảnh báo và fallback rõ ràng khi URL không hợp lệ hoặc lỗi
+"""Pydantic schemas cho module Job Description Analysis (PBI-025)
+và Job Search from Internet (PBI-026).
 """
 
 from __future__ import annotations
