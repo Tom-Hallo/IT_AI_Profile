@@ -123,3 +123,4 @@ class JDPreviewUpdateResponse(BaseModel):
     preferred_skills: list[ExtractedSkill]
     total_skills_count: int
 
+
