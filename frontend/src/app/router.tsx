@@ -1,3 +1,4 @@
+import { JobMatchingPage } from '@/features/jobs/JobMatchingPage'
 import { MentorPage } from '@/features/mentor/MentorPage'
 import { createBrowserRouter } from 'react-router'
 import { SystemStatusPage } from '@/features/system-status/SystemStatusPage'
@@ -14,6 +15,7 @@ export const router = createBrowserRouter([
   { path: '/repositories/:repositoryId/activity', element: <ActivityAnalysisPage /> },
   { path: '/activity', element: <ActivityAnalysisPage /> },
   { path: '/activity/:repositoryId', element: <ActivityAnalysisPage /> },
+  { path: '/job-matching', element: <JobMatchingPage /> },
   { path: '/mentor', element: <MentorPage /> },
   { path: '/repositories/:repositoryId/analysis', element: <RepositoryAnalysisPage /> },
   { path: '/analysis', element: <RepositoryAnalysisPage /> },
