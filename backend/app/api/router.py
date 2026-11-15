@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api import health
 from app.api.activity import router as activity_router
+from app.modules.ai_audit.router import router as ai_audit_router
 from app.modules.ai_mentor.router import actions_router
 from app.modules.ai_mentor.router import router as mentor_router
 from app.modules.analysis.router import router as analysis_router
@@ -37,6 +38,7 @@ api_router.include_router(consent_router)
 api_router.include_router(role_scoring_router)
 api_router.include_router(scoring_router)
 api_router.include_router(mentor_router)
+api_router.include_router(ai_audit_router)
 api_router.include_router(cv_router)
 api_router.include_router(cv_studio_router)
 api_router.include_router(actions_router)
