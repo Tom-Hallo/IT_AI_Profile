@@ -157,6 +157,7 @@ function Workspace() {
     <main className="cv-workspace">
       <Link to="/dashboard">← Dashboard</Link>
       <h1>CV của tôi</h1>
+      <Link to="/cv-studio">Tạo CV theo JD trong AI CV Studio</Link>
       <Card>
         <fieldset disabled={busy}>
           <label htmlFor="cv-file">Tệp CV (PDF có văn bản hoặc DOCX, tối đa 5 MB)</label>

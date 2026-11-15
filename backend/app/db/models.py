@@ -17,6 +17,7 @@ import app.modules.analysis.finding_models
 import app.modules.analysis.models
 import app.modules.assessments.models
 import app.modules.auth.models
+import app.modules.cv_studio.models  # noqa: F401
 import app.modules.cvs.models
 import app.modules.github.models
 import app.modules.github.selection_models
