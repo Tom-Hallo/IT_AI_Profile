@@ -180,6 +180,7 @@ export function DashboardPage() {
         {user && <>
           <Link to="/analysis">Phân tích Repository</Link>
           <Link to="/activity">Phân tích hoạt động</Link>
+          <Link to="/cvs">CV của tôi</Link>
           <Link to="/job-matching">Đối chiếu kỹ năng với JD</Link>
           <Link to="/role-scores">Chi tiết Role Scores</Link>
         </>}
