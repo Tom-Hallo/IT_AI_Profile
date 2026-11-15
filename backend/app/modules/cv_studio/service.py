@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from time import perf_counter
 from uuid import UUID, uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -17,6 +18,9 @@ from app.ai.providers import (
     get_ai_provider,
 )
 from app.core.config import settings
+from app.modules.ai_audit.models import Consent, Status
+from app.modules.ai_audit.models import Source as AuditSource
+from app.modules.ai_audit.service import Trace
 from app.modules.ai_mentor.usage_service import count_ai_requests_today, record_ai_usage
 from app.modules.auth.models import OAuthAccount
 from app.modules.cv_studio.models import CVStudioVersion
@@ -266,11 +270,37 @@ async def compose(db: Session, user: User, request: GenerateCV) -> VersionDetail
     if request.cv_id is None and not request.use_github:
         raise error(422, "Chọn CV hoặc nguồn đánh giá GitHub công khai.")
     user_id = user.id
+    trace = Trace(user_id, "cv_studio", settings.ai_provider)
     extractor = JDSkillExtractor()
     requirements = _requirements(extractor, request.jd)
-    candidates, missing, cv_text = await run_in_threadpool(
-        _collect, db, user, request, extractor, requirements
-    )
+    try:
+        candidates, missing, cv_text = await run_in_threadpool(
+            _collect, db, user, request, extractor, requirements
+        )
+    except HTTPException as exc:
+        db.rollback()
+        denied = exc.status_code in (403, 404)
+        await run_in_threadpool(
+            trace.write,
+            db,
+            "context",
+            [("cv", "denied")] if denied else [("github_public", "selected")],
+            "denied" if denied else "unavailable",
+        )
+        raise
+    provider_sources: list[tuple[AuditSource, Consent]] = [("jd", "selected")]
+    unavailable: list[tuple[AuditSource, Consent]] = []
+    for source, requested, kind in (
+        ("cv", request.cv_id is not None, "cv"),
+        ("github_public", request.use_github, "github"),
+    ):
+        if any(line.source.type == kind for line in candidates):
+            provider_sources.append((source, "selected"))
+        elif requested:
+            unavailable.append((source, "selected"))
+    db.rollback()
+    await run_in_threadpool(trace.write, db, "context", provider_sources, "retrieved")
+    await run_in_threadpool(trace.write, db, "context", unavailable, "unavailable")
     if not candidates:
         raise error(
             422, "Thiếu dữ kiện. Chọn CV đã xác nhận hoặc phân tích repo Public."
@@ -278,15 +308,21 @@ async def compose(db: Session, user: User, request: GenerateCV) -> VersionDetail
 
     github_lines = [line for line in candidates if line.source.type == "github"]
 
+    denied_sources: list[tuple[AuditSource, Consent]] = []
+
     def verify() -> None:
         db.expire_all()
-        if (
-            request.cv_id is not None
-            and owned_upload(db, user_id, request.cv_id).content["text"] != cv_text
-        ):
-            raise error(409, "CV nguồn đã thay đổi. Hãy tạo lại bản nháp.")
+        if request.cv_id is not None:
+            try:
+                current_cv = owned_upload(db, user_id, request.cv_id)
+                if current_cv.content["text"] != cv_text:
+                    raise error(409, "CV nguồn đã thay đổi. Hãy tạo lại bản nháp.")
+            except HTTPException:
+                denied_sources.append(("cv", "denied"))
+                raise
         current = _public_repos(db, user_id, github_lines)
         if any(line.source.repo_id not in current for line in github_lines):
+            denied_sources.append(("github_public", "denied"))
             raise error(409, "Quyền truy cập dữ liệu GitHub đã thay đổi.")
 
     # Only canonical technology keys and opaque IDs reach the provider.
@@ -328,11 +364,15 @@ async def compose(db: Session, user: User, request: GenerateCV) -> VersionDetail
     started = perf_counter()
     sent = False
     status = "error"
+    outcome: Status = "failed"
     result = None
 
     def before_send() -> None:
         nonlocal sent
         verify()
+        db.rollback()
+        trace.write(db, "provider", provider_sources, "started")
+        verify()  # A source may change while the checkpoint commits.
         db.rollback()
         sent = True
 
@@ -352,14 +392,32 @@ async def compose(db: Session, user: User, request: GenerateCV) -> VersionDetail
             raise ValueError("Unknown candidate")
         lines = [candidates[index - 1] for index in dict.fromkeys(selection.ids)]
         status = "ok"
+        outcome = "succeeded"
+    except HTTPException as exc:
+        if exc.status_code in (403, 404, 409):
+            outcome = "denied"
+        raise
     except (AITimeoutError, TimeoutError):
         status = "timeout"
+        outcome = "timeout"
         raise error(504, "AI phản hồi quá thời gian chờ.") from None
     except (AIProviderError, KeyError, ValueError):
         raise error(
             502, "AI không trả về danh sách nguồn hợp lệ. Hãy thử lại."
         ) from None
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
     finally:
+        db.rollback()
+        await run_in_threadpool(
+            trace.write,
+            db,
+            "provider",
+            denied_sources if outcome == "denied" else provider_sources,
+            outcome,
+            required=False,
+        )
         if sent:
             metadata = result or {}
             await run_in_threadpool(

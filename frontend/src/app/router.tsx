@@ -1,6 +1,8 @@
 import { JobMatchingPage } from '@/features/jobs/JobMatchingPage'
 import { CVStudioPage } from '@/features/cv-studio/CVStudioPage'
+import { ResumeReferencesPage } from '@/features/resume-references/ResumeReferencesPage'
 import { CVWorkspacePage } from '@/features/cvs/CVWorkspacePage'
+import { AIAuditPage } from '@/features/ai-audit/AIAuditPage'
 import { MentorPage } from '@/features/mentor/MentorPage'
 import { createBrowserRouter } from 'react-router'
 import { SystemStatusPage } from '@/features/system-status/SystemStatusPage'
@@ -19,8 +21,10 @@ export const router = createBrowserRouter([
   { path: '/activity/:repositoryId', element: <ActivityAnalysisPage /> },
   { path: '/job-matching', element: <JobMatchingPage /> },
   { path: '/cvs', element: <CVWorkspacePage /> },
+  { path: '/cvs/references', element: <ResumeReferencesPage /> },
   { path: '/cv-studio', element: <CVStudioPage /> },
   { path: '/mentor', element: <MentorPage /> },
+  { path: '/ai-audit', element: <AIAuditPage /> },
   { path: '/repositories/:repositoryId/analysis', element: <RepositoryAnalysisPage /> },
   { path: '/analysis', element: <RepositoryAnalysisPage /> },
   { path: '/analysis/:repositoryId', element: <RepositoryAnalysisPage /> },

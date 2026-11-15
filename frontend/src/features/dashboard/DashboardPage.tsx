@@ -181,7 +181,9 @@ export function DashboardPage() {
           <Link to="/analysis">Phân tích Repository</Link>
           <Link to="/activity">Phân tích hoạt động</Link>
           <Link to="/cvs">CV của tôi</Link>
+          <Link to="/cvs/references">Mẫu CV tham khảo</Link>
           <Link to="/cv-studio">AI CV Studio</Link>
+          <Link to="/ai-audit">Lịch sử sử dụng AI</Link>
           <Link to="/job-matching">Đối chiếu kỹ năng với JD</Link>
           <Link to="/role-scores">Chi tiết Role Scores</Link>
         </>}
