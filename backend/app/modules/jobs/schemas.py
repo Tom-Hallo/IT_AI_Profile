@@ -1,10 +1,10 @@
-"""Pydantic schemas cho module Job Description Analysis (PBI-025).
+﻿"""Pydantic schemas cho module Job Description Analysis (PBI-025).
 
-Hỗ trợ phân tích JD từ Text hoặc URL:
-- Phân loại Required vs Preferred skills
-- Gắn confidence score, canonical skill key, đoạn trích ngữ cảnh
-- Cho phép preview và chỉnh sửa kết quả trước khi lưu/match
-- Cảnh báo và fallback rõ ràng khi URL không hợp lệ hoặc lỗi
+Há»— trá»£ phÃ¢n tÃ­ch JD tá»« Text hoáº·c URL:
+- PhÃ¢n loáº¡i Required vs Preferred skills
+- Gáº¯n confidence score, canonical skill key, Ä‘oáº¡n trÃ­ch ngá»¯ cáº£nh
+- Cho phÃ©p preview vÃ  chá»‰nh sá»­a káº¿t quáº£ trÆ°á»›c khi lÆ°u/match
+- Cáº£nh bÃ¡o vÃ  fallback rÃµ rÃ ng khi URL khÃ´ng há»£p lá»‡ hoáº·c lá»—i
 """
 
 from __future__ import annotations
@@ -26,48 +26,48 @@ class InputSourceType(StrEnum):
 
 
 class ExtractedSkill(BaseModel):
-    """Kỹ năng được trích xuất từ JD."""
+    """Ká»¹ nÄƒng Ä‘Æ°á»£c trÃ­ch xuáº¥t tá»« JD."""
 
     skill_key: str = Field(
         ...,
-        description="Canonical key chuẩn hoá (vd: python, fastapi, docker)",
+        description="Canonical key chuáº©n hoÃ¡ (vd: python, fastapi, docker)",
     )
     raw_name: str = Field(
         ...,
-        description="Tên kỹ năng gốc tìm thấy trong văn bản JD",
+        description="TÃªn ká»¹ nÄƒng gá»‘c tÃ¬m tháº¥y trong vÄƒn báº£n JD",
     )
     level: SkillRequirementLevel = Field(
         ...,
-        description="Mức độ yêu cầu: bắt buộc hoặc ưu tiên",
+        description="Má»©c Ä‘á»™ yÃªu cáº§u: báº¯t buá»™c hoáº·c Æ°u tiÃªn",
     )
     confidence: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Độ tin cậy trích xuất (0.0 - 1.0)",
+        description="Äá»™ tin cáº­y trÃ­ch xuáº¥t (0.0 - 1.0)",
     )
     context_snippet: str | None = Field(
         None,
-        description="Đoạn văn bản ngữ cảnh chứa kỹ năng để người dùng đối chiếu",
+        description="Äoáº¡n vÄƒn báº£n ngá»¯ cáº£nh chá»©a ká»¹ nÄƒng Ä‘á»ƒ ngÆ°á»i dÃ¹ng Ä‘á»‘i chiáº¿u",
     )
 
 
 class JDAnalysisRequest(BaseModel):
-    """Request phân tích JD từ Text hoặc URL."""
+    """Request phÃ¢n tÃ­ch JD tá»« Text hoáº·c URL."""
 
     text: Annotated[
         str | None,
         Field(
             None,
             max_length=50_000,
-            description="Nội dung văn bản JD thô cần phân tích",
+            description="Ná»™i dung vÄƒn báº£n JD thÃ´ cáº§n phÃ¢n tÃ­ch",
         ),
     ] = None
     url: Annotated[
         HttpUrl | None,
         Field(
             None,
-            description="URL công khai của tin tuyển dụng/JD",
+            description="URL cÃ´ng khai cá»§a tin tuyá»ƒn dá»¥ng/JD",
         ),
     ] = None
     role_hint: Annotated[
@@ -75,13 +75,13 @@ class JDAnalysisRequest(BaseModel):
         Field(
             None,
             max_length=100,
-            description="Gợi ý vị trí tuyển dụng (nếu có, vd: Backend)",
+            description="Gá»£i Ã½ vá»‹ trÃ­ tuyá»ƒn dá»¥ng (náº¿u cÃ³, vd: Backend)",
         ),
     ] = None
 
 
 class JDFallbackSuggestion(BaseModel):
-    """Thông tin gợi ý fallback khi fetch URL thất bại."""
+    """ThÃ´ng tin gá»£i Ã½ fallback khi fetch URL tháº¥t báº¡i."""
 
     fallback_mode: str = "paste_text"
     message: str
@@ -89,17 +89,17 @@ class JDFallbackSuggestion(BaseModel):
 
 
 class JDAnalysisResponse(BaseModel):
-    """Kết quả phân tích JD trả về cho client."""
+    """Káº¿t quáº£ phÃ¢n tÃ­ch JD tráº£ vá» cho client."""
 
     source_type: InputSourceType
-    source_ref: str | None = Field(None, description="URL nguồn hoặc 'raw_text'")
+    source_ref: str | None = Field(None, description="URL nguá»“n hoáº·c 'raw_text'")
     raw_content_preview: str = Field(
         ...,
-        description="Preview 300 ký tự đầu của văn bản JD",
+        description="Preview 300 kÃ½ tá»± Ä‘áº§u cá»§a vÄƒn báº£n JD",
     )
     title_detected: str | None = Field(
         None,
-        description="Tiêu đề công việc được nhận diện từ JD",
+        description="TiÃªu Ä‘á» cÃ´ng viá»‡c Ä‘Æ°á»£c nháº­n diá»‡n tá»« JD",
     )
     required_skills: list[ExtractedSkill] = Field(default_factory=list)
     preferred_skills: list[ExtractedSkill] = Field(default_factory=list)
@@ -109,16 +109,17 @@ class JDAnalysisResponse(BaseModel):
 
 
 class JDPreviewUpdateRequest(BaseModel):
-    """Request cập nhật/chỉnh sửa danh sách skills sau khi preview."""
+    """Request cáº­p nháº­t/chá»‰nh sá»­a danh sÃ¡ch skills sau khi preview."""
 
     required_skills: list[ExtractedSkill]
     preferred_skills: list[ExtractedSkill]
 
 
 class JDPreviewUpdateResponse(BaseModel):
-    """Kết quả sau khi người dùng chỉnh sửa preview."""
+    """Káº¿t quáº£ sau khi ngÆ°á»i dÃ¹ng chá»‰nh sá»­a preview."""
 
     updated: bool = True
     required_skills: list[ExtractedSkill]
     preferred_skills: list[ExtractedSkill]
     total_skills_count: int
+
