@@ -1,0 +1,60 @@
+
+.talent-repositories {
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 64px);
+  background: #f8f9fd;
+  color: #172033;
+  font-family: "DM Sans", sans-serif;
+}
+
+.talent-repositories__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.talent-repositories__back {
+  color: #6255d8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.talent-repositories__label,
+.talent-repositories__eyebrow {
+  color: #7565da;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.talent-repositories__hero {
+  max-width: 760px;
+  margin: 52px 0 36px;
+}
+
+.talent-repositories__hero h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(36px, 5vw, 64px);
+  letter-spacing: -0.05em;
+  margin: 12px 0;
+}
+
+.talent-repositories__hero > p:last-child {
+  color: #667085;
+  line-height: 1.7;
+}
+
+.talent-repositories__empty {
+  padding: 36px;
+  background: white;
+  border: 1px solid #e5e7ef;
+  border-radius: 20px;
+}
+
+@media (max-width: 640px) {
+  .talent-repositories__top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
