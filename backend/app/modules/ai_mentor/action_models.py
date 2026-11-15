@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.modules.ai_audit.models import Provider, choices
 
 
 class MentorAction(Base):
@@ -22,6 +23,9 @@ class MentorAction(Base):
         BigInteger, ForeignKey("ita.users.id", ondelete="CASCADE"), index=True
     )
     tool: Mapped[str] = mapped_column(String(32))
+    audit_provider: Mapped[Provider | None] = mapped_column(
+        choices(Provider, "mentor_audit_provider")
+    )
     status: Mapped[str] = mapped_column(String(16))
     payload: Mapped[dict | None] = mapped_column(JSONB)
     result_id: Mapped[str | None] = mapped_column(String(36))

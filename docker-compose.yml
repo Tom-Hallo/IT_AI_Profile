@@ -35,6 +35,14 @@ services:
       retries: 10
     restart: unless-stopped
 
+  clamav:
+    image: clamav/clamav:stable
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks:
+      - cv_scanner
+    restart: unless-stopped
+
   migrate:
     build:
       context: ./backend
@@ -79,6 +87,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:8000/api/v1/auth/github/callback}
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?GITHUB_TOKEN_ENCRYPTION_KEY is required}
+      CV_SCANNER_HOST: clamav
+      CV_SCANNER_PORT: 3310
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
       AI_API_KEY: ${AI_API_KEY:-}
@@ -94,6 +104,7 @@ services:
       - ./backend:/app
     networks:
       - internal
+      - cv_scanner
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -203,10 +214,13 @@ services:
     restart: unless-stopped
 
 volumes:
+  clamav_signatures:
   analysis_temp:
   postgres_data:
   frontend_node_modules:
 
 networks:
+  cv_scanner:
+    driver: bridge
   internal:
     driver: bridge

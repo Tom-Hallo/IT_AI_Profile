@@ -13,6 +13,12 @@ from app.modules.ai_mentor import policy_gateway
 from app.modules.consent import service as consent_service
 
 
+@pytest.fixture(autouse=True)
+def isolate_audit_storage(monkeypatch):
+    # These unit tests pass a mock Session; real writes are tested on PostgreSQL.
+    monkeypatch.setattr(policy_gateway.Trace, "write", Mock())
+
+
 def provider_result():
     """Kết quả giả lập từ AI provider."""
     return {
