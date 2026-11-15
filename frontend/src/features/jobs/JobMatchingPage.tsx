@@ -95,6 +95,7 @@ function MatchingWorkspace() {
     <main className="job-matching">
       <Link to="/dashboard">← Dashboard</Link>
       <h1>Đối chiếu kỹ năng với JD</h1>
+      <p><Link to="/cvs/references">Tra mẫu CV theo công ty và vị trí</Link></p>
       <Card>
         <fieldset disabled={busy}>
           <label htmlFor="job-text">Mô tả công việc (JD)</label>
