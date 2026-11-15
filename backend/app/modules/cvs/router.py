@@ -31,6 +31,11 @@ from app.modules.cvs.parser import (
     MAX_TEXT_CHARS,
     PDF,
 )
+from app.modules.cvs.references import (
+    ReferenceQuery,
+    ReferenceSearch,
+    search_references,
+)
 from app.modules.cvs.scanner import ScannerUnavailable, UnsafeCV, scan_cv
 from app.modules.users.models import User
 
@@ -254,6 +259,14 @@ def list_cvs(
 
 
 CVId = Annotated[int, Field(gt=0, le=2**63 - 1)]
+
+
+@router.get("/references")
+def list_references(
+    query: Annotated[ReferenceQuery, Query()], response: Response, user: CurrentUser
+) -> ReferenceSearch:
+    response.headers.update(NO_STORE)
+    return search_references(query)
 
 
 @router.get("/{cv_id}")

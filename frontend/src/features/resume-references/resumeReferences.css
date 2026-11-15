@@ -1,0 +1,56 @@
+.resume-references {
+  max-width: 65rem;
+  margin-inline: auto;
+  padding: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.resume-references nav,
+.resume-reference-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+}
+
+.resume-references fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: end;
+  gap: .75rem 1rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.resume-references fieldset > button {
+  justify-self: start;
+}
+
+.resume-references label {
+  display: block;
+  margin-bottom: .3rem;
+}
+
+.resume-references input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: .55rem;
+  font: inherit;
+}
+
+.resume-references-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+}
+
+.resume-references-list dt {
+  font-weight: 600;
+}
+
+.resume-references-list dd {
+  margin: 0 0 .5rem;
+}
