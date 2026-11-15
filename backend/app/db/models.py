@@ -22,6 +22,7 @@ import app.modules.github.models
 import app.modules.github.selection_models
 import app.modules.roadmaps.models
 import app.modules.scoring.models
+import app.modules.self_reported_skills.models  # noqa: F401
 import app.modules.users.models  # noqa: F401
 from app.db.base import Base
 

@@ -17,6 +17,9 @@ from app.modules.profile_sharing.router import router as profile_sharing_router
 from app.modules.roadmap_tracking.router import router as roadmap_tracking_router
 from app.modules.role_scoring.router import router as role_scoring_router
 from app.modules.scoring.router import router as scoring_router
+from app.modules.self_reported_skills.router import (
+    router as self_reported_skills_router,
+)
 
 API_PREFIX = "/api/v1"
 
@@ -37,3 +40,4 @@ api_router.include_router(career_roadmap_router)
 api_router.include_router(jobs_router)
 api_router.include_router(roadmap_tracking_router)
 api_router.include_router(profile_sharing_router)
+api_router.include_router(self_reported_skills_router)
