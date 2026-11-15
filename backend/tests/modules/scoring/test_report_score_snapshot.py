@@ -50,5 +50,5 @@ def test_snapshot_uses_only_verified_changes_in_matching_language():
     python, go = snapshots
     assert isinstance(python, SkillScore)
     assert python.status == "Scored" and python.score == 26
-    assert python.breakdown[0]["evidence_ids"] == [1]
+    assert python.breakdown[0]["evidence_ids"] == [2]
     assert go.status == "Insufficient" and go.score is None

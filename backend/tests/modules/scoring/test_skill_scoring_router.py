@@ -76,3 +76,69 @@ def test_report_score_fallback_supports_offset():
         )
     assert res.status_code == 200
     assert [item["technology"] for item in res.json()] == ["Go"]
+
+
+def test_report_prefers_newer_rubric_and_exposes_version():
+    db = MagicMock()
+    db.scalar.side_effect = [
+        SimpleNamespace(id=7, private=False),
+        SimpleNamespace(
+            id=23,
+            commit_sha="a" * 40,
+            languages=[{"name": "Python"}],
+            frameworks=[],
+        ),
+    ]
+    older = SimpleNamespace(
+        id=100,
+        technology="Python",
+        kind="language",
+        status="Scored",
+        score=50,
+        rubric_id=1,
+        report_id=23,
+        commit_sha="a" * 40,
+        breakdown=[],
+        explanation="legacy",
+    )
+    newer = SimpleNamespace(
+        id=101,
+        technology="Python",
+        kind="language",
+        status="Insufficient",
+        score=None,
+        rubric_id=2,
+        report_id=23,
+        commit_sha="a" * 40,
+        breakdown=[],
+        explanation="missing verified evidence",
+    )
+    db.scalars.return_value.all.side_effect = [
+        [
+            SimpleNamespace(id=1, version="2.0.0"),
+            SimpleNamespace(id=2, version="2.1.0"),
+        ],
+        [older, newer],
+    ]
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_session] = lambda: db
+    with TestClient(app) as client:
+        res = client.get("/api/v1/scoring/repositories/7/skills?report_id=23")
+    assert res.status_code == 200
+    [item] = res.json()
+    assert item["rubric_version"] == "2.1.0"
+    assert item["rubric_id"] == 2
+    assert item["status"] == "Insufficient"
+    assert item["score"] is None
+
+
+def test_invalid_rubric_version_is_rejected():
+    db = MagicMock()
+    db.scalar.return_value = SimpleNamespace(id=7, private=False)
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_session] = lambda: db
+    with TestClient(app) as client:
+        res = client.get("/api/v1/scoring/repositories/7/skills?rubric_version=latest")
+    assert res.status_code == 422

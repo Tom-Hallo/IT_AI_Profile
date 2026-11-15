@@ -1,5 +1,7 @@
 """Deterministic, conservative PBI-016 scoring; never infer absent activity."""
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 WEIGHTS = {
@@ -18,15 +20,33 @@ class Metric:
     evidence_ids: tuple[int, ...] = ()
 
 
-def calculate(metrics: dict[str, Metric], *, rubric_version: str = VERSION) -> dict:
+def calculate(
+    metrics: dict[str, Metric],
+    *,
+    rubric_version: str = VERSION,
+    weights: Mapping[str, int] | None = None,
+) -> dict:
     """A score is only valid when ALL required dimensions have verified evidence.
 
     Missing metrics are not zero. Caller must independently verify provenance,
     authorization, and that metric normalization is based on real observations.
     """
+    active_weights = dict(WEIGHTS if weights is None else weights)
+    if (
+        set(active_weights) != set(WEIGHTS)
+        or any(type(value) is not int or value < 0 for value in active_weights.values())
+        or sum(active_weights.values()) != 100
+    ):
+        raise ValueError(
+            "Rubric weights must contain five nonnegative integer weights totaling 100"
+        )
+    for name, metric in metrics.items():
+        if name in active_weights and metric.value is not None:
+            if not math.isfinite(metric.value) or not 0 <= metric.value <= 1:
+                raise ValueError(f"Metric {name} must be normalized to [0, 1]")
     missing = [
         name
-        for name in WEIGHTS
+        for name in active_weights
         if name not in metrics
         or metrics[name].value is None
         or not metrics[name].evidence_ids
@@ -41,7 +61,7 @@ def calculate(metrics: dict[str, Metric], *, rubric_version: str = VERSION) -> d
             "explanation": "Chưa đủ bằng chứng xác thực để đánh giá toàn bộ tiêu chí.",
         }
     breakdown = []
-    for name, weight in WEIGHTS.items():
+    for name, weight in active_weights.items():
         metric = metrics[name]
         if not 0 <= metric.value <= 1:
             raise ValueError(f"Metric {name} must be normalized to [0, 1]")
