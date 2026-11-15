@@ -1,4 +1,4 @@
-"""Engine phân tích bố cục CV và chống sao chép (Anti-Plagiarism) (PBI-032)."""
+﻿"""Engine phÃ¢n tÃ­ch bá»‘ cá»¥c CV vÃ  chá»‘ng sao chÃ©p (Anti-Plagiarism) (PBI-032)."""
 
 from __future__ import annotations
 
@@ -18,27 +18,27 @@ ROLE_PATTERNS: dict[TargetRole, dict[str, any]] = {
         "layout": [
             LayoutSection(
                 section_name="Professional Summary",
-                purpose="Tóm tắt ngắn gọn số năm kinh nghiệm và tech stack chủ lực.",
+                purpose="TÃ³m táº¯t ngáº¯n gá»n sá»‘ nÄƒm kinh nghiá»‡m vÃ  tech stack chá»§ lá»±c.",
                 recommended_order=1,
             ),
             LayoutSection(
                 section_name="Technical Skills",
-                purpose="Phân nhóm: Languages, Frameworks, Databases, Cloud & DevOps.",
+                purpose="PhÃ¢n nhÃ³m: Languages, Frameworks, Databases, Cloud & DevOps.",
                 recommended_order=2,
             ),
             LayoutSection(
                 section_name="Work Experience & System Projects",
-                purpose="Tập trung vào kiến trúc hệ thống, scale và reliability.",
+                purpose="Táº­p trung vÃ o kiáº¿n trÃºc há»‡ thá»‘ng, scale vÃ  reliability.",
                 recommended_order=3,
                 bullet_style="STAR + System Metrics (Throughput, Latency, Uptime)",
             ),
             LayoutSection(
                 section_name="Education & Certifications",
-                purpose="Bằng cấp chuyên ngành và các chứng chỉ kỹ thuật.",
+                purpose="Báº±ng cáº¥p chuyÃªn ngÃ nh vÃ  cÃ¡c chá»©ng chá»‰ ká»¹ thuáº­t.",
                 recommended_order=4,
             ),
         ],
-        "explanation": "Backend đòi hỏi minh bạch về cấu trúc dữ liệu và scalability.",
+        "explanation": "Backend Ä‘Ã²i há»i minh báº¡ch vá» cáº¥u trÃºc dá»¯ liá»‡u vÃ  scalability.",
         "focus": [
             "API Design",
             "Database Optimization",
@@ -50,7 +50,7 @@ ROLE_PATTERNS: dict[TargetRole, dict[str, any]] = {
         "layout": [
             LayoutSection(
                 section_name="Professional Summary",
-                purpose="Năng lực xây dựng UX, tối ưu web và component design system.",
+                purpose="NÄƒng lá»±c xÃ¢y dá»±ng UX, tá»‘i Æ°u web vÃ  component design system.",
                 recommended_order=1,
             ),
             LayoutSection(
@@ -60,24 +60,24 @@ ROLE_PATTERNS: dict[TargetRole, dict[str, any]] = {
             ),
             LayoutSection(
                 section_name="Featured Projects & UI Experience",
-                purpose="Mô tả các giao diện phức tạp và Web Performance metrics.",
+                purpose="MÃ´ táº£ cÃ¡c giao diá»‡n phá»©c táº¡p vÃ  Web Performance metrics.",
                 recommended_order=3,
                 bullet_style="STAR + Web Performance Metrics",
             ),
             LayoutSection(
                 section_name="Education",
-                purpose="Bằng cấp học thuật và hoạt động chuyên môn.",
+                purpose="Báº±ng cáº¥p há»c thuáº­t vÃ  hoáº¡t Ä‘á»™ng chuyÃªn mÃ´n.",
                 recommended_order=4,
             ),
         ],
-        "explanation": "Frontend cần làm nổi bật trải nghiệm người dùng và component.",
+        "explanation": "Frontend cáº§n lÃ m ná»•i báº­t tráº£i nghiá»‡m ngÆ°á»i dÃ¹ng vÃ  component.",
         "focus": ["Component Reusability", "Performance Tuning", "Modern UI"],
     },
     TargetRole.DEVOPS: {
         "layout": [
             LayoutSection(
                 section_name="Summary & Infrastructure Impact",
-                purpose="Mức độ tự động hóa hạ tầng, CI/CD pipelines và cloud spend.",
+                purpose="Má»©c Ä‘á»™ tá»± Ä‘á»™ng hÃ³a háº¡ táº§ng, CI/CD pipelines vÃ  cloud spend.",
                 recommended_order=1,
             ),
             LayoutSection(
@@ -87,29 +87,29 @@ ROLE_PATTERNS: dict[TargetRole, dict[str, any]] = {
             ),
             LayoutSection(
                 section_name="Production Infrastructure Experience",
-                purpose="Mô tả kiến trúc IaC, quy trình deployment Zero-downtime.",
+                purpose="MÃ´ táº£ kiáº¿n trÃºc IaC, quy trÃ¬nh deployment Zero-downtime.",
                 recommended_order=3,
                 bullet_style="Action + Automation Metrics + Uptime/Recovery Time",
             ),
             LayoutSection(
                 section_name="Certifications",
-                purpose="Chứng chỉ Cloud / Kubernetes (CKA, CKAD, AWS Architect).",
+                purpose="Chá»©ng chá»‰ Cloud / Kubernetes (CKA, CKAD, AWS Architect).",
                 recommended_order=4,
             ),
         ],
-        "explanation": "DevOps nhấn mạnh vào độ ổn định và tự động hoá IaC.",
+        "explanation": "DevOps nháº¥n máº¡nh vÃ o Ä‘á»™ á»•n Ä‘á»‹nh vÃ  tá»± Ä‘á»™ng hoÃ¡ IaC.",
         "focus": ["IaC Automation", "CI/CD Pipeline", "High Availability & Monitoring"],
     },
 }
 
 
 def tokenize_words(text: str) -> list[str]:
-    """Tách từ chuẩn hoá dạng chữ thường và bỏ ký tự đặc biệt."""
+    """TÃ¡ch tá»« chuáº©n hoÃ¡ dáº¡ng chá»¯ thÆ°á»ng vÃ  bá» kÃ½ tá»± Ä‘áº·c biá»‡t."""
     return re.findall(r"\w+", text.lower())
 
 
 def compute_ngram_jaccard_similarity(text1: str, text2: str, n: int = 3) -> float:
-    """Tính chỉ số tương đồng Jaccard dựa trên n-gram giữa 2 đoạn văn bản."""
+    """TÃ­nh chá»‰ sá»‘ tÆ°Æ¡ng Ä‘á»“ng Jaccard dá»±a trÃªn n-gram giá»¯a 2 Ä‘oáº¡n vÄƒn báº£n."""
     words1 = tokenize_words(text1)
     words2 = tokenize_words(text2)
 
@@ -131,7 +131,7 @@ def compute_ngram_jaccard_similarity(text1: str, text2: str, n: int = 3) -> floa
 def check_exact_chunk_copy(
     source_text: str, target_text: str, min_words: int = 7
 ) -> bool:
-    """Kiểm tra có bất kỳ đoạn copy nguyên văn từ 7 từ trở lên không."""
+    """Kiá»ƒm tra cÃ³ báº¥t ká»³ Ä‘oáº¡n copy nguyÃªn vÄƒn tá»« 7 tá»« trá»Ÿ lÃªn khÃ´ng."""
     words = tokenize_words(source_text)
     target_norm = " " + " ".join(tokenize_words(target_text)) + " "
 
@@ -143,7 +143,7 @@ def check_exact_chunk_copy(
 
 
 class ResumePatternEngine:
-    """Engine phân tích pattern và sinh CV gốc an toàn."""
+    """Engine phÃ¢n tÃ­ch pattern vÃ  sinh CV gá»‘c an toÃ n."""
 
     @staticmethod
     def get_pattern_suggestion(role: TargetRole) -> ResumePatternSuggestion:
@@ -157,13 +157,13 @@ class ResumePatternEngine:
 
     @staticmethod
     def extract_layout_from_reference(ref_text: str) -> list[str]:
-        """Nhận diện các mục/sections chính trong CV tham khảo."""
+        """Nháº­n diá»‡n cÃ¡c má»¥c/sections chÃ­nh trong CV tham kháº£o."""
         section_patterns = [
-            r"^(summary|objective|tóm tắt|giới thiệu)",
-            r"^(experience|kinh nghiệm|work history|dự án|projects)",
-            r"^(skills|kỹ năng|technical skills|chuyên môn)",
-            r"^(education|học vấn|bằng cấp)",
-            r"^(certifications|chứng chỉ)",
+            r"^(summary|objective|tÃ³m táº¯t|giá»›i thiá»‡u)",
+            r"^(experience|kinh nghiá»‡m|work history|dá»± Ã¡n|projects)",
+            r"^(skills|ká»¹ nÄƒng|technical skills|chuyÃªn mÃ´n)",
+            r"^(education|há»c váº¥n|báº±ng cáº¥p)",
+            r"^(certifications|chá»©ng chá»‰)",
         ]
         detected = []
         for line in ref_text.splitlines():
@@ -180,10 +180,10 @@ class ResumePatternEngine:
     def generate_original_resume(
         self, req: ResumeGenerateRequest
     ) -> ResumeGenerateResponse:
-        """Tạo CV gốc hoàn toàn từ verified facts của user, chặn sao chép."""
+        """Táº¡o CV gá»‘c hoÃ n toÃ n tá»« verified facts cá»§a user, cháº·n sao chÃ©p."""
         if req.reference_template_text and not req.has_reference_permission:
             raise PermissionError(
-                "Bạn chưa xác nhận quyền hợp pháp sử dụng tài liệu tham khảo này."
+                "Báº¡n chÆ°a xÃ¡c nháº­n quyá»n há»£p phÃ¡p sá»­ dá»¥ng tÃ i liá»‡u tham kháº£o nÃ y."
             )
 
         facts_by_type: dict[str, list[str]] = {}
@@ -244,8 +244,8 @@ class ResumePatternEngine:
             if similarity > 0.20 or exact_copied:
                 plagiarism = True
                 raise ValueError(
-                    f"Dấu hiệu sao chép nội dung từ reference ({similarity:.1%}). "
-                    "Hệ thống chỉ hỗ trợ học cấu trúc bố cục, không sao chép câu từ."
+                    f"Dáº¥u hiá»‡u sao chÃ©p ná»™i dung tá»« reference ({similarity:.1%}). "
+                    "Há»‡ thá»‘ng chá»‰ há»— trá»£ há»c cáº¥u trÃºc bá»‘ cá»¥c, khÃ´ng sao chÃ©p cÃ¢u tá»«."
                 )
 
         return ResumeGenerateResponse(
@@ -256,3 +256,4 @@ class ResumePatternEngine:
             plagiarism_detected=plagiarism,
             source_facts_used_count=len(req.verified_facts),
         )
+
