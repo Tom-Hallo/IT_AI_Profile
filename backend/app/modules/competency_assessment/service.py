@@ -7,16 +7,16 @@ Self-reported evidence NEVER mutates Verified Score.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Sequence
 
 from sqlalchemy.orm import Session
 
 from app.ai.scoring.schemas import Limitation
 from app.modules.competency_assessment.schemas import (
     AssessmentLayerOut,
-    ClaimedSkillOut,
     ClaimEvidenceOut,
+    ClaimedSkillOut,
     CompetencyAssessmentResponse,
     ConflictItem,
     MissingItem,
@@ -29,7 +29,6 @@ from app.modules.role_scoring.service import (
     RoleScoringService,
 )
 from app.modules.self_reported_skills.service import list_skills, serialize_skill
-
 
 CLAIM_BASE_CONFIDENCE = 0.35
 CLAIM_WITH_EVIDENCE_CONFIDENCE = 0.45
@@ -73,7 +72,6 @@ class CompetencyAssessmentService:
         # 3. Extended Assessment = verified view + claims (never mutates verified score).
         extended_layer = self._build_extended_layer(
             verified_layer=verified_layer,
-            verified_response=verified_response,
             claimed_skills=claimed_skills,
         )
 
@@ -113,7 +111,9 @@ class CompetencyAssessmentService:
         ]
 
         status_val = (
-            result.status.value if hasattr(result.status, "value") else str(result.status)
+            result.status.value
+            if hasattr(result.status, "value")
+            else str(result.status)
         )
 
         return AssessmentLayerOut(
@@ -168,7 +168,6 @@ class CompetencyAssessmentService:
         self,
         *,
         verified_layer: AssessmentLayerOut,
-        verified_response: RoleScoreResponse,
         claimed_skills: list[ClaimedSkillOut],
     ) -> AssessmentLayerOut:
         sources = list(verified_layer.sources)
