@@ -1,4 +1,4 @@
-import path from 'node:path'
+﻿import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -31,7 +31,9 @@ export default defineConfig(({ mode }) => {
     // Single React entry: the legacy design demo no longer exists in this archive.
     build: {
       rollupOptions: {
-        input: path.resolve(import.meta.dirname, 'index.html'),
+        input: {
+          main: path.resolve(import.meta.dirname, 'index.html'),
+        },
       },
     },
     preview: {
