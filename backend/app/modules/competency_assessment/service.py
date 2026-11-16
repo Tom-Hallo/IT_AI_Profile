@@ -69,7 +69,7 @@ class CompetencyAssessmentService:
         # 2. Load self-reported claims (owner-isolated).
         claimed_skills = self._load_claimed_skills()
 
-        # 3. Extended = verified + claims (never mutates verified score).
+        # 3.Extended=verified+claims(never mutates verified score).
         extended_layer = self._build_extended_layer(
             verified_layer=verified_layer,
             claimed_skills=claimed_skills,
