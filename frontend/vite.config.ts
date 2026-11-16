@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       watch: watchPolling ? { usePolling: true, interval: 300 } : undefined,
     },
+    // Single React entry: the legacy design demo no longer exists in this archive.
     build: {
       rollupOptions: {
         input: {
