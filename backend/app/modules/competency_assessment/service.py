@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 from app.ai.scoring.schemas import Limitation
 from app.modules.competency_assessment.schemas import (
     AssessmentLayerOut,
-    ClaimEvidenceOut,
     ClaimedSkillOut,
+    ClaimEvidenceOut,
     CompetencyAssessmentResponse,
     ConflictItem,
     MissingItem,
@@ -69,7 +69,7 @@ class CompetencyAssessmentService:
         # 2. Load self-reported claims (owner-isolated).
         claimed_skills = self._load_claimed_skills()
 
-        # 3. Extended Assessment = verified view + claims (never mutates verified score).
+        # 3. Extended = verified view + claims (never mutates verified score).
         extended_layer = self._build_extended_layer(
             verified_layer=verified_layer,
             claimed_skills=claimed_skills,
@@ -138,7 +138,9 @@ class CompetencyAssessmentService:
             evidence_items = data.get("evidence") or []
             has_evidence = len(evidence_items) > 0
             conf = (
-                CLAIM_WITH_EVIDENCE_CONFIDENCE if has_evidence else CLAIM_BASE_CONFIDENCE
+                CLAIM_WITH_EVIDENCE_CONFIDENCE
+                if has_evidence
+                else CLAIM_BASE_CONFIDENCE
             )
             out.append(
                 ClaimedSkillOut(
