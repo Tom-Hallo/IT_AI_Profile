@@ -24,6 +24,10 @@ from app.modules.self_reported_skills.router import (
     router as self_reported_skills_router,
 )
 
+from app.modules.competency_assessment.router import (
+    router as competency_assessment_router,
+)
+
 API_PREFIX = "/api/v1"
 
 api_router = APIRouter()
@@ -47,3 +51,4 @@ api_router.include_router(jobs_router)
 api_router.include_router(roadmap_tracking_router)
 api_router.include_router(profile_sharing_router)
 api_router.include_router(self_reported_skills_router)
+api_router.include_router(competency_assessment_router)
