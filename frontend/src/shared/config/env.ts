@@ -19,5 +19,5 @@ export function normalizeApiBaseUrl(value: string | undefined): string | null {
 
 export const env = {
   /** `null` nghĩa là thiếu hoặc sai VITE_API_BASE_URL. */
-  apiBaseUrl: normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
+  apiBaseUrl: normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? '/api/v1'),
 } as const
