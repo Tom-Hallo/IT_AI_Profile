@@ -90,7 +90,7 @@ def test_generate_resume_blocks_direct_plagiarism():
         reference_template_text=SAMPLE_REFERENCE_CV,
         has_reference_permission=True,
     )
-    with pytest.raises(ValueError, match="sao chép"):
+    with pytest.raises(ValueError, match="(?i)plagiarism"):
         engine.generate_original_resume(req)
 
 
@@ -102,7 +102,7 @@ def test_generate_resume_rejects_without_permission():
         reference_template_text=SAMPLE_REFERENCE_CV,
         has_reference_permission=False,
     )
-    with pytest.raises(PermissionError, match="quyền hợp pháp"):
+    with pytest.raises(PermissionError, match="(?i)permission"):
         engine.generate_original_resume(req)
 
 
