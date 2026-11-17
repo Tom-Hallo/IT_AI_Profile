@@ -136,6 +136,7 @@ function MentorWorkspace() {
 
   return (
     <div className="mentor-page">
+      <Link to="/ai-audit">Lịch sử sử dụng AI</Link>
       <header className="mentor-header">
         <div>
           <h1>AI Mentor</h1>

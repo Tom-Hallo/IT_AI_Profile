@@ -1,0 +1,33 @@
+.cv-workspace {
+  width: min(100% - 2rem, 55rem);
+  margin: 2rem auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.cv-workspace fieldset {
+  display: grid;
+  gap: .8rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.cv-workspace input,
+.cv-workspace textarea {
+  font: inherit;
+  min-width: 0;
+  color: inherit;
+}
+
+.cv-workspace textarea {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: .5rem;
+  padding: .75rem;
+  resize: vertical;
+}
+
+.cv-workspace button { justify-self: start; }
+.cv-items { display: grid; gap: 1rem; }
+.cv-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
