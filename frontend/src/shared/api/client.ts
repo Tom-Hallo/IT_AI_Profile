@@ -31,6 +31,8 @@ export interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   /** Được serialize thành JSON. */
   body?: unknown
+  rawBody?: Blob
+  responseType?: 'blob'
   headers?: Record<string, string>
   /** Cho phép hủy từ bên ngoài (ví dụ khi component bị gỡ). */
   signal?: AbortSignal
@@ -77,7 +79,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     throw new ApiError('config', 'Thiếu hoặc sai cấu hình VITE_API_BASE_URL')
   }
   const url = buildUrl(env.apiBaseUrl, path)
-  const { method = 'GET', body, headers, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = options
+  const { method = 'GET', body, rawBody, responseType, headers, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = options
 
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
   const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
@@ -91,7 +93,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...headers,
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined),
       credentials: 'same-origin',
       signal: combinedSignal,
     })
@@ -105,6 +107,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
 
   let payload: unknown
   try {
+    if (response.ok && responseType === 'blob') return await response.blob() as T
     payload = await readJson(response)
   } catch (error) {
     if (signal?.aborted) throw error

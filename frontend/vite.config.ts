@@ -1,4 +1,4 @@
-import path from 'node:path'
+﻿import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -28,11 +28,11 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       watch: watchPolling ? { usePolling: true, interval: 300 } : undefined,
     },
+    // Single React entry: the legacy design demo no longer exists in this archive.
     build: {
       rollupOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),
-          designDemo: path.resolve(import.meta.dirname, 'design demo/index.html'),
         },
       },
     },

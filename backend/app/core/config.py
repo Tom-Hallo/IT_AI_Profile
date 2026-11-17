@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     github_client_secret: SecretStr | None = None
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
     github_token_encryption_key: SecretStr | None = None
+    cv_scanner_host: str = "127.0.0.1"
+    cv_scanner_port: int = 3310
     frontend_url: str = "http://localhost:5173"
     ita_analysis_tmp_root: str = "/tmp/ita-private-code"
     github_sync_timeout_seconds: int = 300
