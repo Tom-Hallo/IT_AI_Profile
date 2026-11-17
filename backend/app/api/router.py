@@ -10,11 +10,9 @@ from app.modules.auth.router import router as auth_router
 from app.modules.career_roadmap.router import (
     router as career_roadmap_router,
 )
-from app.modules.competency_assessment.router import (
-    router as competency_assessment_router,
-)
 from app.modules.consent.router import router as consent_router
 from app.modules.cv_studio.router import router as cv_studio_router
+from app.modules.cvs.patterns_router import router as resume_patterns_router
 from app.modules.cvs.router import router as cv_router
 from app.modules.github.router import router as github_router
 from app.modules.github.selection_router import router as selection_router
@@ -49,5 +47,5 @@ api_router.include_router(career_roadmap_router)
 api_router.include_router(jobs_router)
 api_router.include_router(roadmap_tracking_router)
 api_router.include_router(profile_sharing_router)
+api_router.include_router(resume_patterns_router)
 api_router.include_router(self_reported_skills_router)
-api_router.include_router(competency_assessment_router)
