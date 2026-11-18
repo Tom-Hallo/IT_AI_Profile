@@ -1,33 +1,62 @@
-import { JobMatchingPage } from '@/features/jobs/JobMatchingPage'
-import { CVStudioPage } from '@/features/cv-studio/CVStudioPage'
-import { ResumeReferencesPage } from '@/features/resume-references/ResumeReferencesPage'
-import { CVWorkspacePage } from '@/features/cvs/CVWorkspacePage'
-import { AIAuditPage } from '@/features/ai-audit/AIAuditPage'
-import { MentorPage } from '@/features/mentor/MentorPage'
-import { createBrowserRouter } from 'react-router'
-import { SystemStatusPage } from '@/features/system-status/SystemStatusPage'
-import { ActivityAnalysisPage } from '@/features/github/ActivityAnalysisPage'
-import { RepositoryAnalysisPage } from '@/features/github/RepositoryAnalysisPage'
-import { ScopedRoleScoresPage } from '@/features/scoring/ScopedRoleScoresPage'
-import { DashboardPage } from '@/features/dashboard/DashboardPage'
-import { NotFoundPage } from './NotFoundPage'
+import { createBrowserRouter } from "react-router";
+
+import { MentorPage } from "@/features/mentor/MentorPage";
+import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
+import { ActivityAnalysisPage } from "@/features/github/ActivityAnalysisPage";
+import { RepositoryAnalysisPage } from "@/features/github/RepositoryAnalysisPage";
+import { ScopedRoleScoresPage } from "@/features/scoring/ScopedRoleScoresPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+
+import { NotFoundPage } from "./NotFoundPage";
+import { V10Entry } from "./V10Entry";
 
 export const router = createBrowserRouter([
-  { path: '/', element: <DashboardPage /> },
-  { path: '/dashboard', element: <DashboardPage /> },
-  { path: '/role-scores', element: <ScopedRoleScoresPage /> },
-  { path: '/repositories/:repositoryId/activity', element: <ActivityAnalysisPage /> },
-  { path: '/activity', element: <ActivityAnalysisPage /> },
-  { path: '/activity/:repositoryId', element: <ActivityAnalysisPage /> },
-  { path: '/job-matching', element: <JobMatchingPage /> },
-  { path: '/cvs', element: <CVWorkspacePage /> },
-  { path: '/cvs/references', element: <ResumeReferencesPage /> },
-  { path: '/cv-studio', element: <CVStudioPage /> },
-  { path: '/mentor', element: <MentorPage /> },
-  { path: '/ai-audit', element: <AIAuditPage /> },
-  { path: '/repositories/:repositoryId/analysis', element: <RepositoryAnalysisPage /> },
-  { path: '/analysis', element: <RepositoryAnalysisPage /> },
-  { path: '/analysis/:repositoryId', element: <RepositoryAnalysisPage /> },
-  { path: '/system-status', element: <SystemStatusPage /> },
-  { path: '*', element: <NotFoundPage /> },
-])
+  {
+    path: "/",
+    element: <V10Entry />,
+  },
+  {
+    path: "/dashboard",
+    element: <DashboardPage />,
+  },
+  {
+    path: "/role-scores",
+    element: <ScopedRoleScoresPage />,
+  },
+  {
+    path: "/repositories/:repositoryId/activity",
+    element: <ActivityAnalysisPage />,
+  },
+  {
+    path: "/activity",
+    element: <ActivityAnalysisPage />,
+  },
+  {
+    path: "/activity/:repositoryId",
+    element: <ActivityAnalysisPage />,
+  },
+  {
+    path: "/mentor",
+    element: <MentorPage />,
+  },
+  {
+    path: "/repositories/:repositoryId/analysis",
+    element: <RepositoryAnalysisPage />,
+  },
+  {
+    path: "/analysis",
+    element: <RepositoryAnalysisPage />,
+  },
+  {
+    path: "/analysis/:repositoryId",
+    element: <RepositoryAnalysisPage />,
+  },
+  {
+    path: "/system-status",
+    element: <SystemStatusPage />,
+  },
+  {
+    path: "*",
+    element: <NotFoundPage />,
+  },
+]);
