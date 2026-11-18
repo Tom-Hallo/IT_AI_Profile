@@ -27,7 +27,7 @@ from statistics import fmean
 from typing import Any, Protocol
 
 from pydantic import ValidationError
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
 
 from app.ai.scoring import (
@@ -112,12 +112,10 @@ class DatabaseSkillSnapshotSource:
         *,
         repo_id_filter: frozenset[int] | None = None,
         window: ReportWindow | None = None,
-        report_scope: tuple[str, ...] = (),
     ) -> None:
         self._db = db
         self._repo_id_filter = repo_id_filter
         self._window = window
-        self._report_scope = report_scope
 
     def fetch(
         self, user_id: int, *, snapshot_ref: str | None = None
@@ -132,17 +130,11 @@ class DatabaseSkillSnapshotSource:
             if self._repo_id_filter is not None:
                 query = query.where(SkillScore.repository_id.in_(self._repo_id_filter))
             if self._window is not None:
-                visibility = (
-                    (AnalysisReport.scope.in_(self._report_scope),)
-                    if self._report_scope
-                    else ()
-                )
                 latest_report_id = (
                     select(AnalysisReport.id)
                     .where(
                         AnalysisReport.repository_id == SkillScore.repository_id,
                         *self._window.conditions(AnalysisReport.analyzed_at),
-                        *visibility,
                     )
                     .order_by(
                         AnalysisReport.analyzed_at.desc(), AnalysisReport.id.desc()
@@ -177,8 +169,6 @@ class DatabaseSkillSnapshotSource:
                             SkillScore.commit_sha == AnalysisEvidence.commit_sha,
                         ),
                     )
-                if self._report_scope:
-                    links = links.where(AnalysisEvidence.scope.in_(self._report_scope))
                 for sid, ev in self._db.execute(links).all():
                     evidence_by_score.setdefault(sid, []).append(
                         EvidenceRef.from_record(ev)
@@ -265,15 +255,7 @@ class DatabaseSkillSnapshotSource:
                     f"{row.report_id}:{row.rubric_id}:{row.id}" for row in scores
                 )
                 actual_ref = "pbi016_" + sha256(source.encode()).hexdigest()[:24]
-            analyzed_at = None
-            if self._report_scope:
-                analyzed_at = self._db.scalar(
-                    select(func.min(AnalysisReport.analyzed_at)).where(
-                        AnalysisReport.id.in_({row.report_id for row in scores})
-                    )
-                )
             snapshot = SkillSnapshotInput(
-                analyzed_at=analyzed_at,
                 snapshot_ref=actual_ref,
                 status=SnapshotStatus.COMPLETE,
                 repository_ids=sorted(repo_ids),

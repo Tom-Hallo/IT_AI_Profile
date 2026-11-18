@@ -44,10 +44,8 @@ def record_ai_usage(
                     duration_ms=duration_ms,
                 )
             )
-    except SQLAlchemyError as exc:
-        logger.error(
-            "Failed to persist AI usage audit metadata: %s", type(exc).__name__
-        )
+    except SQLAlchemyError:
+        logger.exception("Failed to persist AI usage audit metadata")
 
 
 def count_ai_requests_today(*, user_id: int, provider: str) -> int:
@@ -73,6 +71,6 @@ def count_ai_requests_today(*, user_id: int, provider: str) -> int:
                 )
             )
             return db.scalar(statement) or 0
-    except SQLAlchemyError as exc:
-        logger.error("Failed to count AI usage requests: %s", type(exc).__name__)
+    except SQLAlchemyError:
+        logger.exception("Failed to count AI usage requests")
         raise

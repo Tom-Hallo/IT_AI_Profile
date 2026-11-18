@@ -1,38 +1,26 @@
-"""FastAPI Router cho phân tích JD (PBI-025) và tìm việc Internet (PBI-026)."""
+"""FastAPI Router cho phân tích JD và trích xuất skills (PBI-025)."""
 
 from __future__ import annotations
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
-from app.db.session import get_session
-from app.modules.consent.router import csrf
-from app.modules.jobs.matching import JobMatchRequest, JobMatchResponse, match_job
 from app.modules.jobs.schemas import (
     JDAnalysisRequest,
     JDAnalysisResponse,
     JDPreviewUpdateRequest,
     JDPreviewUpdateResponse,
-    JobSearchRequest,
-    JobSearchResponse,
 )
-from app.modules.jobs.search_service import JobSearchService
 from app.modules.jobs.service import JDAnalysisService
-from app.modules.role_scoring.errors import SkillSnapshotSourceError
 from app.modules.users.models import User
 
-router = APIRouter(prefix="/jobs", tags=["Jobs"])
+router = APIRouter(prefix="/jobs", tags=["Job Description Analysis"])
 
 
 def get_jd_service() -> JDAnalysisService:
     return JDAnalysisService()
-
-
-def get_job_search_service() -> JobSearchService:
-    return JobSearchService()
 
 
 @router.post(
@@ -74,40 +62,3 @@ def update_job_skills_preview(
 ) -> JDPreviewUpdateResponse:
     response.headers["Cache-Control"] = "no-store"
     return service.update_preview(req)
-
-
-@router.post(
-    "/search",
-    response_model=JobSearchResponse,
-    summary="Tìm việc trên Internet theo yêu cầu người dùng (PBI-026)",
-    description=(
-        "Chỉ chạy khi người dùng chủ động gửi request (opt-in). "
-        "Lấy tin từ nguồn/API được phép (Remotive). "
-        "Trả title, company, source, link gốc, thời điểm lấy tin. "
-        "Khử trùng lặp và báo rõ trạng thái nguồn (ok / empty / timeout / error)."
-    ),
-)
-def search_jobs(
-    req: JobSearchRequest,
-    service: Annotated[JobSearchService, Depends(get_job_search_service)],
-    user: Annotated[User, Depends(get_current_user)],
-    response: Response,
-) -> JobSearchResponse:
-    """Endpoint opt-in tìm việc từ Internet."""
-    response.headers["Cache-Control"] = "no-store"
-    _ = user
-    return service.search(req)
-
-
-@router.post("/match", dependencies=[Depends(csrf)])
-def match_job_description(
-    req: JobMatchRequest,
-    db: Annotated[Session, Depends(get_session)],
-    user: Annotated[User, Depends(get_current_user)],
-    response: Response,
-) -> JobMatchResponse:
-    response.headers["Cache-Control"] = "no-store"
-    try:
-        return match_job(db, user, req)
-    except SkillSnapshotSourceError as exc:
-        raise HTTPException(503, "Skill assessment temporarily unavailable") from exc

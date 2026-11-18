@@ -1,4 +1,6 @@
-"""Chống tăng điểm giả qua dữ liệu còn lại
+"""Chống tăng điểm giả qua đường API → service → guard → DB (SQLite, dữ liệu thật).
+
+Nguồn skill PBI-016 chưa tồn tại nên dùng ``StubSource`` cho phần đó; mọi thứ còn lại
 (guard, consent, verification, report/evidence) chạy bằng code và bảng thật.
 """
 
@@ -6,14 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.modules.self_reported_skills.models import (
-    SelfReportedSkill,
-    SelfReportedSkillEvidence,
-)
 from tests.modules.role_scoring.conftest import StubSource
 from tests.modules.role_scoring.test_api import (
     API,
-    FE_SEPARATION,
     LAYERED,
     frontend_snapshot,
     score,
@@ -197,64 +194,3 @@ def test_repeating_identical_snapshot_evidence_does_not_inflate(
             repository_id=repo.id,
         ).json()
         assert _core(body) == _core(ref)
-
-
-def test_self_reported_skills_and_evidence_do_not_inflate_verified_score(
-    world, db, make_client
-):
-    # Arrange: tạo baseline có Verified Score thực tế.
-    user = world.user("dev@x.dev")
-    repo = world.repo(user)
-    world.verification(user, repo)
-    world.report(repo, [FE_SEPARATION])
-
-    client = make_client(
-        user,
-        StubSource(frontend_snapshot(user.id, repo.id)),
-    )
-
-    before_response = score(
-        client,
-        role="frontend_developer",
-        repository_id=repo.id,
-    )
-
-    assert before_response.status_code == 200, before_response.text
-    before = before_response.json()
-
-    assert before["status"] == "SCORED"
-    assert before["role_score"] is not None
-
-    # Act: thêm kỹ năng và minh chứng do người dùng tự khai báo.
-    skill = SelfReportedSkill(
-        user_id=user.id,
-        skill_name="Python",
-        description="User claims experience with Python",
-    )
-    db.add(skill)
-    db.flush()
-
-    evidence = SelfReportedSkillEvidence(
-        skill_id=skill.id,
-        user_id=user.id,
-        title="Personal Python project",
-        description="A self-reported project",
-        url="https://example.test/python-project",
-    )
-    db.add(evidence)
-    db.commit()
-
-    # Chạy scoring lại với cùng verified snapshot.
-    after_response = score(
-        client,
-        role="frontend_developer",
-        repository_id=repo.id,
-    )
-
-    assert after_response.status_code == 200, after_response.text
-    after = after_response.json()
-
-    # Assert: dữ liệu tự khai báo không làm tăng Verified Score.
-    assert after["status"] == before["status"]
-    assert _core(after) == _core(before)
-    assert after["evidence_refs"] == before["evidence_refs"]

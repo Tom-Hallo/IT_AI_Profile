@@ -162,6 +162,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - internal
     restart: unless-stopped
 
   maintenance:
