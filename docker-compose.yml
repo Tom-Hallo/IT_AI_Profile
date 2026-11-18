@@ -162,10 +162,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     networks:
-    - default
-    - internal
+      - default
+      - internal
+    restart: unless-stopped
   maintenance:
     <<: *worker
     command: ["python", "-m", "app.workers.maintenance"]

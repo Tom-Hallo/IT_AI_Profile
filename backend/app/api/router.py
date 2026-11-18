@@ -6,6 +6,7 @@ from app.modules.ai_audit.router import router as ai_audit_router
 from app.modules.ai_mentor.router import actions_router
 from app.modules.ai_mentor.router import router as mentor_router
 from app.modules.analysis.router import router as analysis_router
+from app.modules.ats_review.router import router as ats_review_router
 from app.modules.auth.router import router as auth_router
 from app.modules.career_roadmap.router import (
     router as career_roadmap_router,
@@ -19,6 +20,7 @@ from app.modules.cvs.patterns_router import router as resume_patterns_router
 from app.modules.cvs.router import router as cv_router
 from app.modules.github.router import router as github_router
 from app.modules.github.selection_router import router as selection_router
+from app.modules.historical.router import router as historical_router
 from app.modules.jobs.router import router as jobs_router
 from app.modules.profile_sharing.router import router as profile_sharing_router
 from app.modules.roadmap_tracking.router import router as roadmap_tracking_router
@@ -55,3 +57,5 @@ api_router.include_router(resume_patterns_router)
 api_router.include_router(self_reported_skills_router)
 api_router.include_router(competency_assessment_router)
 api_router.include_router(telemetry_router)
+api_router.include_router(historical_router)
+api_router.include_router(ats_review_router)

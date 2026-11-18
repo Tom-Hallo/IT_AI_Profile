@@ -20,8 +20,6 @@ from app.ai.providers import (
     get_ai_provider,
 )
 from app.core.config import Settings, settings
-from app.modules.ai_audit.models import Consent, Source, Status
-from app.modules.ai_audit.service import Trace
 from app.modules.ai_mentor.actions import propose_action
 from app.modules.ai_mentor.schemas import (
     EvidenceRef,
@@ -85,13 +83,6 @@ class Context:
     repo_id: int | None = None
     path: str | None = None
     record_id: int | None = None
-
-    def audit_source(self) -> tuple[Source, Consent]:
-        if self.source == "github":
-            if self.path is not None:
-                return "github_private", "double_granted"
-            return "github_public", "selected"
-        return self.source, "selected"
 
 
 def list_source_options(db: Session, user_id: int) -> MentorSourceOptions:
@@ -220,11 +211,7 @@ def _github_context(
 
 
 def _collect_context(
-    db: Session,
-    user: User,
-    payload: MentorChatRequest,
-    provider: str,
-    gaps: dict[Status, list[tuple[Source, Consent]]],
+    db: Session, user: User, payload: MentorChatRequest, provider: str
 ) -> tuple[list[Context], list[MentorLimitation]]:
     sources = payload.sources
     chunks: list[Context] = []
@@ -235,7 +222,6 @@ def _collect_context(
         except HTTPException as exc:
             if exc.status_code not in (403, 404, 422):
                 raise
-            gaps["denied"].append(("github", "denied"))
             limits.append(
                 _limit(
                     "github_denied",
@@ -244,7 +230,6 @@ def _collect_context(
             )
             continue
         if not repo_chunks:
-            gaps["unavailable"].append(("github_private", "double_granted"))
             limits.append(
                 _limit(
                     "github_empty",
@@ -275,7 +260,6 @@ def _collect_context(
         if not any(chunk.source == "cv" for chunk in chunks) or set(sources.cv_ids) - {
             row.id for row in rows if row.content
         }:
-            gaps["unavailable"].append(("cv", "selected"))
             limits.append(
                 _limit(
                     "cv_unavailable",
@@ -304,7 +288,6 @@ def _collect_context(
             for row in rows
         )
         if len(rows) < len(sources.roadmap_ids):
-            gaps["unavailable"].append(("roadmap", "selected"))
             limits.append(
                 _limit(
                     "roadmap_unavailable",
@@ -424,14 +407,7 @@ def _grounded_response(
 async def run_mentor_chat(
     *, db: Session, user: User, payload: MentorChatRequest, config: Settings = settings
 ) -> MentorChatResponse:
-    user_id = user.id
-    trace = Trace(user_id, "mentor", config.ai_provider)
-    gaps: dict[Status, list[tuple[Source, Consent]]] = {"denied": [], "unavailable": []}
-    chunks, limits = _collect_context(db, user, payload, config.ai_provider, gaps)
-    db.rollback()  # Release the read-only transaction before writing audit events.
-    trace.write(db, "context", (chunk.audit_source() for chunk in chunks), "retrieved")
-    for status, sources in gaps.items():
-        trace.write(db, "context", sources, status)
+    chunks, limits = _collect_context(db, user, payload, config.ai_provider)
     if not chunks and not payload.enable_actions:
         return MentorChatResponse(
             answer="Chọn ít nhất một nguồn có dữ liệu hợp lệ và thử lại.",
@@ -451,14 +427,9 @@ async def run_mentor_chat(
     allowed_repo_ids = sorted(
         {chunk.repo_id for chunk in packed.values() if chunk.repo_id is not None}
     )
-    provider_sources: list[tuple[Source, Consent]] = [
-        ("chat", "selected"),
-        *(chunk.audit_source() for chunk in packed.values()),
-    ]
     if (not packed and not payload.enable_actions) or len(
         input_text
     ) > config.ai_max_input_chars:
-        trace.write(db, "provider", provider_sources, "skipped", required=False)
         return MentorChatResponse(
             answer="Hãy rút ngắn câu hỏi hoặc dữ liệu nguồn.", limitations=limits
         )
@@ -468,7 +439,6 @@ async def run_mentor_chat(
     except AIConfigurationError:
         provider = None
     if provider is None:
-        trace.write(db, "provider", provider_sources, "skipped", required=False)
         return MentorChatResponse(
             answer="AI provider chưa được cấu hình.",
             limitations=[
@@ -478,11 +448,11 @@ async def run_mentor_chat(
             provider_available=False,
         )
 
+    user_id = user.id
     if (
         count_ai_requests_today(user_id=user_id, provider=config.ai_provider)
         >= config.ai_max_requests_per_day
     ):
-        trace.write(db, "provider", provider_sources, "skipped", required=False)
         return MentorChatResponse(
             answer="Bạn đã dùng hết số lượt AI trong ngày.",
             limitations=[*limits, _limit("daily_limit", "Hãy thử lại vào ngày mai.")],
@@ -492,16 +462,10 @@ async def run_mentor_chat(
     status = "error"
     sent = False
     result = None
-    outcome: Status = "failed"
 
     def before_send() -> None:
         nonlocal sent
         _recheck_github(db, user, config.ai_provider, list(packed.values()))
-        db.rollback()
-        trace.write(db, "provider", provider_sources, "started")
-        # Persisting the checkpoint can take time. Check again before egress.
-        _recheck_github(db, user, config.ai_provider, list(packed.values()))
-        db.rollback()
         sent = True
 
     try:
@@ -540,7 +504,6 @@ async def run_mentor_chat(
                     "Yêu cầu trong chat",
                     *dict.fromkeys(chunk.source for chunk in packed.values()),
                 ],
-                provider=config.ai_provider,
                 uses_private_github=any(
                     chunk.path is not None for chunk in packed.values()
                 ),
@@ -557,41 +520,26 @@ async def run_mentor_chat(
                         "Bản nháp CV và roadmap cần nguồn không chứa GitHub riêng tư.",
                     )
                 )
-        outcome = (
-            "failed"
-            if any(item.code == "invalid_answer" for item in response.limitations)
-            else "succeeded"
-        )
         return response
     except HTTPException as exc:
         if exc.status_code not in (403, 404, 422):
             raise
         status = "consent_changed"
-        outcome = "denied"
         error = _limit(
             "consent_changed", "Quyền repository đã thay đổi. Hãy kiểm tra lại nguồn."
         )
     except (AITimeoutError, TimeoutError):
         status = "timeout"
-        outcome = "timeout"
         error = _limit("ai_timeout", "AI phản hồi quá thời gian chờ.")
     except AIProviderError:
         error = _limit("ai_error", "AI provider đang không xử lý được yêu cầu.")
-    except asyncio.CancelledError:
-        outcome = "cancelled"
-        raise
     finally:
-        db.rollback()
-        final_sources = (
-            [("github", "denied")] if outcome == "denied" else provider_sources
-        )
-        trace.write(db, "provider", final_sources, outcome, required=False)
         if sent:
             record_ai_usage(
                 user_id=user_id,
                 repository_id=None,
                 provider=config.ai_provider,
-                model=config.ai_model or "unknown",
+                model=(result or {}).get("model") or config.ai_model or "unknown",
                 status=status,
                 input_tokens=(result or {}).get("input_tokens"),
                 output_tokens=(result or {}).get("output_tokens"),

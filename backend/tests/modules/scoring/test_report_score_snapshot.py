@@ -52,3 +52,9 @@ def test_snapshot_uses_only_verified_changes_in_matching_language():
     assert python.status == "Scored" and python.score == 26
     assert python.breakdown[0]["evidence_ids"] == [2]
     assert go.status == "Insufficient" and go.score is None
+
+    breakdown = {item["criterion"]: item for item in python.breakdown}
+
+    assert breakdown["code_contribution"]["evidence_ids"] == [2]
+    assert breakdown["commit_frequency"]["evidence_ids"] == [1]
+    assert breakdown["pr_contribution"]["evidence_ids"] == [2]

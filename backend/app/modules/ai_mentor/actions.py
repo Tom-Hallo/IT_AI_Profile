@@ -10,17 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.modules.ai_audit.models import AIUsageEvent, Consent, Provider, Source, Status
 from app.modules.ai_mentor.action_models import MentorAction, MentorActionEvent
 from app.modules.ai_mentor.action_schemas import (
     ActionDecision,
     ActionPreview,
     ActionResult,
-    ActionStatus,
     CVProposal,
     ReanalysisProposal,
     RoadmapProposal,
-    ToolName,
     tool_proposal_adapter,
 )
 from app.modules.analysis import service as analysis
@@ -38,45 +35,12 @@ IMPACTS = {
 }
 
 
-TOOL_SOURCES: dict[ToolName, Source] = {
-    "create_cv": "cv",
-    "create_roadmap": "roadmap",
-    "reanalyze_repository": "github",
-}
-TOOL_CONSENT: dict[Status, Consent] = {
-    "proposed": "not_requested",
-    "expired": "not_requested",
-    "declined": "declined",
-    "confirmed": "confirmed",
-    "succeeded": "confirmed",
-    "failed": "confirmed",
-    "denied": "denied",
-    "queue_deferred": "confirmed",
-}
-
-
-def _audit(db: Session, action: MentorAction, event: Status) -> None:
+def _audit(db: Session, action: MentorAction, event: str) -> None:
     db.add(MentorActionEvent(action_id=action.id, event=event))
-    db.add(
-        AIUsageEvent(
-            user_id=action.user_id,
-            operation_id=action.id,
-            feature="mentor",
-            phase="tool",
-            source=TOOL_SOURCES[action.tool],
-            provider=action.audit_provider,
-            consent=TOOL_CONSENT[event],
-            status=event,
-            tool=action.tool,
-        )
-    )
 
 
 def _finish(
-    db: Session,
-    action: MentorAction,
-    status: ActionStatus,
-    result_id: str | None = None,
+    db: Session, action: MentorAction, status: str, result_id: str | None = None
 ) -> ActionResult:
     action.status = status
     action.result_id = result_id
@@ -112,7 +76,6 @@ def propose_action(
     context_refs: list[tuple[str, int]],
     sources: list[str],
     uses_private_github: bool,
-    provider: Provider | None = None,
 ) -> ActionPreview | None:
     try:
         data = json.loads(model_text)
@@ -142,7 +105,6 @@ def propose_action(
         id=uuid4(),
         user_id=user.id,
         tool=proposal.tool,
-        audit_provider=provider,
         status="pending",
         expires_at=now + TTL,
         payload={
