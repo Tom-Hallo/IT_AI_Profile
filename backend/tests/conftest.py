@@ -16,6 +16,7 @@ from app.ai.scoring import (
     load_default_registry,
 )
 
+pytest_plugins = ("tests._database_fixtures",)
 FIXED_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
 
 
