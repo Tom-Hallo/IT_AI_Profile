@@ -1,5 +1,5 @@
-import { initTheme } from "./theme.js";
-import { initDialogs, initDrawer } from "./modal.js";
+import { initTheme } from "./src/js/theme.js";
+import { initDialogs, initDrawer } from "./src/js/modal.js";
 initTheme(document.querySelector("#theme-btn"));
 let toastTimeout;
 function notify(message) {
