@@ -1,217 +1,127 @@
-"""Fixture test PBI-017: SQLite in-memory + dữ liệu thật qua guard thật."""
+"""Builder dùng chung cho test PBI-017 (chỉ dùng trong test)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
-import app.db.models  # noqa: F401  (đăng ký đủ model trên Base.metadata)
-import app.modules.consent.models  # noqa: F401
-from app.api.dependencies import get_current_user
-from app.db.base import Base
-from app.db.session import get_session
-from app.main import create_app
-from app.modules.analysis.models import (
-    AnalysisEvidence,
-    AnalysisReport,
-    RepositoryVerification,
+from app.ai.scoring import (
+    ArchitectureEvidenceSet,
+    EvidenceRef,
+    RoleScoringEngine,
+    RoleScoringInput,
+    SkillScoreItem,
+    SkillSnapshotInput,
+    load_default_registry,
 )
-from app.modules.auth.models import OAuthAccount
-from app.modules.consent.models import PrivateConsent
-from app.modules.consent.service import ACCESS, POLICY_VERSION
-from app.modules.github.models import Repository, user_repository
-from app.modules.role_scoring.dependencies import get_skill_snapshot_source
-from app.modules.users.models import User
 
 pytest_plugins = ("tests._database_fixtures",)
-SECRET_CONTENT = "SECRET_PRIVATE_SOURCE_aws_key_AKIA123"
-SECRET_RATIONALE = "SECRET_RATIONALE_do_not_leak"
-SHA = "a" * 40
+FIXED_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
 
 
-@pytest.fixture
-def db():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+def arch_ref(
+    classification: str,
+    path: str = "backend/app/x.py",
+    *,
+    confidence: float = 0.9,
+    commit: str = "a" * 40,
+    verified: bool = True,
+) -> EvidenceRef:
+    return EvidenceRef(
+        repository_id=1,
+        commit_sha=commit,
+        file_path=path,
+        finding_type="architecture",
+        classification=classification,
+        confidence_score=confidence,
+        verified=verified,
     )
 
-    @event.listens_for(engine, "connect")
-    def _attach(dbapi_connection, _record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("ATTACH DATABASE ':memory:' AS ita")
-        cursor.close()
 
-    Base.metadata.create_all(bind=engine)
-    with Session(engine) as session:
-        yield session
-    Base.metadata.drop_all(bind=engine)
-
-
-class World:
-    """Builder dữ liệu cho một kịch bản test."""
-
-    def __init__(self, db: Session) -> None:
-        self.db = db
-        self._repo_seq = 0
-        # BigInteger PK không tự tăng trên SQLite → gán id tường minh.
-        self._user_seq = 0
-        self._consent_seq = 0
-
-    def user(self, email: str, *, private_enabled: bool = False) -> User:
-        self._user_seq += 1
-        user = User(
-            id=self._user_seq, email=email, full_name=email, hashed_password="x"
-        )
-        self.db.add(user)
-        self.db.flush()
-        self.db.add(
-            OAuthAccount(
-                id=user.id,
-                user_id=user.id,
-                provider="github",
-                provider_user_id=f"gh-{user.id}",
-                encrypted_access_token="enc",
-                scope="repo read:user" if private_enabled else "read:user",
-                access_mode="private_enabled" if private_enabled else "public_only",
+def skill(
+    key: str,
+    score: float | None = 80,
+    *,
+    confidence: float | None = 80,
+    status: str = "SCORED",
+    refs: int = 1,
+    ref_prefix: str | None = None,
+) -> SkillScoreItem:
+    prefix = ref_prefix or key
+    return SkillScoreItem(
+        skill_key=key,
+        score=score,
+        confidence=confidence,
+        status=status,
+        evidence_refs=[
+            EvidenceRef(
+                evidence_id=f"{prefix}-{i}",
+                file_path=f"src/{prefix}_{i}",
+                finding_type="language",
+                classification=key,
             )
-        )
-        self.db.commit()
-        return user
+            for i in range(refs)
+        ],
+    )
 
-    def repo(
-        self, owner: User, *, private: bool = False, link: bool = True
-    ) -> Repository:
-        self._repo_seq += 1
-        repo = Repository(
-            owner_id=owner.id,
-            external_id=f"ext-{self._repo_seq}",
-            name=f"repo-{self._repo_seq}",
-            html_url=f"https://example.test/{self._repo_seq}",
-            private=private,
-        )
-        self.db.add(repo)
-        self.db.flush()
-        if link:
-            self.db.execute(
-                user_repository.insert().values(user_id=owner.id, repository_id=repo.id)
-            )
-        self.db.commit()
-        return repo
 
-    def consent(self, user: User, repo: Repository, *, revoked: bool = False) -> None:
-        self._consent_seq += 1
-        self.db.add(
-            PrivateConsent(
-                id=self._consent_seq,
-                user_id=user.id,
-                repository_id=repo.id,
-                consent_type=ACCESS,
-                provider_key="",
-                policy_version=POLICY_VERSION,
-                scope=["backend/"],
-                granted=True,
-                granted_at=datetime.now(UTC),
-                revoked_at=datetime.now(UTC) if revoked else None,
-            )
-        )
-        self.db.commit()
+def snapshot(items: list[SkillScoreItem], **kw) -> SkillSnapshotInput:
+    kw.setdefault("snapshot_ref", "snap-1")
+    return SkillSnapshotInput(items=items, **kw)
 
-    def verification(
-        self, user: User, repo: Repository, status: str = "verified"
-    ) -> None:
-        self.db.add(
-            RepositoryVerification(
-                repository_id=repo.id,
-                user_id=user.id,
-                verification_status=status,
-                summary_data={},
-                limitations=[],
-            )
-        )
-        self.db.commit()
 
-    def report(
-        self,
-        repo: Repository,
-        evidence: list[tuple[str, str, str]],
-        *,
-        commit: str = SHA,
-        confidence: float = 0.9,
-    ) -> AnalysisReport:
-        """evidence = [(classification, file_path, evidence_source)]."""
-        report = AnalysisReport(
-            repository_id=repo.id,
-            commit_sha=commit,
-            scope="all",
-            structure={},
-            languages=[],
-            frameworks=[],
-            architecture=[],
-            budget={},
-        )
-        self.db.add(report)
-        self.db.flush()
-        for classification, path, source in evidence:
-            self.db.add(
-                AnalysisEvidence(
-                    report_id=report.id,
-                    repository_id=repo.id,
-                    commit_sha=commit,
-                    file_path=path,
-                    finding_type="architecture",
-                    classification=classification,
-                    evidence_source=source,
-                    detection_method="structural_inspection",
-                    confidence="high",
-                    confidence_score=confidence,
-                    rationale=SECRET_RATIONALE,
-                    line_number=7,
-                    matched_content=SECRET_CONTENT,
-                )
-            )
-        self.db.commit()
-        return report
+def arch_set(refs: list[EvidenceRef], **kw) -> ArchitectureEvidenceSet:
+    return ArchitectureEvidenceSet(evidence=refs, **kw)
+
+
+def backend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="backend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("python", 80, confidence=80),
+                skill("fastapi", 70, confidence=60),
+                skill("sqlalchemy", 60, confidence=60),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+            repository_ids=["1"],
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("api_service", "backend/app/api/router.py"),
+                arch_ref("layered_architecture", "backend/app/services/s.py"),
+                arch_ref("database_integration", "backend/alembic.ini"),
+                arch_ref("background_workers", "backend/app/workers/worker.py"),
+            ],
+            report_ref="report-9",
+            commit_sha="a" * 40,
+            repository_scope="combined",
+        ),
+    )
+
+
+def frontend_full() -> RoleScoringInput:
+    return RoleScoringInput(
+        role_key="frontend_developer",
+        skill_snapshot=snapshot(
+            [
+                skill("typescript", 90, confidence=80),
+                skill("react", 80, confidence=70),
+                skill("vite", 50, confidence=60),
+            ]
+        ),
+        architecture=arch_set(
+            [
+                arch_ref("frontend_backend_separation", "frontend/package.json"),
+                arch_ref("frontend_backend_separation", "backend/pyproject.toml"),
+            ]
+        ),
+    )
 
 
 @pytest.fixture
-def world(db) -> World:
-    return World(db)
-
-
-class StubSource:
-    def __init__(self, raw=None, error: Exception | None = None) -> None:
-        self.raw, self.error, self.calls = raw, error, 0
-
-    def fetch(self, user_id, *, snapshot_ref=None):
-        self.calls += 1
-        if self.error:
-            raise self.error
-        return self.raw
-
-
-@pytest.fixture
-def make_client(db):
-    clients: list[TestClient] = []
-
-    def _make(user=None, source=None) -> TestClient:
-        app = create_app()
-        app.dependency_overrides[get_session] = lambda: db
-        if user is not None:
-            app.dependency_overrides[get_current_user] = lambda: user
-        app.dependency_overrides[get_skill_snapshot_source] = lambda: (
-            source or StubSource(None)
-        )
-        client = TestClient(app)
-        clients.append(client)
-        return client
-
-    yield _make
-    for c in clients:
-        c.close()
+def engine() -> RoleScoringEngine:
+    return RoleScoringEngine(load_default_registry(), clock=lambda: FIXED_NOW)

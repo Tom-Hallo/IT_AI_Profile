@@ -1,12 +1,23 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IT Talent AI Profile</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#191e23">
+  <meta name="description" content="IT Talent AI Profile giúp developer đọc bằng chứng từ GitHub, hỏi AI Mentor, lập lộ trình và chuẩn bị CV.">
+  <title>IT Talent AI Profile</title>
+  <link rel="icon" href="./icon.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./workspace.css">
+  <link rel="stylesheet" href="./appearance.css">
+  <script type="module" src="/pixel-studio/app.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <aside id="mentor-panel" aria-labelledby="mentor-title" hidden></aside>
+  <dialog id="dialog"></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript>Bật JavaScript để mở IT Talent AI Profile. / Enable JavaScript to open IT Talent AI Profile.</noscript>
+</body>
 </html>
+
