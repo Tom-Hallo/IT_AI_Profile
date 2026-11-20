@@ -237,6 +237,11 @@ function Workspace() {
   const missing = detail?.lines.filter((line) => line.source.type === 'missing') ?? []
 
   return <main className="cv-studio-page">
+    <div className="pixel-page-heading">
+      <span className="pixel-eyebrow">CV STUDIO / AI GENERATOR</span>
+      <h1>AI CV Studio</h1>
+      <p>Tạo và chỉnh sửa CV thông minh với trích dẫn bằng chứng từ GitHub.</p>
+    </div>
     <nav aria-label="Điều hướng CV Studio"><Link to="/">Dashboard</Link> <Link to="/cvs">CV của tôi</Link></nav>
     <h1>AI CV Studio</h1>
     {busy && <p role="status">Đang xử lý…</p>}

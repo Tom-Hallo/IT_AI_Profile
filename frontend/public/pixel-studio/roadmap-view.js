@@ -115,8 +115,8 @@ export function roadmap(state,runtime) {
       + history + '</div>' : '') + '</div>';
 }
 
-export function paintMap(map,state,trace) {
-  const canvas = map.querySelector('canvas');
+export function paintMap(map,state,trace,liveMilestones) {
+  const canvas = map?.querySelector('canvas');
   const ctx = canvas?.getContext('2d');
   if (!ctx || !map.isConnected) return;
   const scale = Math.min(devicePixelRatio || 1,2);
@@ -136,11 +136,15 @@ export function paintMap(map,state,trace) {
   const activeLine = styles.getPropertyValue('--accent').trim();
   const quietLine = styles.getPropertyValue('--line-strong').trim();
   const traceColor = trace && styles.getPropertyValue('--accent-strong').trim();
-  for (const [i,item] of milestonesFor(state).entries()) {
+  const milestones = liveMilestones ? liveMilestones.map((item,index) => ({
+    ...item,needs:index ? [index - 1] : []
+  })) : milestonesFor(state);
+  for (const [i,item] of milestones.entries()) {
     for (const dep of item.needs) {
       const from = points[dep];
       const to = points[i];
-      const done = stateOf(state,dep) === 'done';
+      if (!from || !to) continue;
+      const done = liveMilestones ? liveMilestones[dep].status === 'completed' : stateOf(state,dep) === 'done';
       ctx.strokeStyle = done ? activeLine : quietLine;
       ctx.lineWidth = done ? 2 : 1.5;
       ctx.setLineDash(done ? [] : [4,6]);

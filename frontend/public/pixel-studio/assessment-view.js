@@ -28,7 +28,7 @@ function competency(state,runtime,visible) {
   const tab = runtime.scoreTab;
   const tabs = [['tech','profile.tech'],['roles','profile.roles'],['sources','profile.sources']];
   const tabButtons = '<div class="tabs" role="group"' + labelAttr(t('profile.scoreType')) + '>'
-    + tabs.map(([key,label]) => '<button type="button" data-act="score-tab"' + attr('id',key) + ' aria-pressed="' + (tab === key)
+    + tabs.map(([key,label]) => '<button type="button" id="' + key + '" data-act="score-tab"' + attr('id',key) + ' aria-pressed="' + (tab === key)
       + '">' + escape(t(label)) + '</button>').join('') + '</div>';
   let scores = '';
   let evidence = '';

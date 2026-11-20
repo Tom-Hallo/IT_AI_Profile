@@ -79,6 +79,15 @@ def _frontend_redirect(error: str | None = None) -> RedirectResponse:
     return response
 
 
+@router.get("/github/status", status_code=204)
+def github_login_status() -> Response:
+    if not settings.github_oauth_enabled:
+        raise HTTPException(503, "GitHub OAuth chưa được cấu hình trong backend.")
+    if settings.github_token_encryption_key is None:
+        raise HTTPException(503, "Backend thiếu khóa mã hóa token GitHub.")
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/github")
 def github_login(include_private: bool = False) -> RedirectResponse:
     """Redirect the user to GitHub OAuth authorization.

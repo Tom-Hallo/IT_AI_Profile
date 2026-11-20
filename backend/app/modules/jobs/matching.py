@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.scoring.evidence_catalog import is_forbidden_evidence_type, normalize_key
@@ -234,14 +234,25 @@ def match_job(db: Session, user: User, request: JobMatchRequest) -> JobMatchResp
         snapshots.append(snapshot.snapshot_ref)
         if len(snapshot.items) >= MAX_SNAPSHOT_ITEMS:
             limitations.append("Snapshot đạt giới hạn số bản ghi kỹ năng.")
-        if snapshot.analyzed_at:
-            timestamp = snapshot.analyzed_at
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=UTC)
-            stale |= datetime.now(UTC) - timestamp > STALE_AFTER
+        evidence_repos: set[int] = set()
         for item in snapshot.items:
             if _usable(item, repo_filter):
                 candidates[_skill_key(item.skill_key)].append((item, scope))
+                evidence_repos.update(
+                    ref.repository_id
+                    for ref in item.evidence_refs
+                    if ref.repository_id is not None and _usable_ref(ref, repo_filter)
+                )
+        latest_by_repo = db.scalars(
+            select(func.max(AnalysisReport.analyzed_at))
+            .where(
+                AnalysisReport.repository_id.in_(evidence_repos),
+                AnalysisReport.scope.in_(report_scopes),
+            )
+            .group_by(AnalysisReport.repository_id)
+        )
+        cutoff = datetime.now(UTC) - STALE_AFTER
+        stale |= any(timestamp < cutoff for timestamp in latest_by_repo)
 
     unique: dict[str, JobRequirement] = {}
     for item in request.skills:

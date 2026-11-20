@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
-from app.modules.github.models import Repository
+from app.modules.consent.router import csrf
+from app.modules.roadmap_tracking.models import Milestone
 from app.modules.roadmaps.models import Roadmap
+from app.modules.scoring.snapshots import VERSION
 from app.modules.users.models import User
 
 from .engine import generate
-from .provider import RealAssessmentProvider
+from .provider import RealAssessmentProvider, public_repo_ids
 
 router = APIRouter(prefix="/career-roadmaps", tags=["Career Roadmaps"])
 
@@ -28,13 +30,7 @@ class GenerateRequest(BaseModel):
 def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
     data = dict(item.data)
-    permitted = set(
-        db.scalars(
-            select(Repository.id).where(
-                Repository.owner_id == user_id, Repository.private.is_(False)
-            )
-        ).all()
-    )
+    permitted = public_repo_ids(db, user_id)
     milestones = []
     for original in data.get("milestones", []):
         m = dict(original)
@@ -57,7 +53,7 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     return {"id": item.id, "title": item.title, "created_at": item.created_at, **data}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(csrf)])
 def create_roadmap(
     body: GenerateRequest,
     user: Annotated[User, Depends(get_current_user)],
@@ -65,6 +61,11 @@ def create_roadmap(
 ):
     assessments = RealAssessmentProvider().load(db, user.id)
     payload = generate(body.goal, assessments)
+    payload["analysis_context"] = {
+        "scope": "public",
+        "rubric": VERSION,
+        "period": "all_time",
+    }
     item = Roadmap(
         user_id=user.id,
         title=f"{body.goal.title()} Career Roadmap",
@@ -72,6 +73,16 @@ def create_roadmap(
         data=payload,
     )
     db.add(item)
+    db.flush()
+    db.add_all(
+        Milestone(
+            roadmap_id=item.id,
+            external_key=m["skill"],
+            title=m["skill"],
+            required_skills=[m["skill"]],
+        )
+        for m in payload["milestones"]
+    )
     db.commit()
     db.refresh(item)
     return _serialize(item, db, user.id)

@@ -2,7 +2,7 @@ import {mentorSources} from './data.js';
 import {sourceLabel, t} from './i18n.js';
 import {replyCopy, replySourceLabel} from './mentor-model.js';
 import {codeReferenceLabel} from './evidence.js';
-import {attr, bot, btn, escape, icon, labelAttr, tags} from './ui.js';
+import {attr, bot, btn, escape, field, icon, labelAttr, option, tags} from './ui.js';
 
 function replyMood(message) {
   if (message.action && !message.actionApplied && !message.actionDismissed) return 'review';
@@ -24,19 +24,27 @@ function renderMessage(msg,animate) {
   const action = msg.action && !msg.actionApplied && !msg.actionDismissed
     ? '<div class="action-row">' + btn(escape(t('mentor.preview')),'agent-preview','secondary small',attr('id',msg.id)) + '</div>' : '';
   return '<div class="chat-row">' + bot('pixel-small',replyMood(msg)) + '<div class="chat-bubble' + entering + '">'
-    + msg.parts.map(part => '<p>' + escape(replyCopy(part)) + '</p>').join('')
+    + (msg.liveText ?? msg.parts.map(replyCopy)).map(part => '<p>' + escape(part) + '</p>').join('')
     + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + action
     + (msg.actionApplied ? tags([t('mentor.applied')],'green') : '') + '</div></div>';
 }
 
-export function mentor(runtime,context,animateLast) {
+export function mentor(runtime,context,animateLast,live) {
   const messages = runtime.messages;
   const latestReply = messages.at(-1);
   const mood = runtime.chatPending ? 'thinking' : latestReply ? replyMood(latestReply) : 'idle';
   const statusKey = latestReply?.actionApplied ? 'applied' : mood === 'idle' ? 'ready' : mood;
-  const choices = mentorSources.map(key =>
+  const choices = (live ? mentorSources.filter(key => key !== 'report') : mentorSources).map(key =>
     '<label><input type="checkbox" name="mentor-source" value="' + key + '"' + (runtime.chosen.has(key) ? ' checked' : '')
     + '>' + escape(sourceLabel(key)) + '</label>').join('');
+  const sourceOptions = live ? [
+    runtime.chosen.has('cv') ? field('CV','<select name="mentor-cv"><option value="">—</option>'
+      + live.mentorSources.cvs.map(item => option(item.id,'CV #' + item.id,Number(live.mentorCV))).join('') + '</select>') : '',
+    runtime.chosen.has('roadmap') ? field('Roadmap','<select name="mentor-road"><option value="">—</option>'
+      + live.mentorSources.roadmaps.map(item => option(item.id,item.title,Number(live.mentorRoad || live.road?.id))).join('') + '</select>') : '',
+    runtime.chosen.has('job') ? field('JD','<textarea name="mentor-jd" rows="3" maxlength="20000">'
+      + escape(live.mentorJD ?? live.jobText ?? '') + '</textarea>') : ''
+  ].join('') : '';
   const prompts = [
     ['mentor.promptEvidence','mentor.qEvidence'],
     ['mentor.promptNext','mentor.qNext'],
@@ -73,10 +81,10 @@ export function mentor(runtime,context,animateLast) {
     + '<div class="mentor-tools">' + btn(icon('plus'),'new-chat','icon-button',labelAttr(t('mentor.newChat')) + ' title="' + escape(t('mentor.newChat')) + '"')
     + btn(icon('close'),'close-mentor','icon-button',labelAttr(t('action.closeMentor')) + ' title="' + escape(t('action.closeMentor')) + '"')
     + '</div></header><p class="mentor-context"><span>' + escape(t('mentor.viewing')) + '</span> ' + icon(context.icon)
-    + '<strong title="' + escape(context.label) + '">' + escape(context.label) + '</strong><small>' + escape(t('mentor.simulated')) + '</small></p>'
+    + '<strong title="' + escape(context.label) + '">' + escape(context.label) + '</strong><small>' + escape(live ? 'API' : t('mentor.simulated')) + '</small></p>'
     + '<div class="chat-log" role="log"' + labelAttr(t('mentor.log')) + '>' + log + '</div>'
     + '<div class="chat-compose">' + followUps + '<fieldset class="mentor-sources" id="mentor-sources"'
-    + (runtime.sourcesOpen ? '' : ' hidden') + '><legend>' + escape(t('mentor.pickSources')) + '</legend>' + choices + '</fieldset>'
+    + (runtime.sourcesOpen ? '' : ' hidden') + '><legend>' + escape(t('mentor.pickSources')) + '</legend>' + choices + sourceOptions + '</fieldset>'
     + '<form class="chat-form">' + snippet + '<input id="mentor-question" name="question" maxlength="400"' + labelAttr(t('mentor.labelQuestion'))
     + ' placeholder="' + escape(t(runtime.chatSnippet ? 'mentor.snippetPrompt' : 'mentor.placeholder')) + '" required value="' + escape(runtime.chatDraft) + '">'
     + '<div class="composer-actions">' + btn(icon('sources') + ' ' + escape(t('mentor.sources')) + ' <span class="source-count">'

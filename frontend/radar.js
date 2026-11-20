@@ -114,6 +114,13 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
       ctx.setLineDash([4,4]);
       ctx.stroke();
       ctx.setLineDash([]);
+      angles.forEach((angle, i) => {
+        const [px,py] = point(angle, radius * previous[i]);
+        ctx.beginPath();
+        ctx.arc(px,py,2.5,0,Math.PI * 2);
+        ctx.fillStyle = color('--muted');
+        ctx.fill();
+      });
     }
 
     angles.forEach((angle, i) => {

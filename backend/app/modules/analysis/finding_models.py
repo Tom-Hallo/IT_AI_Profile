@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -25,6 +26,7 @@ from app.db.base import Base
 class AnalysisFinding(Base):
     __tablename__ = "analysis_findings"
     __table_args__ = (
+        Index("ix_ita_analysis_findings_report_id", "report_id"),
         UniqueConstraint("report_id", "finding_key", name="uq_finding_report_key"),
         UniqueConstraint("id", "report_id", name="uq_finding_id_report"),
         CheckConstraint(
@@ -45,7 +47,6 @@ class AnalysisFinding(Base):
         BigInteger,
         ForeignKey("ita.analysis_reports.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     finding_key: Mapped[str] = mapped_column(String(255), nullable=False)
     finding_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -64,6 +65,8 @@ class AnalysisFinding(Base):
 class FindingEvidenceLink(Base):
     __tablename__ = "finding_evidence_links"
     __table_args__ = (
+        Index("ix_finding_evidence_links_report", "report_id"),
+        Index("ix_finding_evidence_links_evidence", "evidence_id"),
         ForeignKeyConstraint(
             ["finding_id", "report_id"],
             ["ita.analysis_findings.id", "ita.analysis_findings.report_id"],

@@ -249,7 +249,8 @@ input[type=checkbox]{accent-color:var(--accent);margin:0;flex:none;width:14px;he
 .field-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
 .field-row .field{flex:1;min-width:120px}
 .tabs,.segmented{display:flex;flex-wrap:wrap;gap:3px;border:1px solid var(--line);border-radius:8px;padding:3px;background:var(--inset);width:fit-content}
-.tabs button,.segmented button,.segmented a{border:1px solid transparent;border-radius:5px;background:transparent;padding:6px 9px;color:var(--muted);font-size:12px;line-height:1.35}
+.tabs button,.segmented button,.segmented a{border:1px solid transparent;border-radius:5px;background:transparent;padding:6px 9px;color:var(--muted);font-size:12px;line-height:1.35;transition:background 140ms ease-out,border-color 140ms ease-out,color 140ms ease-out,transform 100ms ease-out}
+.tabs button:active:not(:disabled),.segmented button:active:not(:disabled){transform:scale(0.97)}
 .tabs button:hover,.segmented button:hover,.segmented a:hover{color:var(--ink)}
 .tabs button[aria-pressed=true],.segmented button[aria-pressed=true],.segmented a[aria-current]{background:var(--accent-wash);border-color:var(--accent-border);color:var(--accent-strong);font-weight:650}
 .empty{padding:16px;border:1px dashed var(--line-strong);border-radius:9px;color:var(--muted)}
@@ -404,7 +405,10 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:2px}
 .mentor-sources input{width:11px;height:11px}
 .dialog-contents{display:grid;gap:11px}
 dialog{width:min(470px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:17px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:0 13px 35px #0c171472}
-dialog::backdrop{background:#10171bcc;backdrop-filter:blur(3px)}
+dialog[open]{animation:macosModalIn 180ms cubic-bezier(0.16,1,0.3,1)}
+@keyframes macosModalIn{from{opacity:0;transform:scale(0.96) translateY(-4px)}to{opacity:1;transform:scale(1) translateY(0)}}
+dialog::backdrop{background:#10171bcc;backdrop-filter:blur(3px);animation:macosBackdropIn 180ms ease-out}
+@keyframes macosBackdropIn{from{opacity:0}to{opacity:1}}
 .dialog-contents h2{font-size:20px}
 .dialog-contents p{color:var(--muted);font-size:13px}
 .dialog-contents>.action-row{justify-content:flex-end}

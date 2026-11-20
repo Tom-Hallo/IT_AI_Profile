@@ -29,7 +29,7 @@ class RubricVersion(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     version: Mapped[str] = mapped_column(String(40), nullable=False)
     criteria: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -61,7 +61,7 @@ class SkillScore(Base):
     score: Mapped[int | None] = mapped_column(Integer)
     breakdown: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     explanation: Mapped[str] = mapped_column(String(500), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 

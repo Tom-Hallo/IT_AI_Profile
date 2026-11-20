@@ -1,10 +1,10 @@
 
-import { useCallback, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { ApiError } from '@/shared/api/client'
 import { getCurrentUser, logout } from './api'
 import type { AuthUser } from './types'
 
-export function useAuth() {
+export function useAuthSession() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -65,4 +65,12 @@ export function useAuth() {
     error,
     signOut,
   }
+}
+
+export const AuthContext = createContext<ReturnType<typeof useAuthSession> | null>(null)
+
+export function useAuth() {
+  const session = useContext(AuthContext)
+  if (!session) throw new Error('AuthContext is missing')
+  return session
 }

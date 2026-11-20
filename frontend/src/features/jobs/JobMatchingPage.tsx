@@ -30,6 +30,7 @@ type Report = {
   disclaimer: string
 }
 type JD = {
+  fallback?: { message: string } | null
   required_skills: Pick<Requirement, 'skill_key'>[]
   preferred_skills: Pick<Requirement, 'skill_key'>[]
 }
@@ -48,6 +49,7 @@ export function JobMatchingPage() {
 
 function MatchingWorkspace() {
   const [text, setText] = useState('')
+  const [url, setUrl] = useState('')
   const [required, setRequired] = useState('')
   const [preferred, setPreferred] = useState('')
   const [scope, setScope] = useState<Scope>('public')
@@ -66,10 +68,10 @@ function MatchingWorkspace() {
     setReport(undefined)
     try {
       if (kind === 'extract') {
-        const jd = await apiFetch<JD>('/jobs/analyze', { method: 'POST', body: { text } })
+        const jd = await apiFetch<JD>('/jobs/analyze', { method: 'POST', body: text.trim() ? { text: text.trim() } : { url: url.trim() } })
         setRequired(jd.required_skills.map((skill) => skill.skill_key).join(', '))
         setPreferred(jd.preferred_skills.map((skill) => skill.skill_key).join(', '))
-        setNotice('Đã trích xuất. Kiểm tra và chỉnh danh sách kỹ năng trước khi đối chiếu.')
+        setNotice(jd.fallback?.message ?? 'Đã trích xuất. Kiểm tra và chỉnh danh sách kỹ năng trước khi đối chiếu.')
       } else {
         const toSkills = (value: string, level: Level) =>
           value.split(/[,\n]+/u).map((key) => key.trim()).filter(Boolean)
@@ -93,9 +95,15 @@ function MatchingWorkspace() {
 
   return (
     <main className="job-matching">
+      <div className="pixel-page-heading">
+        <span className="pixel-eyebrow">MATCHING / JOB REQUIREMENTS</span>
+        <h1>Đối chiếu kỹ năng với JD</h1>
+        <p>Phân tích mô tả công việc (JD) và đối chiếu với bằng chứng kỹ năng đã xác minh.</p>
+      </div>
       <Link to="/dashboard">← Dashboard</Link>
       <h1>Đối chiếu kỹ năng với JD</h1>
       <p><Link to="/cvs/references">Tra mẫu CV theo công ty và vị trí</Link></p>
+      <JobSearch />
       <Card>
         <fieldset disabled={busy}>
           <label htmlFor="job-text">Mô tả công việc (JD)</label>
@@ -104,7 +112,12 @@ function MatchingWorkspace() {
               setText(event.target.value); setReport(undefined); setNotice('')
               setRequired(''); setPreferred('')
             }} />
-          <Button disabled={!text.trim()} onClick={() => void run('extract')}>Trích xuất kỹ năng</Button>
+          <label htmlFor="job-url">Hoặc URL tin tuyển dụng</label>
+          <input id="job-url" type="url" value={url} onChange={event => {
+            setUrl(event.target.value); setReport(undefined); setNotice('')
+            setRequired(''); setPreferred('')
+          }} />
+          <Button disabled={!text.trim() && !url.trim()} onClick={() => void run('extract')}>Trích xuất kỹ năng</Button>
           <p>Nhập hoặc chỉnh kỹ năng, cách nhau bằng dấu phẩy hoặc xuống dòng.</p>
           <label htmlFor="required-skills">Kỹ năng bắt buộc</label>
           <textarea id="required-skills" maxLength={8_080} rows={2} value={required}
@@ -164,4 +177,45 @@ function MatchingWorkspace() {
       )}
     </main>
   )
+}
+
+
+type JobSearchResult = {
+  jobs: { id: string; title: string; company: string; url: string; location: string | null }[]
+  warnings: string[]
+}
+
+function JobSearch() {
+  const [query, setQuery] = useState('')
+  const [result, setResult] = useState<JobSearchResult>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function search() {
+    setBusy(true)
+    setResult(undefined)
+    setError('')
+    try {
+      setResult(await apiFetch<JobSearchResult>('/jobs/search', { method: 'POST', timeoutMs: 15_000, body: { query: query.trim() } }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể tìm việc.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <Card>
+    <h2>Tìm việc từ Remotive</h2>
+    <form onSubmit={event => { event.preventDefault(); if (query.trim() && !busy) void search() }}>
+      <label htmlFor="remote-job-query">Từ khóa</label>
+      <input id="remote-job-query" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} />
+      <Button type="submit" disabled={busy || !query.trim()}>{busy ? 'Đang tìm…' : 'Tìm tin tuyển dụng'}</Button>
+    </form>
+    {error && <p role="alert">{error}</p>}
+    {result?.warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
+    {!!result?.jobs.length && <ul>{result.jobs.map(job => <li key={job.id}>
+      {/^https?:\/\//i.test(job.url) ? <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a> : job.title}
+      {' · '}{job.company}{job.location ? ' · ' + job.location : ''}
+    </li>)}</ul>}
+  </Card>
 }

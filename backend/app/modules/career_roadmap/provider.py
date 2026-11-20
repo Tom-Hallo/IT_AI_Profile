@@ -9,9 +9,11 @@ from typing import Any, Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.analysis.models import AnalysisEvidence
-from app.modules.github.models import Repository
-from app.modules.scoring.models import ScoreEvidenceLink, SkillScore
+from app.ai.scoring.evidence_catalog import is_forbidden_evidence_type
+from app.ai.scoring.schemas import ScoreStatus, SkillSnapshotInput
+from app.modules.github.models import Repository, user_repository
+from app.modules.role_scoring.skill_adapter import DatabaseSkillSnapshotSource
+from app.modules.scoring.snapshots import VERSION
 
 
 class AssessmentProvider(Protocol):
@@ -19,59 +21,61 @@ class AssessmentProvider(Protocol):
 
 
 class RealAssessmentProvider:
-    """Adapter for PBI-016 scores.
-
-    Private scope is excluded until consent integration.
-    """
+    """Read report-bound public skills from the same evidence source as scoring."""
 
     def load(self, db: Session, user_id: int) -> list[dict[str, Any]]:
-        rows = db.execute(
-            select(SkillScore, Repository)
-            .join(Repository, Repository.id == SkillScore.repository_id)
-            .where(SkillScore.user_id == user_id, Repository.owner_id == user_id)
-            .order_by(SkillScore.created_at.desc(), SkillScore.id.desc())
-        ).all()
+        repo_ids = public_repo_ids(db, user_id)
+        if not repo_ids:
+            return []
+        raw = DatabaseSkillSnapshotSource(
+            db,
+            repo_id_filter=frozenset(repo_ids),
+            report_scope=("public",),
+            rubric_version=VERSION,
+        ).fetch(user_id)
+        if raw is None or not isinstance(raw.payload, SkillSnapshotInput):
+            return []
         results = []
-        for score, repo in rows:
-            # Fail closed: only public repositories, even when historical scores exist.
-            if repo.private:
-                continue
-            links = (
-                db.execute(
-                    select(AnalysisEvidence)
-                    .join(
-                        ScoreEvidenceLink,
-                        ScoreEvidenceLink.evidence_id == AnalysisEvidence.id,
-                    )
-                    .where(
-                        ScoreEvidenceLink.score_id == score.id,
-                        AnalysisEvidence.repository_id == score.repository_id,
-                        AnalysisEvidence.report_id == score.report_id,
-                        AnalysisEvidence.commit_sha == score.commit_sha,
-                        AnalysisEvidence.scope.in_(["public", "all"]),
-                    )
-                )
-                .scalars()
-                .all()
-            )
+        for item in raw.payload.items:
             evidence = [
                 {
-                    "id": e.id,
-                    "repository_id": e.repository_id,
-                    "commit_sha": e.commit_sha,
-                    "file_path": e.file_path,
+                    "id": ref.evidence_id or ref.dedup_key,
+                    "repository_id": ref.repository_id,
+                    "commit_sha": ref.commit_sha,
+                    "file_path": ref.file_path,
                 }
-                for e in links
+                for ref in item.evidence_refs
+                if ref.repository_id in repo_ids
+                and ref.verified
+                and ref.confidence_score > 0
+                and not is_forbidden_evidence_type(ref.finding_type, ref.classification)
             ]
+            confidence = item.confidence or 0
             results.append(
                 {
-                    "skill": score.technology.lower(),
-                    "score": score.score if score.status == "scored" else None,
-                    "confidence": "medium" if evidence else "unknown",
+                    "skill": item.skill_key,
+                    "score": item.score if item.status == ScoreStatus.SCORED else None,
+                    "confidence": (
+                        "high"
+                        if evidence and confidence >= 80
+                        else "medium"
+                        if evidence and confidence >= 60
+                        else "unknown"
+                    ),
                     "evidence": evidence,
                 }
             )
         return results
+
+
+def public_repo_ids(db: Session, user_id: int) -> set[int]:
+    return set(
+        db.scalars(
+            select(Repository.id)
+            .join(user_repository, user_repository.c.repository_id == Repository.id)
+            .where(user_repository.c.user_id == user_id, Repository.private.is_(False))
+        )
+    )
 
 
 class FixtureAssessmentProvider:

@@ -45,7 +45,17 @@ def evaluate(
         evidence = []
         for skill in required:
             items = snapshot.skills.get(skill, [])
-            verified = [e for e in items if e.get("verified") is True and e.get("ref")]
+            target = m.get("target_score")
+            verified = [
+                e
+                for e in items
+                if e.get("verified") is True
+                and e.get("ref")
+                and (
+                    target is None
+                    or (e.get("score") is not None and e["score"] >= target)
+                )
+            ]
             if not verified:
                 break
             evidence.extend({"skill": skill, "ref": e["ref"]} for e in verified)

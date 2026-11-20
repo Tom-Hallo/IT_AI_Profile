@@ -51,7 +51,7 @@ from app.modules.role_scoring.errors import (
     SkillSnapshotSourceError,
     SkillSnapshotSourceNotConfigured,
 )
-from app.modules.scoring.models import ScoreEvidenceLink, SkillScore
+from app.modules.scoring.models import RubricVersion, ScoreEvidenceLink, SkillScore
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +112,14 @@ class DatabaseSkillSnapshotSource:
         *,
         repo_id_filter: frozenset[int] | None = None,
         window: ReportWindow | None = None,
+        report_scope: tuple[str, ...] | None = None,
+        rubric_version: str | None = None,
     ) -> None:
         self._db = db
         self._repo_id_filter = repo_id_filter
         self._window = window
+        self._report_scope = report_scope
+        self._rubric_version = rubric_version
 
     def fetch(
         self, user_id: int, *, snapshot_ref: str | None = None
@@ -129,12 +133,24 @@ class DatabaseSkillSnapshotSource:
             )
             if self._repo_id_filter is not None:
                 query = query.where(SkillScore.repository_id.in_(self._repo_id_filter))
-            if self._window is not None:
+            if self._rubric_version is not None:
+                query = query.join(
+                    RubricVersion, RubricVersion.id == SkillScore.rubric_id
+                )
+                query = query.where(RubricVersion.version == self._rubric_version)
+            if self._window is not None or self._report_scope is not None:
+                window = self._window or ReportWindow()
+                scope_filter = (
+                    (AnalysisReport.scope.in_(self._report_scope),)
+                    if self._report_scope is not None
+                    else ()
+                )
                 latest_report_id = (
                     select(AnalysisReport.id)
                     .where(
                         AnalysisReport.repository_id == SkillScore.repository_id,
-                        *self._window.conditions(AnalysisReport.analyzed_at),
+                        *window.conditions(AnalysisReport.analyzed_at),
+                        *scope_filter,
                     )
                     .order_by(
                         AnalysisReport.analyzed_at.desc(), AnalysisReport.id.desc()

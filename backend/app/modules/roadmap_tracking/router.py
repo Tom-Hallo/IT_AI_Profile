@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
+from app.modules.consent.router import csrf
 from app.modules.roadmaps.models import Roadmap
 from app.modules.users.models import User
 
-from .adapters import SnapshotNotFound, snapshot_provider
+from .adapters import current_snapshot
 from .engine import IncomparableSnapshot, evaluate
 from .models import Milestone, MilestoneHistory, RoadmapSuggestion
 
@@ -36,10 +37,11 @@ class ReevaluateRequest(BaseModel):
     expected_period: str = Field(min_length=1, max_length=128)
 
 
-def owned_roadmap(db: Session, user: User, roadmap_id: int) -> Roadmap:
-    roadmap = db.scalar(
-        select(Roadmap).where(Roadmap.id == roadmap_id, Roadmap.user_id == user.id)
-    )
+def owned_roadmap(
+    db: Session, user: User, roadmap_id: int, *, lock: bool = False
+) -> Roadmap:
+    query = select(Roadmap).where(Roadmap.id == roadmap_id, Roadmap.user_id == user.id)
+    roadmap = db.scalar(query.with_for_update() if lock else query)
     if roadmap is None:
         raise HTTPException(404, "Roadmap not found")
     return roadmap
@@ -115,7 +117,7 @@ def get_history(roadmap_id: int, milestone_id: int, user: CurrentUser, db: DB):
     ]
 
 
-@router.patch("/{roadmap_id}/milestones/{milestone_id}")
+@router.patch("/{roadmap_id}/milestones/{milestone_id}", dependencies=[Depends(csrf)])
 def update_milestone(
     roadmap_id: int, milestone_id: int, payload: StatusUpdate, user: CurrentUser, db: DB
 ):
@@ -148,39 +150,46 @@ def update_milestone(
     return serialize_milestone(m)
 
 
-@router.post("/{roadmap_id}/re-evaluate")
-def reevaluate(roadmap_id: int, payload: ReevaluateRequest, user: CurrentUser, db: DB):
-    roadmap = owned_roadmap(db, user, roadmap_id)
-    # Trust the persisted roadmap metadata, never client-supplied compatibility claims.
-    metadata = (
-        roadmap.data.get("analysis_context", {})
-        if isinstance(roadmap.data, dict)
-        else {}
-    )
+@router.post("/{roadmap_id}/re-evaluate", dependencies=[Depends(csrf)])
+def reevaluate(
+    roadmap_id: int, user: CurrentUser, db: DB, payload: ReevaluateRequest | None = None
+):
+    roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
+    metadata = roadmap.data.get("analysis_context", {})
     expected = (metadata.get("scope"), metadata.get("rubric"), metadata.get("period"))
-    requested = (
+    if not all(expected):
+        raise HTTPException(422, "Roadmap analysis context missing")
+    if payload and expected != (
         payload.expected_scope,
         payload.expected_rubric,
         payload.expected_period,
-    )
-    if any(value is None for value in expected) or expected != requested:
-        raise HTTPException(422, "Roadmap analysis context missing or mismatched")
-    try:
-        snapshot = snapshot_provider.get(payload.snapshot_id, user.id)
-    except SnapshotNotFound as exc:
-        raise HTTPException(404, "Snapshot not found") from exc
-    if snapshot.user_id != user.id:
+    ):
+        raise HTTPException(422, "Roadmap analysis context mismatched")
+
+    snapshot = current_snapshot(db, user.id)
+    if payload and payload.snapshot_id != snapshot.key:
         raise HTTPException(404, "Snapshot not found")
+    target_scores = {
+        row["skill"]: row["target_score"]
+        for row in roadmap.data.get("milestones", [])
+        if "skill" in row and "target_score" in row
+    }
     milestones = db.scalars(
         select(Milestone).where(Milestone.roadmap_id == roadmap_id)
     ).all()
     try:
         proposed = evaluate(
-            [serialize_milestone(m) for m in milestones],
+            [
+                {
+                    **serialize_milestone(m),
+                    "target_score": target_scores.get(m.external_key),
+                }
+                for m in milestones
+            ],
             snapshot,
-            expected_scope=payload.expected_scope,
-            expected_rubric=payload.expected_rubric,
-            expected_period=payload.expected_period,
+            expected_scope=expected[0],
+            expected_rubric=expected[1],
+            expected_period=expected[2],
         )
     except IncomparableSnapshot as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -262,11 +271,15 @@ def resolve(
     return serialize_suggestion(s)
 
 
-@router.post("/{roadmap_id}/suggestions/{suggestion_id}/apply")
+@router.post(
+    "/{roadmap_id}/suggestions/{suggestion_id}/apply", dependencies=[Depends(csrf)]
+)
 def apply_suggestion(roadmap_id: int, suggestion_id: int, user: CurrentUser, db: DB):
     return resolve(roadmap_id, suggestion_id, "applied", user, db)
 
 
-@router.post("/{roadmap_id}/suggestions/{suggestion_id}/reject")
+@router.post(
+    "/{roadmap_id}/suggestions/{suggestion_id}/reject", dependencies=[Depends(csrf)]
+)
 def reject_suggestion(roadmap_id: int, suggestion_id: int, user: CurrentUser, db: DB):
     return resolve(roadmap_id, suggestion_id, "rejected", user, db)

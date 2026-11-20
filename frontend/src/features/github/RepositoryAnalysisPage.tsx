@@ -394,6 +394,10 @@ export function RepositoryAnalysisPage() {
       return
     }
 
+    // A known repository has one effective visibility even in the "all code" UI.
+    const analysisScope = scope === 'all' && currentRepo
+      ? (currentRepo.private ? 'private' : 'public') : scope
+
     // Background job mode
     if (useBackgroundJob) {
       setLoading(true)
@@ -409,7 +413,7 @@ export function RepositoryAnalysisPage() {
           end_date?: string
           timezone?: string
         } = {
-          scope: scope === 'all' ? 'full' : scope,
+          scope: analysisScope === 'all' ? 'full' : analysisScope,
           branch: currentRepo?.default_branch ?? undefined,
         }
 
@@ -463,7 +467,7 @@ export function RepositoryAnalysisPage() {
         end_date?: string
         timezone?: string
       } = {
-        scope,
+        scope: analysisScope,
         branch: currentRepo?.default_branch ?? undefined,
       }
 

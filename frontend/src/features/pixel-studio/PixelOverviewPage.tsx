@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useAuth } from '@/features/auth/useAuth'
-import { fetchRepositories, fetchSyncStatus, triggerSync } from '@/features/github/api'
+import { fetchRepositories, fetchSyncStatus } from '@/features/github/api'
 import type { Repository, SyncStatusResponse } from '@/features/github/types'
 import { apiFetch, isAbortError } from '@/shared/api/client'
 
@@ -17,7 +17,6 @@ export function PixelOverviewPage() {
   const [role, setRole] = useState<{ name: string; score: number | null; status: string; version: string } | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
-  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -50,15 +49,6 @@ export function PixelOverviewPage() {
     return () => controller.abort()
   }, [user, revision])
 
-  async function synchronize() {
-    setSyncing(true); setError('')
-    try {
-      await triggerSync(true, 'public')
-      setRevision(v => v + 1)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Không thể đồng bộ GitHub') }
-    finally { setSyncing(false) }
-  }
-
   return <div className="pixel-overview">
     <div className="pixel-hero"><div><p className="pixel-eyebrow">YOUR DEVELOPER INTELLIGENCE</p>
       <h1>Build your future <em>in code.</em></h1>
@@ -67,18 +57,18 @@ export function PixelOverviewPage() {
         <Link to="/roadmap" className="pixel-outline">Career roadmap →</Link></div></div>
       <div className="pixel-orbit" aria-hidden="true"><div className="pixel-orbit-ring"/><div className="pixel-orbit-core">✦</div></div>
     </div>
-    {!isLoading && !user && <div className="pixel-notice">Bạn chưa đăng nhập. <a href="/api/v1/auth/github">Kết nối GitHub</a> để xem dữ liệu thật.</div>}
-    {phase === 'loading' && <p role="status">Đang tải dữ liệu từ backend…</p>}
-    {error && <p role="alert" className="pixel-notice">{error} <button type="button" onClick={() => setRevision(v => v + 1)}>Thử lại</button></p>}
+    {!isLoading && !user && <p className="pixel-notice">Đăng nhập bằng GitHub để xem repository và điểm năng lực của bạn.</p>}
+    {user && phase === 'loading' && <p role="status">Đang tải dữ liệu từ backend…</p>}
+    {user && error && <p role="alert" className="pixel-notice">{error} <button type="button" onClick={() => setRevision(v => v + 1)}>Thử lại</button></p>}
     <div className="pixel-stat-grid">
-      <article className="pixel-stat"><span>REPOSITORIES</span><strong>{user && phase === 'ready' ? repos.length : '—'}</strong><small>{sync?.is_connected ? 'GitHub đã kết nối' : 'Chưa có kết nối xác thực'}</small></article>
-      <article className="pixel-stat"><span>ROLE SCORE</span><strong>{role?.score == null ? '—' : `${role.score.toFixed(1)}/100`}</strong><small>{role ? `${role.name} · ${role.status}` : 'Chưa đủ bằng chứng để tính điểm'}</small></article>
-      <article className="pixel-stat"><span>RUBRIC VERSION</span><strong>{role?.version ?? '—'}</strong><small>Đọc trực tiếp từ scoring API</small></article>
-      <article className="pixel-stat"><span>GITHUB SYNC</span><strong className="pixel-status-value">{sync?.status ?? '—'}</strong><small>{sync?.last_synced_at ? new Date(sync.last_synced_at).toLocaleString('vi-VN') : 'Chưa có lần đồng bộ'}</small></article>
+      <article className="pixel-stat"><span>REPOSITORIES</span><strong>{user && phase === 'ready' ? (sync?.total_repositories ?? repos.length) : '—'}</strong><small>{user && sync?.is_connected ? 'GitHub đã kết nối' : 'Chưa có kết nối xác thực'}</small></article>
+      <article className="pixel-stat"><span>ROLE SCORE</span><strong>{!user || role?.score == null ? '—' : `${role.score.toFixed(1)}/100`}</strong><small>{user && role ? `${role.name} · ${role.status}` : 'Chưa đủ bằng chứng để tính điểm'}</small></article>
+      <article className="pixel-stat"><span>RUBRIC VERSION</span><strong>{(user && role?.version) || '—'}</strong><small>Đọc trực tiếp từ scoring API</small></article>
+      <article className="pixel-stat"><span>GITHUB SYNC</span><strong className="pixel-status-value">{(user && sync?.status) || '—'}</strong><small>{user && sync?.last_synced_at ? new Date(sync.last_synced_at).toLocaleString('vi-VN') : 'Chưa có lần đồng bộ'}</small></article>
     </div>
     <div className="pixel-overview-columns"><section className="pixel-panel"><div className="pixel-panel-heading"><div><p className="pixel-eyebrow">SOURCE OF TRUTH</p><h2>Repository explorer</h2></div>
-      <button type="button" disabled={!user || syncing} onClick={() => void synchronize()}>{syncing ? 'Đang đồng bộ…' : '↻ Sync GitHub'}</button></div>
-      {!repos.length ? <p className="pixel-empty">Chưa có repository đã đồng bộ. Kết nối GitHub và chạy Sync để bắt đầu.</p> :
+      <Link to="/repositories" className="pixel-outline">Đồng bộ GitHub</Link></div>
+      {!user || !repos.length ? <p className="pixel-empty">Chưa có repository đã đồng bộ. Kết nối GitHub và chạy Sync để bắt đầu.</p> :
       <div className="pixel-repo-list">{repos.slice(0,8).map(repo => <Link key={repo.id} to={`/repositories/${repo.id}/analysis`} className="pixel-repo-row"><span className="pixel-repo-glyph">⌘</span><span><strong>{repo.full_name}</strong><small>{repo.primary_language ?? 'Chưa xác định'} · {repo.private ? 'Private' : 'Public'}</small></span><span className="pixel-row-arrow">↗</span></Link>)}</div>}
       <Link className="pixel-panel-footer" to="/repositories">Open all repositories →</Link></section>
       <section className="pixel-panel"><p className="pixel-eyebrow">YOUR NEXT MOVES</p><h2>Growth workspace</h2>

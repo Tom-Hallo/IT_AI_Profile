@@ -56,7 +56,7 @@ function RoleScore({ role, scope, dates }: { role: string; scope: Scope; dates: 
   return <Card>
     <div className="dashboard-metrics">
       <Metric label="Điểm vai trò" value={score?.role_score ?? null} />
-      <Metric label="Confidence" value={score?.confidence ?? null} />
+      <Metric label="Độ tin cậy" value={score?.confidence ?? null} />
       <Metric label="Độ phủ tiêu chí" value={score ? score.coverage * 100 : null} />
     </div>
     <p>Rubric {state.data.rubric_version}{score ? ` · ${score.status}` : ''}</p>
@@ -173,6 +173,11 @@ function DashboardContent({ user }: { user: AuthUser }) {
 export function DashboardPage() {
   const { user, isLoading, error } = useAuth()
   return <main className="dashboard-page">
+    <div className="pixel-page-heading">
+      <span className="pixel-eyebrow">EVIDENCE / DASHBOARD</span>
+      <h1>Dashboard Profile</h1>
+      <p>Tổng quan bằng chứng kỹ năng, điểm vai trò và dữ liệu phân tích từ GitHub repositories.</p>
+    </div>
     <header className="dashboard-header">
       <h1>Dashboard Profile</h1>
       <nav className="dashboard-actions" aria-label="Công cụ hồ sơ">
