@@ -81,3 +81,5 @@ analysis_cache/
 !pyproject.toml
 !package-lock.json
 
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
