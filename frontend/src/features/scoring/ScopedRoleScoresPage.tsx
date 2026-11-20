@@ -68,7 +68,7 @@ function RoleResults({ role }: { role: string }) {
         <div className="row"><dt>Điểm năng lực</dt><dd>
           {score?.role_score == null ? 'Chưa đủ bằng chứng' : `${score.role_score}/100`}
         </dd></div>
-        <div className="row"><dt>Confidence</dt><dd>
+        <div className="row"><dt>Độ tin cậy</dt><dd>
           {score?.confidence == null ? 'Chưa xác định' : `${score.confidence}/100`}
         </dd></div>
         <div className="row"><dt>Độ phủ tiêu chí</dt><dd>
@@ -135,8 +135,12 @@ function RoleSelection() {
 export function ScopedRoleScoresPage() {
   const { user, isLoading, error } = useAuth()
   return <main className="status-page">
+    <div className="pixel-page-heading">
+      <span className="pixel-eyebrow">ASSESSMENT / ROLE SCORES</span>
+      <h1>Điểm năng lực theo vai trò</h1>
+      <p>Đánh giá năng lực theo vai trò với rubric, độ tin cậy và bằng chứng cụ thể.</p>
+    </div>
     <Link to="/">Về trang chính</Link>
-    <h1>Điểm năng lực theo vai trò</h1>
     {isLoading && <p role="status">Đang kiểm tra phiên đăng nhập…</p>}
     {error && <p role="alert">{error}</p>}
     {user && <RoleSelection key={user.id} />}

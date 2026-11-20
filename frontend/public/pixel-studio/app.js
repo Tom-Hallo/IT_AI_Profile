@@ -20,6 +20,10 @@ import {mountMentorLayout} from './mentor-resize.js';
 import {settingsView, syncThemeControls} from './settings-view.js';
 import {applyTheme, colorFields, defaultPreset, hexColor, loadTheme, presets, saveTheme, themeColors, themeKey} from './theme.js';
 import {mountAboutMotion} from './about-motion.js';
+import {createLiveStudio} from './live.js';
+import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus} from './live-views.js';
+
+const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
 const $ = selector => document.querySelector(selector);
 const root = $('#root');
@@ -27,14 +31,18 @@ const mentorPanel = $('#mentor-panel');
 const dialog = $('#dialog');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const compactMentor = matchMedia('(max-width: 860px)');
-const state = loadProfile();
+const liveMode = document.body.dataset.studioMode === 'live';
+const state = liveMode ? {
+  access:'none',scope:'public',range:90,goal:'backend',repo:'',template:'plain',plans:{},
+  snapshots:[],seededReports:[],skillBasis:[],claimEvidence:[]
+} : loadProfile();
 let theme = loadTheme();
-const session = readSession();
+const session = liveMode ? null : readSession();
 let signedIn = Boolean(session);
 if (session) Object.assign(state,session);
 
-const initialSources = ['github','report','roadmap'];
-const defaultCV = () => ({name:sampleUser.name,role:roleLabel(state.goal),body:''});
+const initialSources = liveMode ? ['github'] : ['github','report','roadmap'];
+const defaultCV = () => ({name:liveMode ? '' : sampleUser.name,role:liveMode ? '' : roleLabel(state.goal),body:''});
 const mentorFrames = {
   idle:[['idle',1400],['blink',160],['idle',950],['happy',540]],
   thinking:[['thinking',280],['ponder',340]],
@@ -43,13 +51,25 @@ const mentorFrames = {
   review:[['review',2100],['blink',165]]
 };
 const runtime = {
-  milestone:Math.max(0,nextStep(state)), scoreTab:'tech', roleIndex:'backend', radarAxis:null,
+  milestone:liveMode ? 0 : Math.max(0,nextStep(state)), scoreTab:'tech', roleIndex:'backend', radarAxis:null,
   evidenceFocus:null, operation:null, mentorOpen:false, sourcesOpen:false, chosen:new Set(initialSources),
   privateAI:false, messages:[], chatDraft:'', chatSnippet:null, chatPending:false, chatTimer:0, chatSequence:0,
   roadUnlock:null,
   atsChecked:false, jdText:'', jobQuery:'', cvDraft:{...(state.cv ?? defaultCV())}, cvEdited:Boolean(state.cv)
 };
-const studioViews = {
+const live = liveMode ? createLiveStudio({
+  state,runtime,render:updateStudio,drawMentor:updateMentor,showModal,openMentor,navigate,notice:notifyText
+}) : null;
+const studioViews = live ? {
+  dashboard:() => liveDashboard(state,runtime,live.data),
+  repos:() => liveRepos(state,live.data,live.active()),
+  roadmap:() => liveRoadmap(live.data),
+  jobs:() => liveJobs(state,live.data),
+  cv:() => liveCV(state,runtime,live.data),
+  data:() => liveData(state,live.data),
+  status:() => liveStatus(live.data),
+  settings:() => settingsView(theme)
+} : {
   dashboard,repos:repositoryView,roadmap,jobs:jobsView,cv:cvView,data:dataView,status:statusView,
   settings:() => settingsView(theme)
 };
@@ -72,17 +92,19 @@ let dialogOpener;
 let dialogFocusKey;
 let jumpTarget;
 
-const save = () => saveProfile(state,signedIn);
+const save = () => { if (!live) saveProfile(state,signedIn); };
 function setSession(active) {
   signedIn = active;
   writeSession(active);
 }
 
-function notify(key,fields) {
+function notify(key,fields) { notifyText(t(key,fields)); }
+
+function notifyText(text) {
   const toast = $('#toast');
   clearTimeout(toastTimer);
   toast.hidden = false;
-  toast.textContent = t(key,fields);
+  toast.textContent = text;
   toastTimer = setTimeout(() => { toast.hidden = true; },4200);
 }
 
@@ -95,9 +117,10 @@ function readRoute() {
   const hash = location.hash.slice(1);
   if (hash.startsWith('share/')) return {kind:'share',id:hash.slice(6)};
   if (!signedIn) {
-    if (hash.startsWith('studio/')) history.replaceState(null,'','#about');
-    return {kind:hash === 'login' ? 'login' : 'about'};
+    if (hash.startsWith('studio/')) history.replaceState(null,'',live ? '#login' : '#about');
+    return {kind:hash === 'login' || (live && hash.startsWith('studio/')) ? 'login' : 'about'};
   }
+  if (live && (hash === 'about' || hash === 'mentor-preview')) return {kind:'about'};
   if (hash.startsWith('studio/')) {
     const page = hash.slice(7);
     if (Object.hasOwn(studioViews,page)) return {kind:'studio',page};
@@ -146,6 +169,7 @@ function updateStudio() {
   if (runtime.mentorOpen) renderMentorPanel();
 }
 function renderRoute(force=false) {
+  const previous = route;
   const next = readRoute();
   if (!force && sameRoute(route,next)) {
     renderMentorPanel();
@@ -182,13 +206,15 @@ function renderRoute(force=false) {
     const focusInPanel = mentorPanel.contains(document.activeElement) ? focusKey(document.activeElement) : null;
     mentorLayout?.disconnect();
     document.body.append(mentorPanel);
-    replaceView(root,studioShell(next.page,studioViews[next.page](state,runtime),sampleUser,runtime.mentorOpen));
+    replaceView(root,studioShell(next.page,studioViews[next.page](state,runtime),live ? {
+      name:live.data.user.full_name || live.data.user.email,handle:live.data.user.email
+    } : sampleUser,runtime.mentorOpen,Boolean(live)));
     $('.workspace-body').append(mentorPanel);
     mentorLayout = mountMentorLayout($('.workspace'),compactMentor);
     if (focusInPanel) mentorPanel.querySelector(focusInPanel)?.focus({preventScroll:true});
   } else {
-    const content = next.kind === 'login' ? login()
-      : next.kind === 'share' ? shareView(findSharedProfile(next.id),signedIn)
+    const content = next.kind === 'login' ? login(Boolean(live))
+      : next.kind === 'share' ? (live ? livePublic(live.data.publicToken === next.id ? live.data.public : undefined) : shareView(findSharedProfile(next.id),signedIn))
       : landing();
     replaceView(root,content);
   }
@@ -202,6 +228,15 @@ function renderRoute(force=false) {
   prepareView();
   renderMentorPanel();
   if (force) updateMentor();
+  if (live && !sameRoute(previous,next)) {
+    if (next.kind === 'studio') {
+      void live.loadPage(next.page);
+      if (runtime.mentorOpen && !previous) void live.loadMentor();
+    }
+    if (next.kind === 'share') void live.loadPublic(next.id).then(() => {
+      if (route.kind === 'share' && route.id === next.id) replaceView(root,livePublic(live.data.public));
+    });
+  }
 }
 function updateStudioNavigation(page) {
   for (const link of root.querySelectorAll('.studio-menu .nav-link, .studio-settings')) {
@@ -234,6 +269,11 @@ function focusJump() {
   return false;
 }
 function enter() {
+  if (live) {
+    if (signedIn) navigate('dashboard');
+    else location.hash = 'login';
+    return;
+  }
   setSession(true);
   if (state.access === 'none') {
     state.access = 'public';
@@ -248,9 +288,11 @@ function prepareView() {
     stopRoadAnimation?.();
     stopRoadAnimation = null;
     const map = $('.road-map');
-    paintMap(map,state);
-    mapObserver = new ResizeObserver(() => paintMap(map,state));
-    mapObserver.observe(map);
+    if (map) {
+      paintMap(map,state,null,live?.data.tracking?.milestones);
+      mapObserver = new ResizeObserver(() => paintMap(map,state,null,live?.data.tracking?.milestones));
+      mapObserver.observe(map);
+    }
   }
   if (isStudio('dashboard')) {
     radar?.disconnect();
@@ -263,7 +305,8 @@ function prepareView() {
 function mentorContext() {
   const page = route?.page ?? 'dashboard';
   const glyph = pages.find(item => item[0] === page)?.[1] ?? 'settings';
-  const repo = page === 'repos' ? repoSelected(state) : null;
+  const repo = live ? live.active() : page === 'repos' ? repoSelected(state) : null;
+  if (live) return {label:page === 'repos' ? repo?.full_name || t('nav.repos') : t('nav.' + page),icon:glyph,repoId:repo?.id};
   const milestone = page === 'roadmap' ? runtime.milestone : undefined;
   const metric = page === 'dashboard' ? radarMetrics[runtime.radarAxis] : undefined;
   const label = repo?.name ?? (metric ? t('metric.' + metric)
@@ -332,7 +375,7 @@ function updateMentor(refocus=false,scrollLatest=false,context=mentorContext()) 
   const caret = focused?.id === 'mentor-question' ? [focused.selectionStart,focused.selectionEnd,focused.selectionDirection] : null;
   const previousScroll = mentorPanel.querySelector('.chat-log')?.scrollTop ?? 0;
   mentorContextKey = JSON.stringify(context);
-  mentorPanel.innerHTML = mentor(runtime,context,scrollLatest);
+  mentorPanel.innerHTML = mentor(runtime,context,scrollLatest,live?.data);
   paintBots(mentorPanel);
   animateMentorFace();
   const log = mentorPanel.querySelector('.chat-log');
@@ -363,6 +406,7 @@ function animateMentorFace() {
 }
 function openMentor() {
   if (!isStudio()) return;
+  if (live && !runtime.mentorOpen) void live.loadMentor();
   if (!runtime.mentorOpen) {
     mentorOpener = document.activeElement;
     compactScroll = compactMentor.matches ? window.scrollY : undefined;
@@ -392,6 +436,7 @@ function clearChat(keepDraft=false) {
   updateMentor();
 }
 function sendChat(raw,context=mentorContext(),snippet=runtime.chatSnippet) {
+  if (live) return live.send(raw,context);
   const question = raw.trim().slice(0,400);
   if (!question || runtime.chatPending) return;
   const answer = answerMentor(state,question,runtime.chosen,runtime.privateAI,{...context,snippet});
@@ -753,6 +798,7 @@ function leaveStudio() {
 function updateLanguage(next) {
   if (getLanguage() === next) return;
   setLanguage(next);
+  document.documentElement.lang = next;
   $('#toast').hidden = true;
   if (!runtime.cvEdited) runtime.cvDraft = defaultCV();
   renderRoute(true);
@@ -981,7 +1027,10 @@ document.addEventListener('click',event => {
   if (runtime.mentorOpen && compactMentor.matches
     && event.target.closest('.studio-settings, .studio-menu a, .sidebar > .brand')) closeMentor();
   const trigger = event.target.closest('[data-act]');
-  if (trigger && !trigger.disabled) actions[trigger.dataset.act]?.(trigger);
+  if (trigger && !trigger.disabled) {
+    const action = live?.actions[trigger.dataset.act] ?? actions[trigger.dataset.act];
+    action?.(trigger);
+  }
 });
 
 document.addEventListener('keydown',event => {
@@ -998,6 +1047,7 @@ document.addEventListener('change',async event => {
     changeThemeColor(control,true);
     return;
   }
+  if (live?.change(control)) return;
   if (control.id === 'repo-switch') selectRepository(control.value);
   if (control.id === 'road-goal' && Object.hasOwn(paths,control.value)) {
     state.goal = control.value;
@@ -1058,12 +1108,20 @@ document.addEventListener('input',event => {
     return;
   }
   if (control.name === 'question') runtime.chatDraft = control.value;
+  if (live) {
+    if (control.name === 'query') live.data.jobQuery = control.value;
+    if (control.name === 'jd' && control.closest('#jd-form')) live.data.jobText = control.value;
+    if (control.name === 'jd-url') live.data.jobURL = control.value;
+    if (control.name === 'ats-jd') live.data.atsJD = control.value;
+    if (control.name === 'mentor-jd') live.data.mentorJD = control.value;
+  }
   if (control.name === 'evidence') control.setCustomValidity('');
   if (control.closest('#cv-form') && Object.hasOwn(runtime.cvDraft,control.name)) {
     runtime.cvDraft[control.name] = control.value;
     runtime.cvEdited = true;
     runtime.atsChecked = false;
-    $('#ats-result').replaceChildren();
+    if (live) live.data.ats = null;
+    $('#ats-result')?.replaceChildren();
     previewCV();
   }
   if (control.name === 'jd') runtime.jdText = control.value;
@@ -1076,6 +1134,10 @@ document.addEventListener('submit',event => {
   event.preventDefault();
   const values = new FormData(form);
   if (form.classList.contains('chat-form')) sendChat(String(values.get('question') ?? ''));
+  if (live) {
+    void live.forms[form.id]?.(values);
+    return;
+  }
   if (form.id === 'skill-form') {
     const value = String(values.get('skill') ?? '').trim();
     if (!value || state.skillBasis.some(skill => skill.toLowerCase() === value.toLowerCase())) {
@@ -1153,7 +1215,7 @@ window.addEventListener('hashchange',() => {
   }
 });
 window.addEventListener('storage',event => {
-  if (event.key === profileKey && route.kind === 'share') renderRoute(true);
+  if (!live && event.key === profileKey && route?.kind === 'share') renderRoute(true);
   if (event.key === themeKey) {
     theme = loadTheme();
     refreshTheme();
@@ -1168,5 +1230,44 @@ compactMentor.addEventListener('change',() => {
 paintIcons(document.documentElement);
 applyTheme(theme);
 refreshBotColors(document);
-renderRoute();
-if (location.hash === '#mentor-preview') $('#mentor-preview')?.scrollIntoView({block:'start'});
+async function start() {
+  if (live) {
+    const legacy = {
+      '/dashboard':'dashboard','/repositories':'repos','/role-scores':'dashboard','/activity':'repos',
+      '/analysis':'repos','/job-matching':'jobs','/cvs':'cv','/cvs/references':'cv','/cv-studio':'cv',
+      '/ats-review':'cv','/mentor':'mentor','/privacy':'data','/profile-sharing':'data',
+      '/ai-audit':'data','/system-status':'status','/roadmap':'roadmap'
+    };
+    const deepRepo = location.pathname.match(/^\/(?:repositories\/(\d+)\/(?:analysis|activity)|(?:analysis|activity)\/(\d+))\/?$/);
+    const share = location.pathname.match(/^\/share\/([A-Za-z0-9_-]+)\/?$/);
+    const cleanPath = location.pathname.replace(/\/$/,'');
+    const callbackError = new URLSearchParams(location.search).get('auth_error');
+    if (deepRepo) live.data.requestedRepo = deepRepo[1] || deepRepo[2];
+    const page = deepRepo ? 'repos' : legacy[cleanPath];
+    if (share) history.replaceState(null,'','/#share/' + share[1]);
+    else if (page && !location.hash) history.replaceState(null,'','/#studio/' + page);
+    else if (callbackError) history.replaceState(null,'','/#login');
+    signedIn = await live.session();
+    if (signedIn) {
+      runtime.cvDraft.name = live.data.user.full_name || '';
+      const privateReturn = sessionStorage.getItem('ita-studio-private-return');
+      if (privateReturn) {
+        sessionStorage.removeItem('ita-studio-private-return');
+        if (!callbackError) {
+          state.scope = 'private';
+          history.replaceState(null,'','/#studio/repos');
+        }
+      }
+    }
+    document.documentElement.lang = getLanguage();
+    if (callbackError) notifyText({
+      github_access_denied: copy('Bạn đã từ chối cấp quyền GitHub.', 'You denied GitHub permissions.'),
+      oauth_state_invalid: copy('Phiên GitHub đã hết hạn. Hãy đăng nhập lại.', 'GitHub session expired. Please sign in again.'),
+      github_account_conflict: copy('GitHub đã liên kết với một tài khoản khác.', 'GitHub is linked to another account.')
+    }[callbackError] ?? copy('GitHub chưa hoàn tất đăng nhập. Hãy thử lại.', 'GitHub sign-in not completed. Please try again.'));
+  }
+  renderRoute();
+  if (location.hash === '#mentor-preview') $('#mentor-preview')?.scrollIntoView({block:'start'});
+}
+
+void start();

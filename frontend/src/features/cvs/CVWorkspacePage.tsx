@@ -155,8 +155,12 @@ function Workspace() {
 
   return (
     <main className="cv-workspace">
+      <div className="pixel-page-heading">
+        <span className="pixel-eyebrow">CV / DOCUMENTS</span>
+        <h1>CV của tôi</h1>
+        <p>Tải lên, biên tập và quản lý các phiên bản CV cá nhân.</p>
+      </div>
       <Link to="/dashboard">← Dashboard</Link>
-      <h1>CV của tôi</h1>
       <div className="cv-actions">
         <Link to="/cv-studio">Tạo CV theo JD trong AI CV Studio</Link>
         <Link to="/cvs/references">Mẫu CV tham khảo</Link>

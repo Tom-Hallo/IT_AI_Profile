@@ -28,6 +28,7 @@ def setup_audit(monkeypatch):
     """Mock service ghi audit."""
     audit = Mock()
     monkeypatch.setattr(policy_gateway, "record_ai_usage", audit)
+    monkeypatch.setattr(policy_gateway.Trace, "write", Mock())
     return audit
 
 
@@ -181,7 +182,7 @@ def test_valid_consent_calls_provider_and_records_usage(monkeypatch):
     )
 
     assert result == "Analysis result"
-    assert consent_check.call_count == 1
+    assert consent_check.call_count == 2
     assert consent_check.call_args.kwargs["user_id"] == 1
     assert consent_check.call_args.kwargs["repo_id"] == 10
     assert consent_check.call_args.kwargs["provider"] == "openai"

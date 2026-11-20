@@ -20,6 +20,11 @@ from app.ai.providers import (
     get_ai_provider,
 )
 from app.core.config import Settings, settings
+from app.modules.ai_audit.models import Consent as AuditConsent
+from app.modules.ai_audit.models import Provider as AuditProvider
+from app.modules.ai_audit.models import Source as AuditSource
+from app.modules.ai_audit.models import Status as AuditStatus
+from app.modules.ai_audit.service import Trace
 from app.modules.ai_mentor.actions import propose_action
 from app.modules.ai_mentor.schemas import (
     EvidenceRef,
@@ -408,6 +413,20 @@ async def run_mentor_chat(
     *, db: Session, user: User, payload: MentorChatRequest, config: Settings = settings
 ) -> MentorChatResponse:
     chunks, limits = _collect_context(db, user, payload, config.ai_provider)
+    audit_provider: AuditProvider = (
+        "openai" if config.ai_provider == "openai" else "ollama"
+    )
+    trace = Trace(user.id, "mentor", audit_provider)
+    if any(limit.code == "github_denied" for limit in limits):
+        trace.write(db, "context", [("github", "denied")], "denied")
+    unavailable: list[tuple[AuditSource, AuditConsent]] = []
+    if any(limit.code == "github_empty" for limit in limits):
+        unavailable.append(("github", "not_requested"))
+    if any(limit.code == "cv_unavailable" for limit in limits):
+        unavailable.append(("cv", "selected"))
+    if any(limit.code == "roadmap_unavailable" for limit in limits):
+        unavailable.append(("roadmap", "selected"))
+    trace.write(db, "context", unavailable, "unavailable")
     if not chunks and not payload.enable_actions:
         return MentorChatResponse(
             answer="Chọn ít nhất một nguồn có dữ liệu hợp lệ và thử lại.",
@@ -448,6 +467,17 @@ async def run_mentor_chat(
             provider_available=False,
         )
 
+    packed_chunks = list(packed.values())
+    context_sources: list[tuple[AuditSource, AuditConsent]] = [
+        ("github_private", "double_granted")
+        if chunk.path is not None
+        else ("github_public", "selected")
+        if chunk.source == "github"
+        else (chunk.source, "selected")
+        for chunk in packed_chunks
+    ]
+    trace.write(db, "context", context_sources, "retrieved")
+    provider_sources = [*context_sources, ("chat", "selected")]
     user_id = user.id
     if (
         count_ai_requests_today(user_id=user_id, provider=config.ai_provider)
@@ -465,7 +495,11 @@ async def run_mentor_chat(
 
     def before_send() -> None:
         nonlocal sent
-        _recheck_github(db, user, config.ai_provider, list(packed.values()))
+        _recheck_github(db, user, config.ai_provider, packed_chunks)
+        if not sent:
+            trace.write(db, "provider", provider_sources, "started")
+            # The audit write commits separately. Recheck after it and before sending.
+            _recheck_github(db, user, config.ai_provider, packed_chunks)
         sent = True
 
     try:
@@ -505,8 +539,9 @@ async def run_mentor_chat(
                     *dict.fromkeys(chunk.source for chunk in packed.values()),
                 ],
                 uses_private_github=any(
-                    chunk.path is not None for chunk in packed.values()
+                    chunk.path is not None for chunk in packed_chunks
                 ),
+                provider=audit_provider,
             )
             if response.action and not response.evidence:
                 response.answer = (
@@ -534,7 +569,22 @@ async def run_mentor_chat(
     except AIProviderError:
         error = _limit("ai_error", "AI provider đang không xử lý được yêu cầu.")
     finally:
+        if status == "consent_changed":
+            trace.write(
+                db, "provider", [("github", "denied")], "denied", required=False
+            )
         if sent:
+            if status != "consent_changed":
+                audit_status: AuditStatus = (
+                    "succeeded"
+                    if status == "ok"
+                    else "timeout"
+                    if status == "timeout"
+                    else "failed"
+                )
+                trace.write(
+                    db, "provider", provider_sources, audit_status, required=False
+                )
             record_ai_usage(
                 user_id=user_id,
                 repository_id=None,

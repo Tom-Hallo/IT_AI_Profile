@@ -1,15 +1,10 @@
 import { env } from '@/shared/config/env'
+import { GitHubLogin } from './GitHubLogin'
 import type { useAuth } from './useAuth'
 import './AuthPanel.css'
 
 export function AuthPanel({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const { user, isLoading, isLoggingOut, error, signOut } = auth
-
-  const handleGitHubLogin = () => {
-    if (!env.apiBaseUrl) return
-
-    window.location.assign(`${env.apiBaseUrl}/auth/github`)
-  }
 
   return (
     <section className="auth-panel" aria-labelledby="auth-heading">
@@ -38,14 +33,7 @@ export function AuthPanel({ auth }: { auth: ReturnType<typeof useAuth> }) {
         <div>
           <p>Bạn chưa đăng nhập.</p>
 
-          <button
-            type="button"
-            className="button"
-            onClick={handleGitHubLogin}
-            disabled={!env.apiBaseUrl}
-          >
-            Đăng nhập bằng GitHub
-          </button>
+          <GitHubLogin />
         </div>
       )}
 

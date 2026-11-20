@@ -104,14 +104,16 @@ export function landing() {
     + '<main class="site-shell">' + aboutContent() + '</main><footer class="public-foot site-shell"><span>IT Talent AI Profile</span></footer></div>';
 }
 
-export function login() {
+export function login(live=false) {
   return '<main class="login-page"><div class="login-shell"><div class="login-top"><a class="back-link" href="#about">← ' + escape(t('nav.about')) + '</a>'
     + languagePicker() + '</div><article class="login-card"><div class="login-emblem">' + bot('pixel-login') + '</div><h1>' + escape(t('login.title'))
-    + '</h1><p>' + escape(t('login.copy')) + '</p><div class="login-actions">' + btn('<svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.2 11.2 0 0 0-3.54 21.82c.56.1.77-.24.77-.54v-1.9c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.54 0-1.23.44-2.23 1.15-3.02-.12-.28-.5-1.42.11-2.97 0 0 .94-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.13-1.45 3.07-1.15 3.07-1.15.61 1.55.23 2.69.12 2.97.72.79 1.15 1.79 1.15 3.02 0 4.3-2.63 5.25-5.14 5.53.4.35.76 1.04.76 2.09v2.89c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg> ' + escape(t('login.github')),'oauth','primary')
-    + btn(escape(t('login.sample')) + ' ' + icon('arrow'),'enter') + '</div><p class="login-note">' + icon('lock') + ' ' + escape(t('login.note')) + '</p></article></div></main>';
+    + '</h1><p>' + escape(live ? (document.documentElement.lang === 'en' ? 'Connect GitHub to open your Studio.' : 'Kết nối GitHub để mở Studio của bạn.') : t('login.copy')) + '</p><div class="login-actions">' + btn('<svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.2 11.2 0 0 0-3.54 21.82c.56.1.77-.24.77-.54v-1.9c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.54 0-1.23.44-2.23 1.15-3.02-.12-.28-.5-1.42.11-2.97 0 0 .94-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.13-1.45 3.07-1.15 3.07-1.15.61 1.55.23 2.69.12 2.97.72.79 1.15 1.79 1.15 3.02 0 4.3-2.63 5.25-5.14 5.53.4.35.76 1.04.76 2.09v2.89c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg> ' + escape(t('login.github')),'oauth','primary')
+    + (live ? '<a class="button secondary" href="/pixel-studio/index.html#login">' + escape(t('login.sample')) + icon('arrow') + '</a>'
+      : btn(escape(t('login.sample')) + ' ' + icon('arrow'),'enter')) + '</div><p class="login-note">' + icon('lock') + ' '
+    + escape(live ? (document.documentElement.lang === 'en' ? 'Private repository access is optional.' : 'Quyền repository riêng tư là tùy chọn.') : t('login.note')) + '</p></article></div></main>';
 }
 
-export function studioShell(page,content,user,mentorOpen) {
+export function studioShell(page,content,user,mentorOpen,live=false) {
   const label = t('nav.' + page);
   const links = items => items.map(([key,glyph]) => {
     const name = t('nav.' + key);
@@ -120,12 +122,12 @@ export function studioShell(page,content,user,mentorOpen) {
   }).join('');
   return '<div class="studio"><a class="skip-link" href="#main-view">' + escape(t('nav.skip')) + '</a><aside class="sidebar">' + brand(true)
     + '<nav id="studio-menu" class="studio-menu" aria-label="Studio">' + links(pages.slice(0,5)) + '<div class="nav-divider"></div>' + links(pages.slice(5)) + '</nav>'
-    + '<div class="sidebar-foot"><div class="demo-profile"><span class="profile-avatar" aria-hidden="true">M</span><div><strong>' + escape(user.name)
-    + '</strong><small>@' + escape(user.handle) + '</small></div></div>' + btn(icon('logout') + '<span class="nav-label">'
+    + '<div class="sidebar-foot"><div class="demo-profile"><span class="profile-avatar" aria-hidden="true">' + escape(user.name?.slice(0,1).toUpperCase() || '?') + '</span><div><strong>' + escape(user.name)
+    + '</strong><small>' + escape((live ? '' : '@') + user.handle) + '</small></div></div>' + btn(icon('logout') + '<span class="nav-label">'
       + escape(t('nav.signout')) + '</span>','logout','quiet small',labelAttr(t('nav.signout')))
     + '</div></aside>'
     + '<div class="workspace"><header class="workspace-top"><div class="crumb"><span>Studio</span><span aria-hidden="true">/</span><strong>' + escape(label)
-    + '</strong></div><div class="top-actions"><span class="workspace-demo"><span class="status-dot"></span> ' + escape(t('nav.sample'))
+    + '</strong></div><div class="top-actions"><span class="workspace-demo"><span class="status-dot"></span> ' + escape(live ? 'GitHub' : t('nav.sample'))
     + '</span>' + languagePicker()
     + '<a class="button quiet small studio-settings" href="#studio/settings"' + labelAttr(t('nav.settings'))
     + (page === 'settings' ? ' aria-current="page"' : '') + ' title="' + escape(t('nav.settings')) + '">' + icon('settings')

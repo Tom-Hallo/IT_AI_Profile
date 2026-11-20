@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
+from app.modules.consent.router import csrf
 from app.modules.profile_sharing.models import ProfileShareLink
 from app.modules.profile_sharing.service import (
     ALLOWED_FIELDS,
@@ -42,13 +43,28 @@ def owner_link(db: Session, user_id: int, link_id: int) -> ProfileShareLink:
     return link
 
 
-@router.post("/profile/shares/preview")
-def preview(body: ShareSettings, db: Db, user: Owner) -> dict:
+@router.get("/profile/shares")
+def list_shares(db: Db, user: Owner, response: Response) -> list[dict]:
+    response.headers["Cache-Control"] = "no-store"
+    links = db.scalars(
+        select(ProfileShareLink)
+        .where(
+            ProfileShareLink.user_id == user.id, ProfileShareLink.is_active.is_(True)
+        )
+        .order_by(ProfileShareLink.id.desc())
+    )
+    return [{"id": link.id, "allowed_fields": link.allowed_fields} for link in links]
+
+
+@router.post("/profile/shares/preview", dependencies=[Depends(csrf)])
+def preview(body: ShareSettings, db: Db, user: Owner, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return public_payload(db, user, body.allowed_fields & ALLOWED_FIELDS)
 
 
-@router.post("/profile/shares", status_code=201)
-def create_share(body: ShareSettings, db: Db, user: Owner) -> dict:
+@router.post("/profile/shares", status_code=201, dependencies=[Depends(csrf)])
+def create_share(body: ShareSettings, db: Db, user: Owner, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     token = new_token()
     link = ProfileShareLink(
         user_id=user.id,
@@ -62,7 +78,7 @@ def create_share(body: ShareSettings, db: Db, user: Owner) -> dict:
     return {"id": link.id, "token": token, "allowed_fields": link.allowed_fields}
 
 
-@router.put("/profile/shares/{link_id}")
+@router.put("/profile/shares/{link_id}", dependencies=[Depends(csrf)])
 def update_share(link_id: int, body: ShareSettings, db: Db, user: Owner) -> dict:
     link = owner_link(db, user.id, link_id)
     if not link.is_active:
@@ -72,7 +88,9 @@ def update_share(link_id: int, body: ShareSettings, db: Db, user: Owner) -> dict
     return {"id": link.id, "allowed_fields": link.allowed_fields}
 
 
-@router.delete("/profile/shares/{link_id}", status_code=204)
+@router.delete(
+    "/profile/shares/{link_id}", status_code=204, dependencies=[Depends(csrf)]
+)
 def revoke_share(link_id: int, db: Db, user: Owner) -> Response:
     link = owner_link(db, user.id, link_id)
     link.is_active = False
@@ -83,8 +101,11 @@ def revoke_share(link_id: int, db: Db, user: Owner) -> Response:
 
 @router.get("/public/profiles/{token}")
 def get_public_profile(
-    token: Annotated[str, Path(min_length=40, max_length=128)], db: Db
+    token: Annotated[str, Path(min_length=40, max_length=128)],
+    db: Db,
+    response: Response,
 ) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     link = db.scalar(
         select(ProfileShareLink).where(
             ProfileShareLink.token_hash == token_digest(token),

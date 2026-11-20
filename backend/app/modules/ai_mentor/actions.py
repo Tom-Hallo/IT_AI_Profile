@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.modules.ai_audit.models import AIUsageEvent, Consent, Provider, Status, Tool
 from app.modules.ai_mentor.action_models import MentorAction, MentorActionEvent
 from app.modules.ai_mentor.action_schemas import (
     ActionDecision,
@@ -37,6 +39,26 @@ IMPACTS = {
 
 def _audit(db: Session, action: MentorAction, event: str) -> None:
     db.add(MentorActionEvent(action_id=action.id, event=event))
+    consent: Consent = (
+        "declined"
+        if event == "declined"
+        else "not_requested"
+        if event in {"proposed", "expired"}
+        else "confirmed"
+    )
+    db.add(
+        AIUsageEvent(
+            user_id=action.user_id,
+            operation_id=action.id,
+            feature="mentor",
+            phase="tool",
+            source="chat",
+            provider=action.audit_provider,
+            consent=consent,
+            status=cast(Status, event),
+            tool=cast(Tool, action.tool),
+        )
+    )
 
 
 def _finish(
@@ -76,6 +98,7 @@ def propose_action(
     context_refs: list[tuple[str, int]],
     sources: list[str],
     uses_private_github: bool,
+    provider: Provider | None = None,
 ) -> ActionPreview | None:
     try:
         data = json.loads(model_text)
@@ -105,6 +128,7 @@ def propose_action(
         id=uuid4(),
         user_id=user.id,
         tool=proposal.tool,
+        audit_provider=provider,
         status="pending",
         expires_at=now + TTL,
         payload={

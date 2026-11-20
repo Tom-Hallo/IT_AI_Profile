@@ -79,6 +79,11 @@ function AuditHistory() {
   }, [request])
 
   return <main className="ai-audit-page">
+    <div className="pixel-page-heading">
+      <span className="pixel-eyebrow">SECURITY / AI AUDIT LOG</span>
+      <h1>Lịch sử sử dụng AI</h1>
+      <p>Nhật ký kiểm toán truy vấn, chính sách đồng ý (consent) và các tác vụ AI.</p>
+    </div>
     <nav aria-label="Điều hướng lịch sử AI">
       <Link to="/dashboard">Dashboard</Link>
       <Link to="/mentor">AI Mentor</Link>

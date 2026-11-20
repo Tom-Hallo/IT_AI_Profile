@@ -5,6 +5,7 @@ import logging
 from collections.abc import Mapping
 from time import perf_counter
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.ai.providers import (
@@ -12,6 +13,7 @@ from app.ai.providers import (
     get_ai_provider,
 )
 from app.core.config import Settings, settings
+from app.modules.ai_audit.service import Trace
 from app.modules.ai_mentor.usage_service import (
     count_ai_requests_today,
     record_ai_usage,
@@ -84,13 +86,24 @@ async def generate_with_policy(
     paths, input_text = _prepare_scoped_input(files)
 
     # Kiểm tra consent trước mọi hoạt động gửi dữ liệu ra ngoài.
-    require_double_consent(
-        db=db,
-        user_id=user_id,
-        repo_id=repo_id,
-        provider=config.ai_provider,
-        paths=paths,
-    )
+    trace = Trace(user_id, "repository_ai", config.ai_provider)
+
+    def check_consent() -> None:
+        require_double_consent(
+            db=db,
+            user_id=user_id,
+            repo_id=repo_id,
+            provider=config.ai_provider,
+            paths=paths,
+        )
+
+    try:
+        check_consent()
+    except HTTPException:
+        trace.write(db, "context", [("github", "denied")], "denied")
+        raise
+    sources = [("github", "policy_allowed")]
+    trace.write(db, "context", sources, "retrieved")
 
     request_count = count_ai_requests_today(
         user_id=user_id,
@@ -109,13 +122,26 @@ async def generate_with_policy(
     status = "failed"
     result = None
 
+    trace.write(db, "provider", sources, "started")
+
+    def before_send() -> None:
+        db.expire_all()
+        check_consent()
+
     try:
         result = await provider.generate(
             instructions=instructions,
             input_text=input_text,
+            before_send=before_send,
         )
+        db.expire_all()
+        check_consent()
         status = "success"
         return result["text"]
+
+    except HTTPException:
+        status = "denied"
+        raise
 
     except AIProviderError:
         status = "failed"
@@ -123,6 +149,19 @@ async def generate_with_policy(
 
     finally:
         duration_ms = int((perf_counter() - started_at) * 1000)
+
+        if status == "denied":
+            trace.write(
+                db, "provider", [("github", "denied")], "denied", required=False
+            )
+        else:
+            trace.write(
+                db,
+                "provider",
+                sources,
+                "succeeded" if status == "success" else "failed",
+                required=False,
+            )
 
         record_ai_usage(
             user_id=user_id,

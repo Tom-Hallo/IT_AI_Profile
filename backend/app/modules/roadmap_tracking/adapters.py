@@ -1,49 +1,27 @@
-"""Replace these adapters with PBI-023/PBI-030 services when merged.
-Mock data is explicit and disabled unless PBI024_DEMO_MODE=1; never use in production.
-"""
+"""Build a roadmap snapshot from public assessments owned by the requester."""
 
-import os
+import json
+from hashlib import sha256
+
+from sqlalchemy.orm import Session
+
+from app.modules.career_roadmap.provider import RealAssessmentProvider
+from app.modules.scoring.snapshots import VERSION
 
 from .engine import Snapshot
 
 
-class SnapshotNotFound(Exception):
-    pass
-
-
-class MockSnapshotProvider:
-    def get(self, snapshot_id: str, user_id: int) -> Snapshot:
-        if os.getenv("PBI024_DEMO_MODE") != "1" or os.getenv("APP_ENV", "").lower() in {
-            "production",
-            "prod",
-        }:
-            raise SnapshotNotFound("Demo snapshot provider disabled")
-        fixtures = {
-            "demo-valid": Snapshot(
-                "demo-valid",
-                user_id,
-                "public",
-                "v1",
-                "last-90-days",
-                {
-                    "Python": [
-                        {"verified": True, "ref": "demo://evidence/python/commit-a1"}
-                    ],
-                    "FastAPI": [
-                        {"verified": True, "ref": "demo://evidence/fastapi/commit-b2"}
-                    ],
-                },
-            ),
-            "demo-wrong-rubric": Snapshot(
-                "demo-wrong-rubric", user_id, "public", "v2", "last-90-days", {}
-            ),
-            "demo-invalid": Snapshot(
-                "demo-invalid", user_id, "public", "v1", "last-90-days", {}, False
-            ),
-        }
-        if snapshot_id not in fixtures:
-            raise SnapshotNotFound("Snapshot not found")
-        return fixtures[snapshot_id]
-
-
-snapshot_provider = MockSnapshotProvider()
+def current_snapshot(db: Session, user_id: int) -> Snapshot:
+    skills: dict[str, list[dict]] = {}
+    for assessment in RealAssessmentProvider().load(db, user_id):
+        skill = assessment["skill"]
+        if skill in skills:
+            continue
+        score = assessment["score"]
+        skills[skill] = [
+            {"verified": True, "ref": str(item["id"]), "score": score}
+            for item in sorted(assessment["evidence"], key=lambda item: item["id"])
+            if score is not None and assessment["confidence"] in {"high", "medium"}
+        ]
+    fingerprint = sha256(json.dumps(skills, sort_keys=True).encode()).hexdigest()
+    return Snapshot(fingerprint, user_id, "public", VERSION, "all_time", skills)

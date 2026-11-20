@@ -156,3 +156,70 @@
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+/* Pixel Studio mentor wrapper */
+.mentor-page {
+  max-width: 1400px;
+}
+
+.mentor-header {
+  margin-bottom: 24px;
+}
+
+.mentor-header h1 {
+  font-size: clamp(22px, 3vw, 32px);
+  letter-spacing: -0.04em;
+  color: #f2f5ef;
+  margin: 0 0 8px;
+}
+
+.mentor-header>div {
+  color: #9baab5;
+  font-size: 13px;
+}
+
+.mentor-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media(max-width: 850px) {
+  .mentor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-bubble {
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-bubble--user {
+  background: #2b382c;
+  border: 1px solid #415043;
+  color: #d5ef93;
+  margin-left: 32px;
+}
+
+.chat-bubble--assistant {
+  background: #1a2129;
+  border: 1px solid #303943;
+  color: #edf0ef;
+  margin-right: 32px;
+}
+
+.chat-content {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.chat-meta {
+  font-size: 11px;
+  color: #778694;
+  margin: 6px 0 0;
+}
