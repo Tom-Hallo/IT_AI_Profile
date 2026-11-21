@@ -129,7 +129,7 @@ export function PixelStudioPage() {
       <a href="/dashboard">Mở dashboard React</a>
     </header>
     <div className="pixel-integration-body">
-      <iframe title="IT Talent Pixel Studio design" src="/pixel-studio/index.html#about" className="pixel-demo-frame"/>
+      <iframe title="IT Talent Pixel Studio design" src="/#about" className="pixel-demo-frame"/>
       {drawer && <aside className="pixel-live-panel" aria-label="Backend data panel">
         <h2>Backend thật</h2>
         <p className="pixel-muted">Phần này đọc dữ liệu FastAPI; các số liệu mẫu bên trong Pixel Studio chưa được thay thế.</p>

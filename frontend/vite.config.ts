@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
-        input: { main: path.resolve(import.meta.dirname, 'index.html'), workspace: path.resolve(import.meta.dirname, 'workspace/index.html') },
+        input: path.resolve(import.meta.dirname, 'index.html'),
       },
     },
     preview: {
