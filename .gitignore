@@ -81,5 +81,18 @@ analysis_cache/
 !pyproject.toml
 !package-lock.json
 
-# Playwright CLI output (may contain credentials)
+.agents/
+
+# 12. BACKUP & TEMPORARY FILES
+*.bak
+*.old
+*.orig
+*~
+
+# 13. E2E TESTING & AUTOMATION ARTIFACTS
+.playwright/
 .playwright-cli/
+test-results/
+playwright-report/
+blob-report/
+.local-tests/
