@@ -53,7 +53,7 @@ IGNORED_DIR_NAMES: set[str] = {
     ".vscode",
     # Vendor / third party
     "vendor",
-    "packages",
+    "third_party",
 }
 
 # Phần mở rộng nhị phân và tài nguyên không phân tích mã nguồn

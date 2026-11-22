@@ -9,6 +9,7 @@ from app.ai.providers.exceptions import (
     AITimeoutError,
 )
 from app.ai.providers.factory import get_ai_provider
+from app.ai.providers.gemini_provider import GeminiProvider
 from app.ai.providers.ollama_provider import OllamaProvider
 from app.ai.providers.openai_provider import OpenAIProvider
 
@@ -21,5 +22,6 @@ __all__ = [
     "AIInjectionBlockedError",
     "OpenAIProvider",
     "OllamaProvider",
+    "GeminiProvider",
     "get_ai_provider",
 ]

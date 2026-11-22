@@ -18,6 +18,32 @@ const emptySources = (): MentorSources => ({
   roadmap_ids: [],
 })
 
+function renderFormattedContent(content: string) {
+  const paragraphs = content.split('\n\n').filter(Boolean);
+  return (
+    <div className="chat-paragraphs">
+      {paragraphs.map((para, pIdx) => {
+        const parts = para.split(/(\[E\d+(?:,\s*E\d+)*\])/g);
+        return (
+          <p key={pIdx} className="chat-paragraph">
+            {parts.map((part, partIdx) => {
+              const match = part.match(/^\[(.*)\]$/);
+              if (match) {
+                return (
+                  <span key={partIdx} className="evidence-pill" title={`Bằng chứng: ${match[1]}`}>
+                    {match[1]}
+                  </span>
+                );
+              }
+              return part;
+            })}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MentorPage() {
   const { user, isLoading: authLoading } = useAuth()
   if (authLoading) {
@@ -252,48 +278,59 @@ function MentorWorkspace() {
                 JD này không?”
               </p>
             )}
-            {messages.map((msg) => (
-              <article
-                key={msg.id}
-                className={`chat-bubble chat-bubble--${msg.role}`}
-              >
-                <p className="chat-content">{msg.content}</p>
-                {msg.action && (
-                  <MentorActionCard action={msg.action} onCompleted={refreshSourceOptions} />
-                )}
-                {Boolean(msg.sourcesUsed?.length) && (
-                  <p className="chat-meta">Nguồn đã gửi: {msg.sourcesUsed?.join(', ')}</p>
-                )}
-                {msg.role === 'assistant' && msg.confidence != null && (
-                  <p className="chat-meta">
-                    Độ tin cậy: {(msg.confidence * 100).toFixed(0)}%
-                  </p>
-                )}
-                {msg.evidence && msg.evidence.length > 0 && (
-                  <details>
-                    <summary>Bằng chứng ({msg.evidence.length})</summary>
-                    <ul>
-                      {msg.evidence.map((ev) => (
-                        <li key={ev.id}>
-                          <strong>[{ev.id}] {ev.source}</strong>  {ev.label}
-                          {ev.detail ? ` — ${ev.detail}` : ''}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-                {msg.limitations && msg.limitations.length > 0 && (
-                  <details>
-                    <summary>Giới hạn ({msg.limitations.length})</summary>
-                    <ul>
-                      {msg.limitations.map((lim, index) => (
-                        <li key={`${lim.code}-${index}`}>{lim.message}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </article>
-            ))}
+            {messages.map((msg) => {
+              const visibleLimitations = (msg.limitations || []).filter(
+                (lim) => lim.code !== 'confidence_unavailable'
+              );
+              return (
+                <article
+                  key={msg.id}
+                  className={`chat-bubble chat-bubble--${msg.role}`}
+                >
+                  <div className="chat-content">
+                    {renderFormattedContent(msg.content)}
+                  </div>
+                  {msg.action && (
+                    <MentorActionCard action={msg.action} onCompleted={refreshSourceOptions} />
+                  )}
+                  {Boolean(msg.sourcesUsed?.length) && (
+                    <p className="chat-meta">Nguồn đã gửi: {msg.sourcesUsed?.join(', ')}</p>
+                  )}
+                  {msg.role === 'assistant' && msg.confidence != null && (
+                    <p className="chat-meta">
+                      Độ tin cậy: {(msg.confidence * 100).toFixed(0)}%
+                    </p>
+                  )}
+                  {msg.evidence && msg.evidence.length > 0 && (
+                    <details className="chat-details">
+                      <summary className="chat-details-summary">
+                        <span className="details-badge">📌 Nguồn dẫn chứng ({msg.evidence.length})</span>
+                      </summary>
+                      <ul className="chat-evidence-list">
+                        {msg.evidence.map((ev) => (
+                          <li key={ev.id}>
+                            <span className="evidence-code">[{ev.id}]</span> <strong>{ev.label}</strong>
+                            {ev.detail ? ` — ${ev.detail}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {visibleLimitations.length > 0 && (
+                    <details className="chat-details chat-details--limits">
+                      <summary className="chat-details-summary">
+                        <span className="details-badge details-badge--limit">💡 Lưu ý ({visibleLimitations.length})</span>
+                      </summary>
+                      <ul className="chat-limit-list">
+                        {visibleLimitations.map((lim, index) => (
+                          <li key={`${lim.code}-${index}`}>{lim.message}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </article>
+              );
+            })}
           </Card>
 
           {error && <p role="alert" className="mentor-error">{error}</p>}

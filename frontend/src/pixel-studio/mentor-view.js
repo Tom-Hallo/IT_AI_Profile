@@ -9,6 +9,64 @@ function replyMood(message) {
   return message.used?.length ? 'happy' : 'curious';
 }
 
+function formatInline(str) {
+  let escaped = escape(str);
+  // markdown links: [label](https://...)
+  escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-link">$1 ↗</a>');
+  escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  escaped = escaped.replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>');
+  escaped = escaped.replace(/\[(E\d+(?:,\s*E\d+)*)\]/g, '<span class="evidence-pill">$1</span>');
+  return escaped;
+}
+
+function formatMentorMarkdown(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const blocks = [];
+  let currentList = null;
+
+  for (let rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (currentList) {
+        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+        currentList = null;
+      }
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      if (currentList) {
+        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+        currentList = null;
+      }
+      blocks.push('<h4 class="chat-md-heading">' + formatInline(line.slice(4).trim()) + '</h4>');
+    } else if (line.startsWith('## ')) {
+      if (currentList) {
+        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+        currentList = null;
+      }
+      blocks.push('<h4 class="chat-md-heading">' + formatInline(line.slice(3).trim()) + '</h4>');
+    } else if (/^[-*]\s+/.test(line)) {
+      const itemText = line.replace(/^[-*]\s+/, '');
+      if (!currentList) currentList = [];
+      currentList.push('<li>' + formatInline(itemText) + '</li>');
+    } else {
+      if (currentList) {
+        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+        currentList = null;
+      }
+      blocks.push('<p>' + formatInline(line) + '</p>');
+    }
+  }
+
+  if (currentList) {
+    blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+  }
+
+  return blocks.join('');
+}
+
 function renderMessage(msg,animate) {
   const entering = animate ? ' entering' : '';
   if (msg.type === 'user') return '<div class="chat-bubble user' + entering + '">' + escape(msg.text)
@@ -23,8 +81,20 @@ function renderMessage(msg,animate) {
   }
   const action = msg.action && !msg.actionApplied && !msg.actionDismissed
     ? '<div class="action-row">' + btn(escape(t('mentor.preview')),'agent-preview','secondary small',attr('id',msg.id)) + '</div>' : '';
+  
+  const evidenceTray = msg.evidence?.length
+    ? '<div class="chat-evidence-tray"><span class="evidence-tray-label">📌 Nguồn dẫn chứng:</span> '
+      + msg.evidence.map(e => '<span class="evidence-pill">[' + escape(e.id) + '] ' + escape(e.label) + '</span>').join(' ')
+      + '</div>'
+    : '';
+  const limits = (msg.limitations || []).filter(item => item.code !== 'confidence_unavailable');
+  const limitationsTray = limits.length
+    ? '<div class="chat-limitation-tray">⚠️ ' + limits.map(item => escape(item.message)).join(' ') + '</div>'
+    : '';
+  const body = (msg.liveText ?? msg.parts.map(replyCopy)).map(part => formatMentorMarkdown(part)).join('');
+
   return '<div class="chat-row">' + bot('pixel-small',replyMood(msg)) + '<div class="chat-bubble' + entering + '">'
-    + (msg.liveText ?? msg.parts.map(replyCopy)).map(part => '<p>' + escape(part) + '</p>').join('')
+    + body + evidenceTray + limitationsTray
     + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + action
     + (msg.actionApplied ? tags([t('mentor.applied')],'green') : '') + '</div></div>';
 }

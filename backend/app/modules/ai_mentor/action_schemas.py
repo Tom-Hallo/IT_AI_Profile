@@ -13,7 +13,7 @@ DraftText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=800)
 ]
 RepositoryId = Annotated[int, Field(strict=True, gt=0, le=2**63 - 1)]
-ToolName = Literal["create_cv", "create_roadmap", "reanalyze_repository"]
+ToolName = Literal["create_cv", "create_roadmap", "update_roadmap", "reanalyze_repository"]
 ActionStatus = Literal[
     "pending", "declined", "expired", "succeeded", "denied", "failed"
 ]
@@ -36,6 +36,27 @@ class RoadmapProposal(BaseModel):
     steps: list[DraftText] = Field(min_length=1, max_length=12)
 
 
+class MilestonePatch(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: Title
+    skill: str
+    objective: DraftText
+    metric: str
+    target_score: int = 70
+    after_skill: str | None = None
+
+
+class UpdateRoadmapProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool: Literal["update_roadmap"]
+    roadmap_id: int
+    title: Title | None = None
+    add_milestone: MilestonePatch | None = None
+    modify_milestone: MilestonePatch | None = None
+    steps: list[DraftText] = Field(default_factory=list)
+
+
 class ReanalysisProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -44,7 +65,8 @@ class ReanalysisProposal(BaseModel):
 
 
 ToolProposal = Annotated[
-    CVProposal | RoadmapProposal | ReanalysisProposal, Field(discriminator="tool")
+    CVProposal | RoadmapProposal | UpdateRoadmapProposal | ReanalysisProposal,
+    Field(discriminator="tool"),
 ]
 tool_proposal_adapter: TypeAdapter[ToolProposal] = TypeAdapter(ToolProposal)
 

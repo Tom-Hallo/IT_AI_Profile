@@ -34,6 +34,7 @@ from app.modules.analysis.schemas import (
     VerificationEvidenceItem,
     VerificationRequest,
 )
+from app.modules.analysis.service import verify_repository_access
 from app.modules.auth.models import OAuthAccount
 from app.modules.auth.service import get_user_github_token, has_private_access
 from app.modules.consent.guards import require_private_access_consent
@@ -47,7 +48,7 @@ from app.modules.github.client import (
     GitHubServerError,
     GitHubTokenRevokedError,
 )
-from app.modules.github.models import Repository, user_repository
+from app.modules.github.models import Repository
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -69,30 +70,6 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
-def verify_repository_access(db: Session, repository_id: int, user: User) -> Repository:
-    """Xác thực người dùng có liên kết và quyền truy cập repository."""
-    stmt = (
-        select(Repository)
-        .join(user_repository, Repository.id == user_repository.c.repository_id)
-        .where(
-            user_repository.c.user_id == user.id,
-            user_repository.c.repository_id == repository_id,
-        )
-    )
-    repo = db.scalar(stmt)
-    if not repo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
-        )
-    if repo.private and not has_private_access(db, user.id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy repository hoặc bạn không có quyền truy cập.",
-        )
-    return repo
-
-
 def verify_private_repo_consent(
     repo: Repository,
     scope: str | None,
@@ -107,8 +84,7 @@ def verify_private_repo_consent(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Truy cập repository riêng tư yêu cầu quyền đã được cấp phép.",
         )
-    has_private_scope = bool(scope and "repo" in scope)
-    if not has_private_scope:
+    if scope is not None and "repo" not in scope:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Phân tích repository riêng tư yêu cầu token có scope 'repo'.",

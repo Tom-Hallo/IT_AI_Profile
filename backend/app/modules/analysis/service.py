@@ -365,17 +365,11 @@ def verify_private_repo_consent(
     """Xác thực quyền và sự đồng thuận của người dùng đối với repository riêng tư."""
     if repo.private:
         if db is not None and user_id is not None:
-            if not has_private_access(db, user_id):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Phân tích repository riêng tư yêu cầu quyền truy cập private "
-                        "đã được kích hoạt và token có scope 'repo'."
-                    ),
-                )
-            from app.modules.consent.guards import require_private_access_consent
+            from app.modules.analysis.verification_service import (
+                verify_private_repo_consent as _verify_consent,
+            )
 
-            require_private_access_consent(db, user_id, repo.id)
+            _verify_consent(repo, scope, db, user_id)
         else:
             has_private_scope = bool(scope and "repo" in scope)
             if not has_private_scope:
@@ -513,7 +507,11 @@ async def analyze_repository(
         ) from exc
     except GitHubEmptyRepositoryError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Repository này chưa có commit hoặc đang trống. "
+                "Vui lòng thêm commit lên GitHub trước khi phân tích."
+            ),
         ) from exc
     except GitHubApiError as exc:
         raise HTTPException(
