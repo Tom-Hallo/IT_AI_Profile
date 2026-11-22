@@ -30,6 +30,12 @@ class StatusUpdate(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class EvidenceSubmission(BaseModel):
+    evidence_url: str = Field(min_length=1, max_length=2000)
+    note: str | None = Field(default=None, max_length=2000)
+    repository_id: int | None = None
+
+
 class ReevaluateRequest(BaseModel):
     snapshot_id: str = Field(min_length=1, max_length=128)
     expected_scope: str = Field(min_length=1, max_length=128)
@@ -47,8 +53,8 @@ def owned_roadmap(
     return roadmap
 
 
-def serialize_milestone(m: Milestone) -> dict:
-    return {
+def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dict:
+    res = {
         "id": m.id,
         "external_key": m.external_key,
         "title": m.title,
@@ -56,6 +62,12 @@ def serialize_milestone(m: Milestone) -> dict:
         "status": m.status,
         "version": m.version,
     }
+    if data_milestone:
+        res["evidence"] = data_milestone.get("evidence", [])
+        res["verification_status"] = data_milestone.get(
+            "verification_status", "verified" if m.status == "completed" else "pending"
+        )
+    return res
 
 
 def serialize_suggestion(s: RoadmapSuggestion) -> dict:
@@ -72,19 +84,65 @@ def serialize_suggestion(s: RoadmapSuggestion) -> dict:
 
 @router.get("/{roadmap_id}")
 def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
-    owned_roadmap(db, user, roadmap_id)
+    roadmap = owned_roadmap(db, user, roadmap_id)
     milestones = db.scalars(
         select(Milestone)
         .where(Milestone.roadmap_id == roadmap_id)
         .order_by(Milestone.id)
     ).all()
+    if not milestones and roadmap.data and isinstance(roadmap.data, dict):
+        ms_list = roadmap.data.get("milestones", [])
+        if not ms_list and roadmap.data.get("steps"):
+            ms_list = [
+                {
+                    "skill": f"step_{idx}",
+                    "title": step,
+                    "objective": step,
+                    "metric": f"Complete: {step}",
+                    "status": "pending",
+                }
+                for idx, step in enumerate(roadmap.data["steps"], 1)
+            ]
+            roadmap.data["milestones"] = ms_list
+            db.commit()
+        if ms_list:
+            db.add_all(
+                [
+                    Milestone(
+                        roadmap_id=roadmap.id,
+                        external_key=m.get("skill") or f"ms_{idx}",
+                        title=m.get("title") or m.get("skill") or f"Milestone {idx}",
+                        required_skills=m.get("required_skills")
+                        or ([m["skill"]] if "skill" in m else []),
+                        status=m.get("status", "pending")
+                        if m.get("status") in ("pending", "in_progress", "completed")
+                        else "pending",
+                    )
+                    for idx, m in enumerate(ms_list, 1)
+                ]
+            )
+            db.commit()
+            milestones = db.scalars(
+                select(Milestone)
+                .where(Milestone.roadmap_id == roadmap_id)
+                .order_by(Milestone.id)
+            ).all()
+
+    data_milestones = {
+        item.get("skill"): item
+        for item in roadmap.data.get("milestones", [])
+        if "skill" in item
+    }
     suggestions = db.scalars(
         select(RoadmapSuggestion)
         .where(RoadmapSuggestion.roadmap_id == roadmap_id)
         .order_by(RoadmapSuggestion.id.desc())
     ).all()
     return {
-        "milestones": [serialize_milestone(m) for m in milestones],
+        "milestones": [
+            serialize_milestone(m, data_milestones.get(m.external_key))
+            for m in milestones
+        ],
         "suggestions": [serialize_suggestion(s) for s in suggestions],
     }
 
@@ -148,6 +206,117 @@ def update_milestone(
     )
     db.commit()
     return serialize_milestone(m)
+
+
+@router.post(
+    "/{roadmap_id}/milestones/{milestone_id}/evidence", dependencies=[Depends(csrf)]
+)
+def submit_milestone_evidence(
+    roadmap_id: int,
+    milestone_id: int,
+    payload: EvidenceSubmission,
+    user: CurrentUser,
+    db: DB,
+):
+    import re
+
+    roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
+    m = db.scalar(
+        select(Milestone)
+        .where(Milestone.id == milestone_id, Milestone.roadmap_id == roadmap_id)
+        .with_for_update()
+    )
+    if m is None:
+        raise HTTPException(404, "Milestone not found")
+    url = payload.evidence_url.strip()
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            422, "URL minh chứng không hợp lệ (cần bắt đầu bằng http:// hoặc https://)"
+        )
+
+    is_verified = False
+    verification_status = "self_reported"
+    explanation = (
+        "Đã ghi nhận minh chứng tự nộp (Tự khai báo). "
+        "Cần bằng chứng quét từ repository để xác minh."
+    )
+
+    gh_match = re.search(r"github\.com/([^/]+)/([^/]+)", url)
+    if gh_match:
+        from app.models.github import Repository
+
+        repo_name = f"{gh_match.group(1)}/{gh_match.group(2)}"
+        repo = db.scalar(
+            select(Repository).where(
+                Repository.user_id == user.id, Repository.full_name == repo_name
+            )
+        )
+        if repo:
+            is_commit = "/commit/" in url or "/commits/" in url or "/pull/" in url
+            if is_commit:
+                is_verified = True
+                verification_status = "verified"
+                explanation = (
+                    "Minh chứng đã được đối chiếu và xác nhận "
+                    f"từ repository {repo_name}."
+                )
+            else:
+                verification_status = "self_reported"
+                explanation = (
+                    f"Đã ghi nhận liên kết repository {repo_name}. "
+                    "Đang chờ đối soát commit/PR chi tiết."
+                )
+
+    data = dict(roadmap.data)
+    milestones = list(data.get("milestones", []))
+    for item in milestones:
+        if item.get("skill") == m.external_key:
+            item.setdefault("evidence", [])
+            item["evidence"].append(
+                {
+                    "url": url,
+                    "note": payload.note,
+                    "source": "submission",
+                    "verified": is_verified,
+                    "verification_status": verification_status,
+                    "submitted_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            if is_verified:
+                item["status"] = "completed"
+                item["confidence"] = "high"
+            break
+    roadmap.data = data
+
+    old_status = m.status
+    if is_verified and m.status != "completed":
+        m.status = "completed"
+        m.version += 1
+    elif not is_verified and m.status == "pending":
+        m.status = "in_progress"
+        m.version += 1
+
+    db.add(
+        MilestoneHistory(
+            milestone_id=m.id,
+            actor_user_id=user.id,
+            old_status=old_status,
+            new_status=m.status,
+            note=f"[{verification_status.upper()}] {url}"
+            + (f" - {payload.note}" if payload.note else ""),
+            source="submission" if not is_verified else "verified",
+        )
+    )
+    db.commit()
+    return {
+        "milestone_id": m.id,
+        "status": m.status,
+        "version": m.version,
+        "verification_status": verification_status,
+        "evidence_url": url,
+        "note": payload.note,
+        "explanation": explanation,
+    }
 
 
 @router.post("/{roadmap_id}/re-evaluate", dependencies=[Depends(csrf)])

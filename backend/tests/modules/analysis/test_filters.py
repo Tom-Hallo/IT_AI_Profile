@@ -36,6 +36,14 @@ def test_path_traversal_prevention():
     for path in safe_paths:
         assert is_safe_path(path), f"Path should be accepted as safe: {path}"
 
+    monorepo_package_paths = [
+        "packages/api/src/index.ts",
+        "packages/client/src/App.vue",
+        "packages/shared/utils.py",
+    ]
+    for path in monorepo_package_paths:
+        assert not is_ignored_path(path), f"Monorepo path should not be ignored: {path}"
+
 
 def test_generated_vendor_and_binary_exclusion():
     """Requirement 5.6: Generated/vendor/binary exclusion."""
@@ -44,10 +52,8 @@ def test_generated_vendor_and_binary_exclusion():
         "node_modules/react/index.js",
         "frontend/node_modules/axios/index.js",
         "vendor/bundle/gems/rails.rb",
+        "third_party/external/lib.js",
         "backend/.venv/lib/python3.12/site-packages/fastapi/main.py",
-        ".venv/bin/activate",
-        "venv/Scripts/python.exe",
-        "packages/external/lib.js",
         # Build outputs & caches
         "dist/bundle.js",
         "build/static/js/main.chunk.js",

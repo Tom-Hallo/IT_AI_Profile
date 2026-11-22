@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     github_sync_timeout_seconds: int = 300
     github_api_concurrency: int = 8
     # AI Provider
-    ai_provider: Literal["openai", "ollama"] = "ollama"
+    ai_provider: Literal["openai", "ollama", "gemini"] = "gemini"
     ai_api_key: SecretStr | None = None
     ai_model: str | None = None
     ai_base_url: str = "http://localhost:11434"

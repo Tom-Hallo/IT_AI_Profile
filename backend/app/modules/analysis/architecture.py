@@ -27,6 +27,38 @@ from app.modules.analysis.evidence import (
 )
 from app.modules.analysis.parsers.base import ManifestParserResult
 
+CODE_FILE_EXTENSIONS: set[str] = {
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".java",
+    ".kt",
+    ".kts",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".cs",
+    ".c",
+    ".cpp",
+    ".h",
+    ".cxx",
+    ".hpp",
+    ".swift",
+    ".dart",
+    ".scala",
+    ".zig",
+    ".sql",
+}
+
+
+def _is_code_file(path: str) -> bool:
+    lower = path.lower()
+    dot = lower.rfind(".")
+    return dot != -1 and lower[dot:] in CODE_FILE_EXTENSIONS
+
 
 @dataclass
 class ArchitectureFinding:
@@ -132,15 +164,19 @@ class ArchitectureAnalyzer:
         # 2. Layered Architecture (Tầng kiến trúc: API/Service/Data)
         # -------------------------------------------------------------
         has_api_layer = any(
-            "/api/" in p or p.startswith("api/") or "/controllers/" in p
+            ("/api/" in p or p.startswith("api/") or "/controllers/" in p)
+            and _is_code_file(p)
             for p in tree_paths
         )
         has_service_layer = any(
-            "/services/" in p or p.startswith("services/") or "/domain/" in p
+            ("/services/" in p or p.startswith("services/") or "/domain/" in p)
+            and _is_code_file(p)
             for p in tree_paths
         )
         has_data_layer = any(
-            "/models/" in p or "/repositories/" in p or "/db/" in p for p in tree_paths
+            ("/models/" in p or "/repositories/" in p or "/db/" in p)
+            and _is_code_file(p)
+            for p in tree_paths
         )
 
         if sum([has_api_layer, has_service_layer, has_data_layer]) >= 2:
@@ -158,6 +194,7 @@ class ArchitectureAnalyzer:
                         "/repositories/",
                     )
                 )
+                and _is_code_file(p)
             ][:3]
             for s_path in sample_paths:
                 rec = EvidenceRecord(
@@ -326,19 +363,32 @@ class ArchitectureAnalyzer:
         # -------------------------------------------------------------
         # 6. Database Integration & Migration Patterns
         # -------------------------------------------------------------
-        db_files = [
+        migration_tools = [
             p
             for p in tree_paths
             if any(
                 k in p.lower()
-                for k in ("alembic.ini", "migrations/", "schema.sql", "prisma/")
+                for k in (
+                    "alembic.ini",
+                    "migrations/",
+                    "prisma/",
+                    "flyway",
+                    "liquibase",
+                )
             )
         ]
-        if db_files:
+        schema_ddl_files = [
+            p
+            for p in tree_paths
+            if "schema.sql" in p.lower()
+            or p.lower().endswith(("/schema.sql", "schema.ddl"))
+        ]
+
+        if migration_tools:
             rec = EvidenceRecord(
                 repository_id=self.repository_id,
                 commit_sha=self.commit_sha,
-                file_path=db_files[0],
+                file_path=migration_tools[0],
                 finding_type=FindingType.ARCHITECTURE,
                 classification="database_integration",
                 evidence_source=EvidenceSource.CONFIGURATION,
@@ -346,8 +396,8 @@ class ArchitectureAnalyzer:
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.95,
                 rationale=(
-                    "Hệ thống quản lý phiên bản cơ sở dữ liệu và migration: "
-                    f"{db_files[0]}"
+                    "Hệ thống quản lý phiên bản cơ sở dữ liệu và migration tự động: "
+                    f"{migration_tools[0]}"
                 ),
             )
             if collector is not None:
@@ -363,6 +413,37 @@ class ArchitectureAnalyzer:
                         "và ánh xạ quan hệ đối tượng (ORM)."
                     ),
                     confidence=ConfidenceLevel.HIGH,
+                    evidence=[rec],
+                )
+            )
+        elif schema_ddl_files:
+            rec = EvidenceRecord(
+                repository_id=self.repository_id,
+                commit_sha=self.commit_sha,
+                file_path=schema_ddl_files[0],
+                finding_type=FindingType.ARCHITECTURE,
+                classification="database_schema_ddl",
+                evidence_source=EvidenceSource.SOURCE_CODE,
+                detection_method=DetectionMethod.STRUCTURAL_INSPECTION,
+                confidence=ConfidenceLevel.MEDIUM,
+                confidence_score=0.80,
+                rationale=(
+                    "Định nghĩa lược đồ cơ sở dữ liệu quan hệ tĩnh: "
+                    f"{schema_ddl_files[0]}"
+                ),
+            )
+            if collector is not None:
+                collector.add(rec)
+
+            findings.append(
+                ArchitectureFinding(
+                    pattern="database_schema_ddl",
+                    name="Database Schema Definition (Static DDL)",
+                    description=(
+                        "Dự án lưu trữ định nghĩa lược đồ cơ sở dữ liệu "
+                        "qua tập tin DDL/SQL tĩnh."
+                    ),
+                    confidence=ConfidenceLevel.MEDIUM,
                     evidence=[rec],
                 )
             )

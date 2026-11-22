@@ -63,6 +63,7 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".swift": "Swift",
     ".dart": "Dart",
     ".scala": "Scala",
+    ".zig": "Zig",
 }
 
 # Bản đồ các manifest/config đặc trưng cho ngôn ngữ (bằng chứng mạnh hơn extension)
@@ -80,6 +81,8 @@ MANIFEST_TO_LANGUAGE: dict[str, str] = {
     "cargo.toml": "Rust",
     "composer.json": "PHP",
     "gemfile": "Ruby",
+    "build.zig": "Zig",
+    "build.zig.zon": "Zig",
 }
 
 
@@ -176,31 +179,42 @@ class LanguageDetector:
                         )
                         collector.add(record)
 
-        # 3. Kết hợp với metadata GitHub languages nếu có
+        # 3. Kết hợp với metadata GitHub languages nếu có (chỉ cho các ngôn ngữ
+        # thực tế tồn tại trong commit snapshot)
         if github_languages:
+            manifest_langs = {
+                MANIFEST_TO_LANGUAGE.get(m.lower().split("/")[-1])
+                for m in manifest_paths
+                if m.lower().split("/")[-1] in MANIFEST_TO_LANGUAGE
+            }
             for g_lang, g_bytes in github_languages.items():
                 if g_bytes > 0:
-                    lang_bytes[g_lang] = max(lang_bytes.get(g_lang, 0), g_bytes)
-                    if g_lang not in lang_file_counts:
-                        lang_file_counts[g_lang] = 1
+                    # Chỉ chấp nhận g_lang nếu có file trong tree hoặc có manifest
+                    has_evidence = (
+                        g_lang in lang_file_counts or g_lang in manifest_langs
+                    )
+                    if has_evidence:
+                        lang_bytes[g_lang] = max(lang_bytes.get(g_lang, 0), g_bytes)
+                        if g_lang not in lang_file_counts:
+                            lang_file_counts[g_lang] = 1
 
-                    if collector is not None:
-                        record = EvidenceRecord(
-                            repository_id=self.repository_id,
-                            commit_sha=self.commit_sha,
-                            file_path="github_api:languages",
-                            finding_type=FindingType.LANGUAGE,
-                            classification=g_lang,
-                            evidence_source=EvidenceSource.METADATA,
-                            detection_method=DetectionMethod.METADATA_EXTRACTION,
-                            confidence=ConfidenceLevel.HIGH,
-                            confidence_score=0.95,
-                            rationale=(
-                                "Metadata thống kê dung lượng ngôn ngữ "
-                                f"từ GitHub: {g_bytes} bytes"
-                            ),
-                        )
-                        collector.add(record)
+                        if collector is not None:
+                            record = EvidenceRecord(
+                                repository_id=self.repository_id,
+                                commit_sha=self.commit_sha,
+                                file_path="github_api:languages",
+                                finding_type=FindingType.LANGUAGE,
+                                classification=g_lang,
+                                evidence_source=EvidenceSource.METADATA,
+                                detection_method=DetectionMethod.EXTENSION_EVIDENCE,
+                                confidence=ConfidenceLevel.MEDIUM,
+                                confidence_score=0.7,
+                                rationale=(
+                                    f"Số liệu kích thước ngôn ngữ từ GitHub API: "
+                                    f"{g_lang} ({g_bytes} bytes)"
+                                ),
+                            )
+                            collector.add(record)
 
         if not lang_file_counts:
             return []

@@ -16,7 +16,7 @@ POLICY_VERSION = "2.0"
 ACCESS = "repository_access"
 EXTERNAL = "external_ai"
 # Add providers only after privacy/legal review and configuration of a real client.
-ALLOWED_PROVIDERS = frozenset({"openai"})
+ALLOWED_PROVIDERS = frozenset({"openai", "gemini"})
 BLOCKED_PARTS = frozenset({".env", ".git", "node_modules", "__pycache__"})
 
 

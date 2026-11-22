@@ -21,6 +21,7 @@ class MentorSources(BaseModel):
     cv_ids: list[SourceId] = Field(default_factory=list, max_length=3)
     jd_text: str | None = Field(default=None, max_length=8000)
     roadmap_ids: list[SourceId] = Field(default_factory=list, max_length=5)
+    milestone_id: int | None = None
 
     @field_validator("github_repo_ids", "cv_ids", "roadmap_ids")
     @classmethod
@@ -40,6 +41,8 @@ class MentorChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     enable_actions: bool = False
     sources: MentorSources = Field(default_factory=MentorSources)
+    milestone_id: int | None = None
+    locale: Literal["vi", "en"] = "vi"
 
     @field_validator("message")
     @classmethod
@@ -88,10 +91,10 @@ class MentorSourceOptions(BaseModel):
 
 
 class GroundedClaim(BaseModel):
-    text: str = Field(min_length=1, max_length=1500)
-    evidence_ids: list[str] = Field(min_length=1, max_length=10)
+    text: str = Field(min_length=1, max_length=4000)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class GroundedAnswer(BaseModel):
-    claims: list[GroundedClaim] = Field(max_length=10)
-    limitations: list[str] = Field(max_length=10)
+    claims: list[GroundedClaim] = Field(max_length=20)
+    limitations: list[str] = Field(default_factory=list, max_length=20)

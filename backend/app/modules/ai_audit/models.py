@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
-Provider = Literal["openai", "ollama"]
+Provider = Literal["openai", "ollama", "gemini"]
 Feature = Literal["mentor", "cv_studio", "repository_ai"]
 Phase = Literal["context", "provider", "tool"]
 Source = Literal[
@@ -49,7 +49,7 @@ Status = Literal[
     "expired",
     "queue_deferred",
 ]
-Tool = Literal["create_cv", "create_roadmap", "reanalyze_repository"]
+Tool = Literal["create_cv", "create_roadmap", "update_roadmap", "reanalyze_repository"]
 
 
 def choices(values, name: str):

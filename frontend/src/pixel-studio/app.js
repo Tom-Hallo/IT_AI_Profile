@@ -458,15 +458,20 @@ function sendChat(raw,context=mentorContext(),snippet=runtime.chatSnippet) {
   else runtime.chatTimer = setTimeout(finish,1050);
 }
 
-function showModal(title,content,actionLabel,action,{tone='primary',onCancel}={}) {
+function showModal(title,content,actionLabel,action,{tone='primary',onCancel,onDecline,declineLabel,cancelLabel}={}) {
   if (!dialog.open) {
     dialogOpener = document.activeElement;
     dialogFocusKey = focusKey(dialogOpener);
   }
-  modal = {action,onCancel};
+  modal = {action,onCancel,onDecline};
   dialog.setAttribute('aria-labelledby','dialog-title');
+  const declineBtn = onDecline
+    ? '<button class="button secondary" type="submit" value="decline" formnovalidate>' + escape(declineLabel || 'Từ chối') + '</button>'
+    : '';
+  const cLabel = cancelLabel || t('action.cancel');
   dialog.innerHTML = '<form method="dialog" class="dialog-contents"><h2 id="dialog-title">' + escape(title) + '</h2>' + content
-    + '<div class="action-row"><button class="button secondary" type="submit" value="cancel" formnovalidate>' + escape(t('action.cancel')) + '</button>'
+    + '<div class="action-row"><button class="button quiet" type="submit" value="cancel" formnovalidate>' + escape(cLabel) + '</button>'
+    + declineBtn
     + '<button class="button ' + tone + '" type="submit" value="confirm">' + escape(actionLabel) + '</button></div></form>';
   if (!dialog.open) {
     dialog.returnValue = '';
@@ -478,6 +483,7 @@ const paragraph = key => '<p>' + escape(t(key)) + '</p>';
 
 function closeModal(result) {
   const onCancel = result === 'cancel' ? modal?.onCancel : null;
+  const onDecline = result === 'decline' ? modal?.onDecline : null;
   const opener = dialogOpener;
   const key = dialogFocusKey;
   modal = null;
@@ -485,6 +491,7 @@ function closeModal(result) {
   dialogFocusKey = null;
   dialog.close(result);
   onCancel?.();
+  onDecline?.();
   const target = opener?.isConnected ? opener : key && $(key);
   if (target && target.getClientRects().length && !target.disabled) target.focus({preventScroll:true});
   else if (runtime.mentorOpen) mentorPanel.querySelector('input[name=question]')?.focus({preventScroll:true});
@@ -493,11 +500,14 @@ function closeModal(result) {
 
 dialog.addEventListener('submit',event => {
   event.preventDefault();
-  if (event.submitter?.value !== 'confirm') {
+  const val = event.submitter?.value;
+  if (val === 'confirm') {
+    if (modal?.action(new FormData(event.target),event.target) !== false && dialog.open) closeModal('confirm');
+  } else if (val === 'decline') {
+    closeModal('decline');
+  } else {
     closeModal('cancel');
-    return;
   }
-  if (modal?.action(new FormData(event.target),event.target) !== false && dialog.open) closeModal('confirm');
 });
 dialog.addEventListener('cancel',event => {
   event.preventDefault();
@@ -713,7 +723,7 @@ function draftRoadmap() {
 }
 
 function confirmAgent(id) {
-  const reply = runtime.messages.find(msg => String(msg.id) === id && msg.action && !msg.actionApplied && !msg.actionDismissed);
+  const reply = runtime.messages.find(msg => (String(msg.id) === id || String(msg.action?.id) === id) && msg.action && !msg.actionApplied);
   if (!reply) return;
   const {goal,i,task} = reply.action;
   showModal(t('mentor.agentTitle'),'<p>' + escape(t('mentor.agentCopy',{name:milestoneText(goal,i)}))
@@ -728,12 +738,21 @@ function confirmAgent(id) {
       if (isStudio('roadmap') || isStudio('data')) updateStudio();
       updateMentor();
       notify(added ? 'road.applied' : 'road.alreadyAdded',{name:milestoneText(goal,i)});
-    },{onCancel:() => {
-      reply.actionDismissed = true;
-      audit('audit.declined');
-      if (isStudio('data')) updateStudio();
-      updateMentor();
-    }});
+    },{
+      onDecline:() => {
+        reply.actionDismissed = true;
+        audit('audit.declined');
+        if (isStudio('data')) updateStudio();
+        updateMentor();
+        notifyText('Đã từ chối đề xuất.');
+      },
+      declineLabel:'Từ chối',
+      cancelLabel:'Để sau (Hủy)',
+      onCancel:() => {
+        notifyText('Đã đóng hộp thoại. Đề xuất vẫn được giữ để bạn suy nghĩ thêm.');
+        updateMentor();
+      }
+    });
 }
 
 function shareStart() {
@@ -834,6 +853,16 @@ function changeThemeColor(control,commit) {
 
 const actions = {
   enter,
+  'copy-code':button => {
+    const codeBlock = button.closest('.chat-code-wrapper')?.querySelector('code');
+    if (codeBlock && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+        const prev = button.innerText;
+        button.innerText = 'Đã chép!';
+        setTimeout(() => { button.innerText = prev; }, 1800);
+      }).catch(() => {});
+    }
+  },
   'scope-option':button => {
     const dropdown = button.closest('details');
     dropdown.open = false;
@@ -876,6 +905,22 @@ const actions = {
   },
   prompt:button => sendChat(t(button.dataset.id)),
   'agent-preview':button => confirmAgent(button.dataset.id),
+  'agent-decline':button => {
+    const reply = runtime.messages.find(msg => (String(msg.id) === button.dataset.id || String(msg.action?.id) === button.dataset.id) && msg.action);
+    if (reply) {
+      reply.actionDismissed = true;
+      audit?.('audit.declined');
+      notifyText('Đã từ chối đề xuất.');
+      updateMentor();
+    }
+  },
+  'agent-reconsider':button => {
+    const reply = runtime.messages.find(msg => (String(msg.id) === button.dataset.id || String(msg.action?.id) === button.dataset.id) && msg.action);
+    if (reply) {
+      reply.actionDismissed = false;
+      updateMentor();
+    }
+  },
   'score-tab':button => { runtime.scoreTab = button.dataset.id; updateStudio(); },
   score:button => { state.focusScore = button.dataset.id; save(); updateStudio(); },
   'role-score':button => { runtime.roleIndex = button.dataset.id; updateStudio(); },

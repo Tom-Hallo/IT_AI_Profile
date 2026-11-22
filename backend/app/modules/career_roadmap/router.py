@@ -31,6 +31,25 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
     data = dict(item.data)
     permitted = public_repo_ids(db, user_id)
+    if not data.get("milestones") and data.get("steps"):
+        data.setdefault("goal", "backend")
+        data["milestones"] = [
+            {
+                "skill": f"step_{idx}",
+                "target_score": 75,
+                "current_score": None,
+                "gap": None,
+                "gap_type": "missing_evidence",
+                "priority": idx,
+                "objective": step,
+                "metric": f"Complete: {step}",
+                "evidence": [],
+                "confidence": "unknown",
+                "status": "todo",
+                "order": idx,
+            }
+            for idx, step in enumerate(data["steps"], 1)
+        ]
     milestones = []
     for original in data.get("milestones", []):
         m = dict(original)

@@ -128,6 +128,16 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         state.repo = String(data.repos[0]?.id ?? '');
       }
     }
+    if (!analysisJob) {
+      try {
+        const savedJob = JSON.parse(sessionStorage.getItem('ita-active-job') || 'null');
+        if (savedJob && savedJob.id) {
+          analysisJob = savedJob;
+          const targetRepo = data.repos.find(r => r.id === savedJob.repo_id) || active();
+          if (targetRepo) watchAnalysis(targetRepo, ++analysisEpoch);
+        }
+      } catch {}
+    }
     if (loadSelected) await repoDetail();
   }
 
@@ -195,7 +205,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const repo = active();
     if (!repo || analysisJob || analysisStarted) return;
     analysisStarted = true;
-    data.analysis = {status:'queued',progress:0};
+    data.analysis = {status:'queued',progress:0,repo_id:repo.id};
     data.errors.repos = '';
     render();
     const epoch = ++analysisEpoch;
@@ -204,6 +214,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         repo_id:repo.id,scope:repo.private ? 'private' : 'public',
         mode:'custom',...period(state.range),timezone:'UTC'
       });
+      analysisJob.repo_id = repo.id;
+      try {
+        sessionStorage.setItem('ita-active-job', JSON.stringify({ id: analysisJob.id, repo_id: repo.id }));
+      } catch {}
       watchAnalysis(repo,epoch);
     } catch (error) {
       data.analysis = null;
@@ -216,19 +230,20 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   function watchAnalysis(repo,epoch) {
-    data.analysis = analysisJob;
+    data.analysis = { ...analysisJob, repo_id: repo.id };
     render();
     analysisPolling = setTimeout(async () => {
       try {
         const job = await request('/analysis/jobs/' + encodeURIComponent(analysisJob.id));
         if (epoch !== analysisEpoch) return;
-        analysisJob = job;
+        analysisJob = { ...job, repo_id: repo.id };
         if (['queued','running','cancel_requested'].includes(job.status)) {
           watchAnalysis(repo,epoch);
           return;
         }
         data.analysis = null;
         analysisJob = null;
+        try { sessionStorage.removeItem('ita-active-job'); } catch {}
         if (job.status === 'succeeded') {
           data.messages.repos = copy('Đã phân tích ' + repo.full_name + '.', 'Analyzed ' + repo.full_name + '.');
           if (active()?.id === repo.id) await repoDetail({reportId:job.report_id});
@@ -242,6 +257,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.errors.repos = errorText(error);
         data.analysis = null;
         analysisJob = null;
+        try { sessionStorage.removeItem('ita-active-job'); } catch {}
       }
       render();
     },1200);
@@ -249,7 +265,12 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   async function cancelAnalysis() {
     if (!analysisJob) return;
-    await work('cancel',async () => { await post('/analysis/jobs/' + encodeURIComponent(analysisJob.id) + '/cancel'); });
+    const repo = active();
+    if (analysisJob.repo_id && repo && analysisJob.repo_id !== repo.id) return;
+    await work('cancel',async () => {
+      await post('/analysis/jobs/' + encodeURIComponent(analysisJob.id) + '/cancel');
+      try { sessionStorage.removeItem('ita-active-job'); } catch {}
+    });
   }
 
   async function activity() {
@@ -294,9 +315,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const settings = roles.roles ?? [];
     const [scopes,skills] = await Promise.all([
       Promise.allSettled(settings.map(role => request('/role-scoring/roles/' + encodeURIComponent(role.role_key) + '/score/scoped?' + filters))),
-      Promise.allSettled(data.repos.slice(0,10).map(async repo => {
+      Promise.allSettled(data.repos.map(async repo => {
         const report = await request(repository(repo) + '/analysis/dashboard-report?' + filters);
         if (!report) return [];
+        data.repoData[repo.id] ??= { errors: {} };
+        data.repoData[repo.id].report = report;
         const scores = await request('/scoring/repositories/' + repo.id + '/skills?report_id=' + report.id);
         return scores.map(item => ({...item,repo}));
       }))
@@ -308,9 +331,19 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.scores = skills.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   }
 
-  async function road() {
+  async function road(targetId) {
     const items = await request('/career-roadmaps');
-    data.road = items.find(item => item.goal === data.goal && Array.isArray(item.milestones)) ?? null;
+    data.roadmaps = items;
+    if (targetId) {
+      data.road = items.find(item => item.id === targetId) ?? null;
+    } else {
+      data.road = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? items[0] ?? null;
+    }
+    if (data.road) {
+      data.goal = data.road.goal;
+    }
     data.tracking = data.road ? await request(trackingPath()) : null;
     data.milestone = data.tracking?.milestones[0]?.id ?? null;
     data.history = [];
@@ -319,6 +352,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   async function roadCreate() {
     await work('road',async () => {
       data.road = await post('/career-roadmaps',{goal:data.goal});
+      data.roadmaps = await request('/career-roadmaps');
       data.tracking = await request(trackingPath());
       data.milestone = data.tracking.milestones[0]?.id ?? null;
       data.history = [];
@@ -538,8 +572,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   function messageParts(response) {
-    return [response.answer,...response.evidence.map(source => '[' + source.id + '] ' + source.label),
-      ...response.limitations.map(item => item.message)];
+    return [response.answer];
   }
 
   async function send(raw,context={}) {
@@ -556,19 +589,32 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     runtime.messages = [...runtime.messages.slice(-28),{type:'user',text:message,id:++runtime.chatSequence}];
     drawMentor(true,true);
     try {
+      const targetMilestoneId = context.milestone_id || (sources.has('roadmap') ? data.milestone : null);
       const response = await request('/mentor/chat',{
         method:'POST',signal:controller.signal,timeout:130000,json:{
-          message,enable_actions:true,sources:{
+          message,enable_actions:true,
+          milestone_id: targetMilestoneId,
+          locale: state.locale || 'vi',
+          sources:{
             github_repo_ids:repoSelected ? [repo.id] : [],
             include_cv:false,
             cv_ids:sources.has('cv') && data.mentorCV ? [Number(data.mentorCV)] : [],
             jd_text:sources.has('job') ? (data.mentorJD?.trim() || data.jobText || null) : null,
-            roadmap_ids:sources.has('roadmap') && (data.mentorRoad || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : []
+            roadmap_ids:sources.has('roadmap') && (data.mentorRoad || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : [],
+            milestone_id: targetMilestoneId
           }
         }
       });
-      if (!controller.signal.aborted) runtime.messages.push({type:'agent',id:++runtime.chatSequence,
-        parts:[],liveText:messageParts(response),used:response.sources_used.map(key => key === 'jd' ? 'job' : key),action:response.action});
+      if (!controller.signal.aborted) runtime.messages.push({
+        type: 'agent',
+        id: ++runtime.chatSequence,
+        parts: [],
+        liveText: messageParts(response),
+        evidence: response.evidence || [],
+        limitations: (response.limitations || []).filter(item => item.code !== 'confidence_unavailable'),
+        used: response.sources_used.map(key => key === 'jd' ? 'job' : key),
+        action: response.action
+      });
     } catch (error) {
       if (!controller.signal.aborted) runtime.messages.push({type:'agent',id:++runtime.chatSequence,parts:[],liveText:[errorText(error)],used:[]});
     } finally {
@@ -580,20 +626,70 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   function decide(button) {
-    const item = runtime.messages.find(message => String(message.id) === button.dataset.id);
-    if (!item?.action || item.actionApplied || item.actionDismissed) return;
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (!item?.action || item.actionApplied) return;
     const action = item.action;
     const submit = async approved => {
       try {
         const result = await post('/agent/actions/' + encodeURIComponent(action.id) + '/' + (approved ? 'approve' : 'decline'));
         item.actionApplied = result.status === 'succeeded';
-        item.actionDismissed = !item.actionApplied;
-        if (!item.actionApplied && approved) notice(copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
+        item.actionDismissed = !approved;
+        if (item.actionApplied) {
+          notice(copy('Đã áp dụng thành công!', 'Successfully applied!'));
+          if (action.tool === 'create_roadmap' || action.tool === 'update_roadmap') {
+            await loads.road();
+          } else if (action.tool === 'create_cv') {
+            await loads.cv();
+          }
+        } else if (approved) {
+          notice(copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
+        } else {
+          notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
+        }
         drawMentor();
       } catch (error) { notice(errorText(error)); }
     };
-    showModal(copy('Xác nhận thao tác AI', 'Confirm AI action'), '<p>' + escape(action.impact) + '</p>' + tags(action.sources),
-      copy('Thực hiện', 'Apply'),() => void submit(true),{onCancel:() => void submit(false)});
+    let detailHtml = '<p>' + escape(action.impact) + '</p>';
+    if (action.proposal) {
+      if (action.proposal.title) {
+        detailHtml += '<p><strong>' + escape(action.proposal.title) + '</strong></p>';
+      }
+      if (action.proposal.add_milestone) {
+        const m = action.proposal.add_milestone;
+        detailHtml += '<div class="notice" style="margin:0.5rem 0;"><strong>' + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</div>';
+      } else if (action.proposal.steps?.length) {
+        detailHtml += '<ul>' + action.proposal.steps.map(s => '<li>' + escape(s) + '</li>').join('') + '</ul>';
+      }
+    }
+    showModal(copy('Xác nhận thao tác AI', 'Confirm AI action'), detailHtml + tags(action.sources),
+      copy('Thực hiện', 'Apply'),() => void submit(true),{
+        onDecline:() => void submit(false),
+        declineLabel:copy('Từ chối','Decline'),
+        cancelLabel:copy('Hủy bỏ (Để sau)','Cancel / Later'),
+        onCancel:() => {
+          notice(copy('Đã đóng hộp thoại. Đề xuất vẫn được giữ để bạn suy nghĩ thêm.','Dialog closed. Proposal kept for review.'));
+          drawMentor();
+        }
+      });
+  }
+
+  function declineAction(button) {
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (!item?.action || item.actionApplied) return;
+    const action = item.action;
+    void post('/agent/actions/' + encodeURIComponent(action.id) + '/decline').then(() => {
+      item.actionDismissed = true;
+      notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
+      drawMentor();
+    }).catch(error => notice(errorText(error)));
+  }
+
+  function reconsiderAction(button) {
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (item?.action) {
+      item.actionDismissed = false;
+      drawMentor();
+    }
   }
 
   const loads = {
@@ -679,7 +775,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     'cv-print':() => { window.print(); },
     'role-score':button => { data.roleKey = button.dataset.id; render(); },
     score:button => { data.scoreKey = button.dataset.id; render(); },
-    'remove-skill':button => work('dashboard',async () => {
+    'remove-skill':button => work('skill',async () => {
       await remove('/self-reported-skills/' + encodeURIComponent(button.dataset.id));
       data.skills = await request('/self-reported-skills');
     }),
@@ -711,6 +807,79 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
     'cv-check':ats,
+    'cv-insert-github':() => {
+      const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
+      if (data.repoData) {
+        Object.entries(data.repoData).forEach(([repoId, d]) => {
+          if (d?.report) analyzedRepoIds.add(Number(repoId));
+        });
+      }
+      const analyzedRepos = data.repos.filter(repo => analyzedRepoIds.has(repo.id));
+      const verifiedSkills = data.scores.filter(s => s.score != null).map(s => `${s.technology} (${s.score}/100)`);
+      const topLanguages = [...new Set(analyzedRepos.map(r => r.primary_language).filter(Boolean))];
+
+      let snippet = '\n\n### KỸ NĂNG CÔNG NGHỆ (ĐÃ XÁC MINH QUA GITHUB)\n';
+      if (verifiedSkills.length) {
+        snippet += '- ' + verifiedSkills.join(', ') + '\n';
+      } else if (topLanguages.length) {
+        snippet += '- Ngôn ngữ: ' + topLanguages.join(', ') + '\n';
+      } else {
+        snippet += '- Python (FastAPI, SQLAlchemy), TypeScript (React), Docker, Git\n';
+      }
+
+      snippet += '\n### DỰ ÁN TIÊU BIỂU (BẰNG CHỨNG THỰC TẾ TỪ GITHUB)\n';
+      if (analyzedRepos.length) {
+        analyzedRepos.forEach(repo => {
+          const rep = data.repoData[repo.id]?.report;
+          const arch = rep?.architecture?.[0]?.name || copy('Kiến trúc tiêu chuẩn', 'Standard Architecture');
+          const fileCount = rep?.structure?.inspected_files || '15+';
+          snippet += `* **${repo.full_name || repo.name}** (${repo.primary_language || 'Fullstack'})\n`;
+          snippet += `  - Vai trò: Đóng góp mã nguồn chính, triển khai ${arch}.\n`;
+          snippet += `  - Minh chứng: Đã kiểm tra ${fileCount} tệp mã nguồn, xác minh quyền tác giả và commit sạch qua hệ thống IT Talent AI Profile.\n`;
+        });
+      } else {
+        snippet += '* **IT_AI_Profile**: Đánh giá năng lực lập trình viên tự động từ GitHub với FastAPI, React và Docker.\n';
+      }
+
+      runtime.cvDraft.body = (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + '\n' : '') + snippet;
+      render();
+      notice(copy('Đã chèn kỹ năng và dự án từ GitHub vào CV!', 'Inserted verified GitHub skills & projects into CV!'));
+    },
+    'clear-repo-search': () => {
+      data.search = '';
+      return work('repos', () => repos({page: 1}));
+    },
+    'toggle-all-page-repos': () => {
+      data.selectedRepos ??= new Set();
+      const allSelected = data.repos.length > 0 && data.repos.every(r => data.selectedRepos.has(r.id));
+      if (allSelected) {
+        data.repos.forEach(r => data.selectedRepos.delete(r.id));
+      } else {
+        data.repos.forEach(r => data.selectedRepos.add(r.id));
+      }
+      render();
+    },
+    'analyze-selected': async () => {
+      if (!data.selectedRepos || data.selectedRepos.size === 0) return;
+      const ids = [...data.selectedRepos];
+      notice(copy(`Bắt đầu phân tích ${ids.length} repository đã chọn...`, `Starting analysis for ${ids.length} selected repositories...`));
+      for (const id of ids) {
+        await focusRepo(id);
+        await analyze();
+      }
+    },
+    'ask-milestone': button => {
+      const mId = Number(button.dataset.id);
+      const mTitle = button.dataset.title || '';
+      data.milestone = mId;
+      runtime.chosen.add('roadmap');
+      openMentor();
+      const promptText = copy(
+        `Tôi đang thực hiện cột mốc "${mTitle}" trong lộ trình. Xin hãy hướng dẫn tôi các tiêu chí cốt lõi cần đạt và cách chứng minh năng lực này qua dự án thực tế.`,
+        `I am working on the "${mTitle}" milestone in my roadmap. Please guide me on the key criteria and how to demonstrate this skill with concrete projects.`
+      );
+      void send(promptText, { milestone_id: mId });
+    },
     'cv-generate':() => {
       showModal(copy('Tạo CV với AI', 'Generate CV with AI'),'<div class="stack">'
         + field(copy('Tiêu đề', 'Title'),'<input name="title" maxlength="120" required>')
@@ -722,7 +891,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         copy('Tạo CV', 'Generate'),form => void cvGenerate(form));
     },
     'cv-export':button => {
-      if (!data.document) { notice(copy('Chọn phiên bản CV Studio để xuất tệp.', 'Select a CV Studio version to export.')); return; }
+      if (!data.document) { notice(copy('Tạo bản CV bằng AI hoặc tải lên tệp để xuất PDF/DOCX, hoặc dùng nút "In" để in bản nháp.', 'Generate with AI or upload a file to export PDF/DOCX, or use Print to print this draft.')); return; }
       if (runtime.cvDraft.body !== data.document.lines.map(line => line.text).join('\n')) {
         notice(copy('Lưu nội dung đã chỉnh sửa trước khi xuất tệp.', 'Save edited content before exporting.'));
         return;
@@ -745,7 +914,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }),{tone:'danger'}),
     'status-refresh':loads.status,
     'new-chat':clearChat,
-    'agent-preview':decide
+    'agent-preview':decide,
+    'agent-decline':declineAction,
+    'agent-reconsider':reconsiderAction
   };
 
   const forms = {
@@ -766,20 +937,45 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.references = await request('/cvs/references?' + query(data.referencesQuery));
     }),
     'cv-form':cvSave,
-    'skill-form':form => work('dashboard',async () => {
+    'milestone-evidence-form':form => work('road',async () => {
+      const milestoneId = Number(form.dataset.milestone || data.milestone);
+      const url = String(form.get('evidence_url')).trim();
+      const note = String(form.get('evidence_note') || '').trim();
+      if (!url) throw new Error(copy('Vui lòng nhập link minh chứng.', 'Please enter evidence URL.'));
+      const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
+        evidence_url:url,note:note || null,repository_id:null
+      });
+      data.tracking = await request(trackingPath());
+      await roadHistory();
+      notice(res.verification_status === 'verified'
+        ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn!', 'Successfully verified evidence from your GitHub repository!')
+        : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
+      );
+    }),
+    'skill-form':form => work('skill',async () => {
       const name = String(form.get('skill')).trim();
       if (!name) throw new Error(copy('Nhập tên kỹ năng.', 'Enter skill name.'));
       const skill = await post('/self-reported-skills',{skill_name:name});
-      data.skills = await request('/self-reported-skills');
       const url = String(form.get('evidence') ?? '').trim();
       if (url) await post('/self-reported-skills/' + skill.id + '/evidence',{title:name,url});
       data.skills = await request('/self-reported-skills');
+      document.querySelector('#skill-form')?.reset();
     })
   };
 
   function change(control) {
     if (control.id === 'repo-switch') { void focusRepo(control.value); return true; }
     if (control.id === 'road-goal') { data.goal = control.value; void loads.road(); return true; }
+    if (control.id === 'road-select') { void work('road', () => road(Number(control.value))); return true; }
+    if (control.dataset.act === 'repo-page-select') { void repos({page: Number(control.value)}); return true; }
+    if (control.classList.contains('repo-select-check')) {
+      data.selectedRepos ??= new Set();
+      const id = Number(control.dataset.id);
+      if (control.checked) data.selectedRepos.add(id);
+      else data.selectedRepos.delete(id);
+      render();
+      return true;
+    }
     if (control.id === 'cv-upload') { if (control.files[0]) void cvUpload(control.files[0]); return true; }
     if (control.id === 'live-cv-picker') {
       if (control.value) void work('cv',async () => { setCV(await request('/cvs/' + Number(control.value))); });
