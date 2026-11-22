@@ -247,7 +247,9 @@ def decide_action(
             elif isinstance(proposal, UpdateRoadmapProposal):
                 roadmap = db.scalar(
                     select(Roadmap)
-                    .where(Roadmap.id == proposal.roadmap_id, Roadmap.user_id == user.id)
+                    .where(
+                        Roadmap.id == proposal.roadmap_id, Roadmap.user_id == user.id
+                    )
                     .with_for_update()
                 )
                 if roadmap is None:
@@ -260,7 +262,11 @@ def decide_action(
                     patch = proposal.add_milestone
                     skill_key = patch.skill.lower().strip()
                     existing_idx = next(
-                        (i for i, m in enumerate(milestones_data) if m.get("skill", "").lower() == skill_key),
+                        (
+                            i
+                            for i, m in enumerate(milestones_data)
+                            if m.get("skill", "").lower() == skill_key
+                        ),
                         -1,
                     )
                     new_item = {

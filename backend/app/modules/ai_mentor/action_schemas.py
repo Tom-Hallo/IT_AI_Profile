@@ -13,7 +13,9 @@ DraftText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=800)
 ]
 RepositoryId = Annotated[int, Field(strict=True, gt=0, le=2**63 - 1)]
-ToolName = Literal["create_cv", "create_roadmap", "update_roadmap", "reanalyze_repository"]
+ToolName = Literal[
+    "create_cv", "create_roadmap", "update_roadmap", "reanalyze_repository"
+]
 ActionStatus = Literal[
     "pending", "declined", "expired", "succeeded", "denied", "failed"
 ]

@@ -94,22 +94,33 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
         ms_list = roadmap.data.get("milestones", [])
         if not ms_list and roadmap.data.get("steps"):
             ms_list = [
-                {"skill": f"step_{idx}", "title": step, "objective": step, "metric": f"Complete: {step}", "status": "pending"}
+                {
+                    "skill": f"step_{idx}",
+                    "title": step,
+                    "objective": step,
+                    "metric": f"Complete: {step}",
+                    "status": "pending",
+                }
                 for idx, step in enumerate(roadmap.data["steps"], 1)
             ]
             roadmap.data["milestones"] = ms_list
             db.commit()
         if ms_list:
-            db.add_all([
-                Milestone(
-                    roadmap_id=roadmap.id,
-                    external_key=m.get("skill") or f"ms_{idx}",
-                    title=m.get("title") or m.get("skill") or f"Milestone {idx}",
-                    required_skills=m.get("required_skills") or ([m["skill"]] if "skill" in m else []),
-                    status=m.get("status", "pending") if m.get("status") in ("pending", "in_progress", "completed") else "pending",
-                )
-                for idx, m in enumerate(ms_list, 1)
-            ])
+            db.add_all(
+                [
+                    Milestone(
+                        roadmap_id=roadmap.id,
+                        external_key=m.get("skill") or f"ms_{idx}",
+                        title=m.get("title") or m.get("skill") or f"Milestone {idx}",
+                        required_skills=m.get("required_skills")
+                        or ([m["skill"]] if "skill" in m else []),
+                        status=m.get("status", "pending")
+                        if m.get("status") in ("pending", "in_progress", "completed")
+                        else "pending",
+                    )
+                    for idx, m in enumerate(ms_list, 1)
+                ]
+            )
             db.commit()
             milestones = db.scalars(
                 select(Milestone)
@@ -208,6 +219,7 @@ def submit_milestone_evidence(
     db: DB,
 ):
     import re
+
     roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
     m = db.scalar(
         select(Milestone)
@@ -224,11 +236,15 @@ def submit_milestone_evidence(
 
     is_verified = False
     verification_status = "self_reported"
-    explanation = "Đã ghi nhận minh chứng tự nộp (Tự khai báo). Cần bằng chứng quét từ repository để xác minh."
+    explanation = (
+        "Đã ghi nhận minh chứng tự nộp (Tự khai báo). "
+        "Cần bằng chứng quét từ repository để xác minh."
+    )
 
     gh_match = re.search(r"github\.com/([^/]+)/([^/]+)", url)
     if gh_match:
         from app.models.github import Repository
+
         repo_name = f"{gh_match.group(1)}/{gh_match.group(2)}"
         repo = db.scalar(
             select(Repository).where(
@@ -240,24 +256,32 @@ def submit_milestone_evidence(
             if is_commit:
                 is_verified = True
                 verification_status = "verified"
-                explanation = f"Minh chứng đã được đối chiếu và xác nhận từ repository {repo_name}."
+                explanation = (
+                    "Minh chứng đã được đối chiếu và xác nhận "
+                    f"từ repository {repo_name}."
+                )
             else:
                 verification_status = "self_reported"
-                explanation = f"Đã ghi nhận liên kết repository {repo_name}. Đang chờ đối soát commit/PR chi tiết."
+                explanation = (
+                    f"Đã ghi nhận liên kết repository {repo_name}. "
+                    "Đang chờ đối soát commit/PR chi tiết."
+                )
 
     data = dict(roadmap.data)
     milestones = list(data.get("milestones", []))
     for item in milestones:
         if item.get("skill") == m.external_key:
             item.setdefault("evidence", [])
-            item["evidence"].append({
-                "url": url,
-                "note": payload.note,
-                "source": "submission",
-                "verified": is_verified,
-                "verification_status": verification_status,
-                "submitted_at": datetime.now(UTC).isoformat(),
-            })
+            item["evidence"].append(
+                {
+                    "url": url,
+                    "note": payload.note,
+                    "source": "submission",
+                    "verified": is_verified,
+                    "verification_status": verification_status,
+                    "submitted_at": datetime.now(UTC).isoformat(),
+                }
+            )
             if is_verified:
                 item["status"] = "completed"
                 item["confidence"] = "high"
