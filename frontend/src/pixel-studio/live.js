@@ -626,20 +626,70 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   function decide(button) {
-    const item = runtime.messages.find(message => String(message.id) === button.dataset.id);
-    if (!item?.action || item.actionApplied || item.actionDismissed) return;
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (!item?.action || item.actionApplied) return;
     const action = item.action;
     const submit = async approved => {
       try {
         const result = await post('/agent/actions/' + encodeURIComponent(action.id) + '/' + (approved ? 'approve' : 'decline'));
         item.actionApplied = result.status === 'succeeded';
-        item.actionDismissed = !item.actionApplied;
-        if (!item.actionApplied && approved) notice(copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
+        item.actionDismissed = !approved;
+        if (item.actionApplied) {
+          notice(copy('Đã áp dụng thành công!', 'Successfully applied!'));
+          if (action.tool === 'create_roadmap' || action.tool === 'update_roadmap') {
+            await loads.road();
+          } else if (action.tool === 'create_cv') {
+            await loads.cv();
+          }
+        } else if (approved) {
+          notice(copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
+        } else {
+          notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
+        }
         drawMentor();
       } catch (error) { notice(errorText(error)); }
     };
-    showModal(copy('Xác nhận thao tác AI', 'Confirm AI action'), '<p>' + escape(action.impact) + '</p>' + tags(action.sources),
-      copy('Thực hiện', 'Apply'),() => void submit(true),{onCancel:() => void submit(false)});
+    let detailHtml = '<p>' + escape(action.impact) + '</p>';
+    if (action.proposal) {
+      if (action.proposal.title) {
+        detailHtml += '<p><strong>' + escape(action.proposal.title) + '</strong></p>';
+      }
+      if (action.proposal.add_milestone) {
+        const m = action.proposal.add_milestone;
+        detailHtml += '<div class="notice" style="margin:0.5rem 0;"><strong>' + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</div>';
+      } else if (action.proposal.steps?.length) {
+        detailHtml += '<ul>' + action.proposal.steps.map(s => '<li>' + escape(s) + '</li>').join('') + '</ul>';
+      }
+    }
+    showModal(copy('Xác nhận thao tác AI', 'Confirm AI action'), detailHtml + tags(action.sources),
+      copy('Thực hiện', 'Apply'),() => void submit(true),{
+        onDecline:() => void submit(false),
+        declineLabel:copy('Từ chối','Decline'),
+        cancelLabel:copy('Hủy bỏ (Để sau)','Cancel / Later'),
+        onCancel:() => {
+          notice(copy('Đã đóng hộp thoại. Đề xuất vẫn được giữ để bạn suy nghĩ thêm.','Dialog closed. Proposal kept for review.'));
+          drawMentor();
+        }
+      });
+  }
+
+  function declineAction(button) {
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (!item?.action || item.actionApplied) return;
+    const action = item.action;
+    void post('/agent/actions/' + encodeURIComponent(action.id) + '/decline').then(() => {
+      item.actionDismissed = true;
+      notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
+      drawMentor();
+    }).catch(error => notice(errorText(error)));
+  }
+
+  function reconsiderAction(button) {
+    const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
+    if (item?.action) {
+      item.actionDismissed = false;
+      drawMentor();
+    }
   }
 
   const loads = {
@@ -864,7 +914,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }),{tone:'danger'}),
     'status-refresh':loads.status,
     'new-chat':clearChat,
-    'agent-preview':decide
+    'agent-preview':decide,
+    'agent-decline':declineAction,
+    'agent-reconsider':reconsiderAction
   };
 
   const forms = {

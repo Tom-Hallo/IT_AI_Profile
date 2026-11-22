@@ -1,5 +1,5 @@
 import {mentorSources} from './data.js';
-import {sourceLabel, t} from './i18n.js';
+import {getLanguage, sourceLabel, t} from './i18n.js';
 import {replyCopy, replySourceLabel} from './mentor-model.js';
 import {codeReferenceLabel} from './evidence.js';
 import {attr, bot, btn, escape, field, icon, labelAttr, option, tags} from './ui.js';
@@ -10,58 +10,253 @@ function replyMood(message) {
 }
 
 function formatInline(str) {
+  if (!str) return '';
   let escaped = escape(str);
   // markdown links: [label](https://...)
   escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-link">$1 ↗</a>');
   escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  escaped = escaped.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  escaped = escaped.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>');
   escaped = escaped.replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>');
   escaped = escaped.replace(/\[(E\d+(?:,\s*E\d+)*)\]/g, '<span class="evidence-pill">$1</span>');
   return escaped;
 }
 
+function isTableSeparator(line) {
+  const trimmed = line.trim();
+  return /^\|?[\s\-:|]+\|?$/.test(trimmed) && trimmed.includes('-') && (trimmed.includes('|') || trimmed.includes('+'));
+}
+
+function isTableLine(line) {
+  const trimmed = line.trim();
+  if (trimmed.includes('\t') && trimmed.split('\t').length >= 2) return true;
+  if (trimmed.includes('|')) {
+    if (trimmed.startsWith('|') || trimmed.endsWith('|')) return true;
+    if (trimmed.split('|').length >= 2) return true;
+  }
+  return false;
+}
+
+function parseTableLineCells(line) {
+  let trimmed = line.trim();
+  if (trimmed.includes('\t')) {
+    return trimmed.split('\t').map(c => c.trim()).filter(c => c.length > 0);
+  }
+  if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+  return trimmed.split('|').map(c => c.trim());
+}
+
+function renderTable(tableLines) {
+  if (tableLines.length < 2) {
+    return tableLines.map(l => '<p>' + formatInline(l) + '</p>').join('');
+  }
+
+  let headerIndex = 0;
+  let sepIndex = -1;
+  for (let i = 0; i < tableLines.length; i++) {
+    if (isTableSeparator(tableLines[i])) {
+      sepIndex = i;
+      headerIndex = i - 1;
+      break;
+    }
+  }
+
+  let aligns = [];
+  let headerCells = [];
+  let bodyStartIndex = 1;
+
+  if (sepIndex !== -1 && headerIndex >= 0) {
+    headerCells = parseTableLineCells(tableLines[headerIndex]);
+    const sepCells = parseTableLineCells(tableLines[sepIndex]);
+    aligns = sepCells.map(c => {
+      const left = c.startsWith(':');
+      const right = c.endsWith(':');
+      if (left && right) return 'center';
+      if (right) return 'right';
+      return 'left';
+    });
+    bodyStartIndex = sepIndex + 1;
+  } else {
+    headerCells = parseTableLineCells(tableLines[0]);
+    aligns = headerCells.map(() => 'left');
+    bodyStartIndex = 1;
+  }
+
+  let preHtml = '';
+  if (sepIndex !== -1 && headerIndex > 0) {
+    preHtml = tableLines.slice(0, headerIndex).map(l => '<p>' + formatInline(l) + '</p>').join('');
+  }
+
+  const thHtml = headerCells.map((cell, idx) => {
+    const align = aligns[idx] || 'left';
+    return '<th style="text-align:' + align + '">' + formatInline(cell) + '</th>';
+  }).join('');
+
+  const bodyRows = [];
+  for (let i = bodyStartIndex; i < tableLines.length; i++) {
+    const rowLine = tableLines[i].trim();
+    if (!rowLine || isTableSeparator(rowLine)) continue;
+    const cells = parseTableLineCells(rowLine);
+    if (cells.length === 0) continue;
+    const tdHtml = cells.map((cell, idx) => {
+      const align = aligns[idx] || 'left';
+      return '<td style="text-align:' + align + '">' + formatInline(cell) + '</td>';
+    }).join('');
+    bodyRows.push('<tr>' + tdHtml + '</tr>');
+  }
+
+  if (bodyRows.length === 0 && headerCells.length === 0) {
+    return tableLines.map(l => '<p>' + formatInline(l) + '</p>').join('');
+  }
+
+  return preHtml + '<div class="chat-table-wrapper">'
+    + '<table class="chat-md-table">'
+    + '<thead><tr>' + thHtml + '</tr></thead>'
+    + '<tbody>' + bodyRows.join('') + '</tbody>'
+    + '</table></div>';
+}
+
 function formatMentorMarkdown(text) {
   if (!text) return '';
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/);
   const blocks = [];
+  let inCodeBlock = false;
+  let codeBlockLang = '';
+  let codeBlockLines = [];
   let currentList = null;
+  let currentTable = [];
+
+  function flushList() {
+    if (currentList && currentList.items.length > 0) {
+      const tag = currentList.type === 'ol' ? 'ol' : 'ul';
+      const cls = currentList.type === 'ol' ? 'chat-md-list chat-md-ordered' : 'chat-md-list';
+      blocks.push('<' + tag + ' class="' + cls + '">' + currentList.items.join('') + '</' + tag + '>');
+      currentList = null;
+    }
+  }
+
+  function flushTable() {
+    if (currentTable.length > 0) {
+      blocks.push(renderTable(currentTable));
+      currentTable = [];
+    }
+  }
+
+  function flushAll() {
+    flushList();
+    flushTable();
+  }
 
   for (let rawLine of lines) {
     const line = rawLine.trim();
-    if (!line) {
-      if (currentList) {
-        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
-        currentList = null;
+
+    if (inCodeBlock) {
+      if (line.startsWith('```')) {
+        inCodeBlock = false;
+        blocks.push(
+          '<div class="chat-code-wrapper">'
+          + '<div class="chat-code-header">'
+          + '<span class="chat-code-lang">' + escape(codeBlockLang || 'code') + '</span>'
+          + '<button class="chat-code-copy-btn" type="button" data-act="copy-code">Sao chép</button>'
+          + '</div>'
+          + '<pre class="chat-code-block"><code>' + escape(codeBlockLines.join('\n')) + '</code></pre>'
+          + '</div>'
+        );
+        codeBlockLang = '';
+        codeBlockLines = [];
+      } else {
+        codeBlockLines.push(rawLine);
       }
       continue;
     }
 
-    if (line.startsWith('### ')) {
-      if (currentList) {
-        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
-        currentList = null;
-      }
-      blocks.push('<h4 class="chat-md-heading">' + formatInline(line.slice(4).trim()) + '</h4>');
-    } else if (line.startsWith('## ')) {
-      if (currentList) {
-        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
-        currentList = null;
-      }
-      blocks.push('<h4 class="chat-md-heading">' + formatInline(line.slice(3).trim()) + '</h4>');
-    } else if (/^[-*]\s+/.test(line)) {
-      const itemText = line.replace(/^[-*]\s+/, '');
-      if (!currentList) currentList = [];
-      currentList.push('<li>' + formatInline(itemText) + '</li>');
-    } else {
-      if (currentList) {
-        blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
-        currentList = null;
-      }
-      blocks.push('<p>' + formatInline(line) + '</p>');
+    if (line.startsWith('```')) {
+      flushAll();
+      inCodeBlock = true;
+      codeBlockLang = line.slice(3).trim();
+      codeBlockLines = [];
+      continue;
     }
+
+    if (!line) {
+      flushAll();
+      continue;
+    }
+
+    // Table rows (Markdown pipe tables or Tab-separated tables)
+    if (isTableLine(line)) {
+      flushList();
+      currentTable.push(line);
+      continue;
+    } else {
+      flushTable();
+    }
+
+    // Headings: #, ##, ###, ####, #####, ######
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      flushAll();
+      const level = headingMatch[1].length;
+      const headingText = headingMatch[2].trim();
+      const tag = level <= 2 ? 'h3' : level === 3 ? 'h4' : 'h5';
+      blocks.push('<' + tag + ' class="chat-md-heading chat-md-h' + level + '">' + formatInline(headingText) + '</' + tag + '>');
+      continue;
+    }
+
+    // Divider
+    if (/^(\-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      flushAll();
+      blocks.push('<hr class="chat-md-divider" />');
+      continue;
+    }
+
+    // Blockquote
+    const quoteMatch = line.match(/^>\s*(.*)$/);
+    if (quoteMatch) {
+      flushAll();
+      blocks.push('<blockquote class="chat-md-quote">' + formatInline(quoteMatch[1]) + '</blockquote>');
+      continue;
+    }
+
+    // Unordered list: - item or * item
+    const ulMatch = line.match(/^[-*]\s+(.+)$/);
+    if (ulMatch) {
+      if (!currentList || currentList.type !== 'ul') {
+        flushList();
+        currentList = { type: 'ul', items: [] };
+      }
+      currentList.items.push('<li>' + formatInline(ulMatch[1]) + '</li>');
+      continue;
+    }
+
+    // Ordered list: 1. item, 2. item
+    const olMatch = line.match(/^\d+\.\s+(.+)$/);
+    if (olMatch) {
+      if (!currentList || currentList.type !== 'ol') {
+        flushList();
+        currentList = { type: 'ol', items: [] };
+      }
+      currentList.items.push('<li>' + formatInline(olMatch[1]) + '</li>');
+      continue;
+    }
+
+    // Normal paragraph
+    flushAll();
+    blocks.push('<p>' + formatInline(line) + '</p>');
   }
 
-  if (currentList) {
-    blocks.push('<ul class="chat-md-list">' + currentList.join('') + '</ul>');
+  flushAll();
+  if (inCodeBlock) {
+    blocks.push(
+      '<div class="chat-code-wrapper">'
+      + '<div class="chat-code-header">'
+      + '<span class="chat-code-lang">' + escape(codeBlockLang || 'code') + '</span>'
+      + '<button class="chat-code-copy-btn" type="button" data-act="copy-code">Sao chép</button>'
+      + '</div>'
+      + '<pre class="chat-code-block"><code>' + escape(codeBlockLines.join('\n')) + '</code></pre>'
+      + '</div>'
+    );
   }
 
   return blocks.join('');
@@ -79,9 +274,46 @@ function renderMessage(msg,animate) {
         + (msg.source.goal ? attr('goal',msg.source.goal) : '') + (msg.source.snippet ? attr('message',msg.id) : ''))
       : '<a class="link-button" href="#studio/' + msg.source.route + '">' + icon('link') + label + '</a>';
   }
-  const action = msg.action && !msg.actionApplied && !msg.actionDismissed
-    ? '<div class="action-row">' + btn(escape(t('mentor.preview')),'agent-preview','secondary small',attr('id',msg.id)) + '</div>' : '';
-  
+  let actionHtml = '';
+  if (msg.action) {
+    if (msg.actionApplied) {
+      actionHtml = '<div class="chat-action-card applied"><span class="badge green">✓ ' + escape(t('mentor.applied')) + '</span></div>';
+    } else if (msg.actionDismissed) {
+      const isEn = getLanguage() === 'en';
+      const declinedBadge = isEn ? '✕ Proposal declined' : '✕ Đã từ chối đề xuất';
+      const reconsiderBtn = isEn ? 'Reconsider' : 'Mở lại (Suy nghĩ thêm)';
+      actionHtml = '<div class="chat-action-card dismissed">'
+        + '<span class="badge">' + escape(declinedBadge) + '</span>'
+        + '<button class="button quiet small" type="button" data-act="agent-reconsider" data-id="' + msg.id + '">' + escape(reconsiderBtn) + '</button>'
+        + '</div>';
+    } else {
+      const isEn = getLanguage() === 'en';
+      const act = msg.action;
+      const targetTitle = act.proposal?.add_milestone?.title || act.proposal?.title || act.proposal?.add_milestone?.skill || '';
+      const actionLabel = act.tool === 'update_roadmap'
+        ? (targetTitle ? (isEn ? `➕ Add "${targetTitle}" to Roadmap` : `➕ Thêm "${targetTitle}" vào Lộ trình`) : (isEn ? '➕ Apply to Roadmap' : '➕ Áp dụng vào Lộ trình'))
+        : act.tool === 'create_roadmap' ? (isEn ? '🗺️ Create Roadmap' : '🗺️ Tạo Lộ trình này')
+        : act.tool === 'create_cv' ? (isEn ? '📄 Save to CV Studio' : '📄 Lưu vào CV Studio')
+        : escape(t('mentor.preview'));
+      const headerTitle = isEn ? '⚡ AI Update Proposal:' : '⚡ Đề xuất cập nhật từ AI:';
+      const milestoneLabel = isEn ? 'Milestone:' : 'Cột mốc:';
+      const declineLabel = isEn ? '✕ Decline' : '✕ Từ chối';
+      const hintText = isEn
+        ? '👉 Click to apply to Roadmap, or decline if not needed'
+        : '👉 Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần';
+      actionHtml = '<div class="chat-action-card">'
+        + '<div class="chat-action-header">' + escape(headerTitle) + '</div>'
+        + '<p class="chat-action-impact">' + escape(act.impact) + '</p>'
+        + (targetTitle ? '<p class="chat-action-impact">' + escape(milestoneLabel) + ' <strong>' + escape(targetTitle) + '</strong></p>' : '')
+        + '<div class="action-row">'
+        + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small',attr('id',msg.id))
+        + btn(escape(declineLabel),'agent-decline','secondary small',attr('id',msg.id))
+        + '</div>'
+        + '<p class="chat-action-hint">' + escape(hintText) + '</p>'
+        + '</div>';
+    }
+  }
+
   const evidenceTray = msg.evidence?.length
     ? '<div class="chat-evidence-tray"><span class="evidence-tray-label">📌 Nguồn dẫn chứng:</span> '
       + msg.evidence.map(e => '<span class="evidence-pill">[' + escape(e.id) + '] ' + escape(e.label) + '</span>').join(' ')
@@ -95,8 +327,8 @@ function renderMessage(msg,animate) {
 
   return '<div class="chat-row">' + bot('pixel-small',replyMood(msg)) + '<div class="chat-bubble' + entering + '">'
     + body + evidenceTray + limitationsTray
-    + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + action
-    + (msg.actionApplied ? tags([t('mentor.applied')],'green') : '') + '</div></div>';
+    + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + actionHtml
+    + '</div></div>';
 }
 
 export function mentor(runtime,context,animateLast,live) {
