@@ -69,9 +69,24 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
         "version": m.version,
     }
     if data_milestone:
-        res["evidence"] = data_milestone.get("evidence", [])
-        res["verification_status"] = data_milestone.get(
-            "verification_status", "verified" if m.status == "completed" else "pending"
+        submitted = data_milestone.get("evidence", [])
+        verified_submission = any(
+            isinstance(item, dict)
+            and item.get("verified") is True
+            and item.get("verification_status") == "verified"
+            for item in submitted
+        )
+        verified_evaluation = (
+            data_milestone.get("verification_status") == "verified"
+            and bool(data_milestone.get("evaluation_evidence"))
+        )
+        res["evidence"] = submitted
+        res["verification_status"] = (
+            "verified"
+            if verified_submission or verified_evaluation
+            else "self_reported"
+            if submitted
+            else "pending"
         )
     return res
 
@@ -501,6 +516,8 @@ def resolve(
                         == str(m.external_key or "").lower()
                     ):
                         item["status"] = "completed"
+                        item["verification_status"] = "verified"
+                        item["evaluation_evidence"] = s.evidence
                         break
                 roadmap.data = data
                 flag_modified(roadmap, "data")
