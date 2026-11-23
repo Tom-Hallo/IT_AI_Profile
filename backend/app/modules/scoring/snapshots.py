@@ -13,10 +13,11 @@ from app.modules.analysis.models import (
     VerificationEvidence,
 )
 from app.modules.analysis.schemas import RepositoryVerificationResponse
-from app.modules.scoring.engine import Metric, calculate
+from app.modules.scoring.engine import Metric, calculate, calculate_framework
 from app.modules.scoring.models import RubricVersion, SkillScore
 
 VERSION = "2.1.0"
+FRAMEWORK_VERSION = "2.2.0"
 LEGACY_VERSION = "2.0.0"
 
 
@@ -215,6 +216,50 @@ def framework_metrics(
     return metrics
 
 
+def framework_v22_metrics(
+    metrics: dict[str, Metric],
+    *,
+    saturation: dict | None = None,
+    scoring_files_partial: bool = False,
+) -> dict[str, Metric]:
+    """Map real framework contributions into a PR-or-commit rubric.
+
+    Prefer the larger verified event set rather than adding PR and commit totals
+    (their diffs can describe the same work). Never invent missing event types.
+    """
+    contribution = metrics.get("code_contribution")
+    scope = metrics.get("complexity")
+    commit = metrics.get("commit_frequency")
+    pr = metrics.get("pr_contribution")
+    if not contribution or not scope:
+        return {}
+
+    # Prefer PR refs on a tie since their file scope is aggregated per PR.
+    source = max(
+        (commit, pr),
+        key=lambda item: len(item.evidence_ids) if item is not None else -1,
+    )
+    if source is None or not source.evidence_ids:
+        return {}
+    thresholds = dict(DEFAULT_SATURATION if saturation is None else saturation)
+    if set(thresholds) != set(DEFAULT_SATURATION) or any(
+        type(value) is not int or value <= 0 for value in thresholds.values()
+    ):
+        raise ValueError("Invalid rubric saturation")
+
+    refs = tuple(dict.fromkeys(source.evidence_ids))
+    activity = min(len(refs) / thresholds["verified_events"], 1)
+    # Missing GitHub file coverage is a confidence limitation, not proof of
+    # low proficiency. Use a conservative confidence reduction.
+    confidence = activity * (0.5 if scoring_files_partial else 1.0)
+    return {
+        "code_contribution": contribution,
+        "complexity": scope,
+        "verified_activity": Metric(activity, refs),
+        "confidence": Metric(confidence, refs),
+    }
+
+
 def save_skill_snapshots(
     db: Session, result: RepositoryVerificationResponse, verification_id: int
 ) -> None:
@@ -229,16 +274,17 @@ def save_skill_snapshots(
     rubric_rows = list(
         db.scalars(
             select(RubricVersion).where(
-                RubricVersion.version.in_((VERSION, LEGACY_VERSION))
+                RubricVersion.version.in_((FRAMEWORK_VERSION, VERSION, LEGACY_VERSION))
             )
         )
     )
     # Prefer the new immutable rubric; keep legacy support for installations
     # that have not applied the new seed migration yet.
     rubrics = {}
+    version_order = {LEGACY_VERSION: 0, VERSION: 1, FRAMEWORK_VERSION: 2}
     for item in sorted(
         rubric_rows,
-        key=lambda rubric: getattr(rubric, "version", LEGACY_VERSION) == VERSION,
+        key=lambda rubric: version_order.get(rubric.version, -1),
         reverse=True,
     ):
         rubrics.setdefault(item.kind, item)
@@ -271,7 +317,8 @@ def save_skill_snapshots(
         complete
         and report.frameworks
         and rubrics.get("framework")
-        and (getattr(rubrics["framework"], "version", LEGACY_VERSION) == VERSION)
+        and getattr(rubrics["framework"], "version", LEGACY_VERSION)
+        in {VERSION, FRAMEWORK_VERSION}
     ):
         framework_evidence = list(
             db.scalars(
@@ -304,23 +351,47 @@ def save_skill_snapshots(
                     framework_metrics(
                         rows, name, framework_evidence, saturation=saturation
                     )
-                    if getattr(rubric, "version", LEGACY_VERSION) == VERSION
+                    if getattr(rubric, "version", LEGACY_VERSION)
+                    in {VERSION, FRAMEWORK_VERSION}
                     else {}
                 )
             )
-            score = calculate(
-                metrics,
-                rubric_version=getattr(rubric, "version", LEGACY_VERSION),
-                weights=weights,
-            )
+            rubric_version = getattr(rubric, "version", LEGACY_VERSION)
+            if kind == "framework" and rubric_version == FRAMEWORK_VERSION:
+                score = calculate_framework(
+                    framework_v22_metrics(
+                        metrics,
+                        saturation=saturation,
+                        scoring_files_partial=bool(
+                            result.summary_data.get("scoring_files_partial")
+                        ),
+                    ),
+                    rubric_version=rubric_version,
+                    weights=weights,
+                )
+            else:
+                score = calculate(
+                    metrics,
+                    rubric_version=rubric_version,
+                    weights=weights,
+                )
             for part in score["breakdown"]:
                 part["evidence_kind"] = "verification"
             explanation = score["explanation"]
             if score["score"] is not None:
-                explanation = (
-                    "Dựa trên commit và PR đã xác minh. Độ phức tạp dùng số tệp "
-                    "nguồn khác nhau đã sửa làm chỉ báo phạm vi thay đổi."
-                )
+                if kind == "framework" and rubric_version == FRAMEWORK_VERSION:
+                    explanation = (
+                        "Dựa trên commit hoặc PR đã xác minh trên tệp mã nguồn "
+                        "có import framework. Điểm phản ánh phạm vi thay đổi, "
+                        "số sự kiện và độ đầy đủ của bằng chứng."
+                    )
+                    if result.summary_data.get("scoring_files_partial"):
+                        explanation += " Chi tiết tệp GitHub chưa đầy đủ."
+                else:
+                    explanation = (
+                        "Dựa trên commit và PR đã xác minh. Độ phức tạp dùng số tệp "
+                        "nguồn khác nhau đã sửa làm chỉ báo phạm vi thay đổi."
+                    )
             elif kind == "framework":
                 explanation = (
                     "Phát hiện framework trong repo. "
