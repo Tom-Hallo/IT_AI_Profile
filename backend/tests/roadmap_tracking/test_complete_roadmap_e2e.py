@@ -24,6 +24,7 @@ Tests:
 """
 
 import json
+import os
 
 import pytest
 from sqlalchemy import select
@@ -43,6 +44,14 @@ from app.modules.roadmap_tracking.models import (
 )
 from app.modules.roadmaps.models import Roadmap
 from app.modules.users.models import User
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.environ.get("RUN_INTEGRATION") != "1",
+        reason="cần RUN_INTEGRATION=1 và PostgreSQL đang chạy",
+    ),
+]
 
 
 @pytest.fixture

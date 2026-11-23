@@ -300,13 +300,13 @@ export function liveDashboard(state, runtime, data) {
     + scopeBanner
     + '<div class="dashboard-summary"><section class="panel dashboard-focus"><div class="focus-heading"><span class="feature-icon">' + icon('branch')
     + '</span><div><p class="eyebrow">' + escape(t('profile.next')) + '</p><h2>'
-    + escape(next?.title ?? (milestones.length ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2></div></div>'
-    + (goal ? paragraph(goal.objective) : '') + link(escape(t('action.openRoadmap')) + icon('arrow'), 'roadmap', 'secondary small') + '</section>'
+    + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (milestones.length ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2></div></div>'
+    + (goal ? paragraph(displayObjective(goal.objective, next?.external_key)) : '') + link(escape(t('action.openRoadmap')) + icon('arrow'), 'roadmap', 'secondary small') + '</section>'
     + '<section class="panel dashboard-progress"><p class="eyebrow">' + escape(t('road.progress')) + '</p>'
     + '<div class="focus-progress"><strong>' + done.length + '<span> / ' + milestones.length + '</span></strong><small>'
     + escape(t('profile.milestonesDone')) + '</small>' + progress(milestones.length ? done.length / milestones.length * 100 : 0, t('road.progress')) + '</div>'
     + '<div class="dash-award"><span class="award-icon">' + icon('award') + '</span><div><p class="eyebrow">'
-    + escape(t('profile.latestAchievement')) + '</p>' + paragraph(done.at(-1)?.title ?? t('profile.achievementsEmpty')) + '</div></div></section></div>'
+    + escape(t('profile.latestAchievement')) + '</p>' + paragraph(done.at(-1) ? displayMilestoneTitle(done.at(-1).title, done.at(-1).external_key) : t('profile.achievementsEmpty')) + '</div></div></section></div>'
     + radarView(radar.metrics, radar.count, scopeLabel(state.scope), rangeLabel(state.range), radar.comparison, radar.metricDetails)
     + dashboardScores(state, runtime, data, radar.count);
 }
@@ -713,6 +713,26 @@ const statusLabel = status => ({
   completed: copy('Đã hoàn thành', 'Completed'), in_progress: copy('Đang thực hiện', 'In progress'), pending: copy('Chưa bắt đầu', 'Pending')
 })[status] ?? status;
 
+export function displayRoadmapTitle(title, goal) {
+  if (getLanguage() !== 'vi') return title || (goal ? `${goal.charAt(0).toUpperCase() + goal.slice(1)} Career Roadmap` : '');
+  const roleLabels = {
+    backend: 'Backend',
+    frontend: 'Frontend',
+    fullstack: 'Full-stack',
+    devops: 'DevOps'
+  };
+  if (title && /Career Roadmap/i.test(title)) {
+    const roleMatch = title.match(/(\w+)\s+Career\s+Roadmap/i);
+    const roleKey = roleMatch ? roleMatch[1].toLowerCase() : (goal || '').toLowerCase();
+    const roleName = roleLabels[roleKey] || (roleMatch ? roleMatch[1] : (goal || ''));
+    return `Lộ trình sự nghiệp ${roleName}`;
+  }
+  if (goal && roleLabels[goal.toLowerCase()]) {
+    return `Lộ trình sự nghiệp ${roleLabels[goal.toLowerCase()]}`;
+  }
+  return title || (goal || '');
+}
+
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
   const selected = milestones.find(m => m.id === data.milestone) ?? milestones[0];
@@ -728,7 +748,7 @@ export function liveRoadmap(data) {
   ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
   const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
     ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select">'
-      + data.roadmaps.map(r => option(r.id, `${r.title || r.goal} (#${r.id})`, data.road?.id)).join('')
+      + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
       + '</select>')
     : '';
 

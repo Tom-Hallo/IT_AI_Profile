@@ -39,6 +39,9 @@ include = ["app*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
+markers = [
+    "integration: mark test as integration test requiring live database/redis",
+]
 
 [tool.ruff]
 extend-exclude = ["build"]
