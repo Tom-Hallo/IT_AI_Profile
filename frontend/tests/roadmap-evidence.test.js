@@ -93,7 +93,7 @@ test('invalid URLs and scoring-only references never inflate the count', () => {
 
 test('many links remain in the DOM instead of being silently truncated', () => {
   const records = Array.from({length:25}, (_,i) => submission(i+1));
-  const proof = yellowProof(liveRoadmap(roadmapData(records,'', 'completed')));
+  const proof = yellowProof(liveRoadmap(roadmapData(records,[], 'completed')));
   assert.equal((proof.match(/class="milestone-proof-link /g) ?? []).length,25);
   assert.match(proof,/Đã nộp 25 liên kết/);
   assert.doesNotMatch(proof,/Đã nộp 0 liên kết/);
