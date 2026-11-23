@@ -17,3 +17,18 @@
 .metric-label,.eyebrow{text-transform:uppercase;letter-spacing:.055em;font-size:var(--text-xs);font-weight:700;color:var(--color-text-muted)}.metric-value{font-size:2rem;font-weight:700;letter-spacing:-.04em;margin:14px 0}.metric-value small{font-size:var(--text-sm);font-weight:400}
 .dialog{width:min(460px,calc(100vw - 32px));border:1px solid var(--color-border);border-radius:var(--radius-xl);background:var(--color-surface);color:var(--color-text);padding:24px;box-shadow:var(--shadow-float)}.dialog::backdrop{background:rgba(13,22,42,.55);backdrop-filter:blur(4px)}.dialog__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 18px;border-radius:var(--radius-md);background:var(--color-text);color:var(--color-bg);box-shadow:var(--shadow-float);z-index:80}
+
+/* Shared React loading visuals, driven by existing calling components. */
+.ita-app-loading{display:flex;flex-direction:column;gap:12px;min-height:140px;max-width:100%;padding:16px;border:1px solid var(--color-border,#33414a);border-radius:12px;background:var(--color-surface-muted,#202830);color:var(--color-text-muted,#b7c2cd)}
+.ita-app-loading--rows{min-height:180px}
+.ita-app-loading--inline{flex-direction:row;align-items:center;min-height:40px;padding:9px 13px;gap:10px;font-size:13px}
+.ita-app-loading-message{font-size:13px;line-height:1.5}
+.ita-app-skeleton-stack{display:grid;gap:13px;flex:1;align-content:center}
+.ita-app-skeleton-line{display:block;width:91%;height:21px;border-radius:9px;background:linear-gradient(100deg,#29343d 20%,#43515a 50%,#29343d 80%);background-size:220% 100%;animation:ita-app-shimmer 1.9s ease-in-out infinite}
+.ita-app-skeleton-line:nth-child(2){width:77%}.ita-app-skeleton-line:nth-child(3){width:60%}
+.ita-app-loading--rows .ita-app-skeleton-line{height:32px}
+.ita-app-spinner,.ita-app-loading-btn::before{display:inline-block;content:"";width:14px;height:14px;flex:none;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:ita-app-spin .9s linear infinite}
+.ita-app-loading-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+@keyframes ita-app-shimmer{to{background-position-x:-220%}}
+@keyframes ita-app-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.ita-app-skeleton-line,.ita-app-spinner,.ita-app-loading-btn::before{animation:none!important}}

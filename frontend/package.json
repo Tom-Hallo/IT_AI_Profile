@@ -15,6 +15,7 @@
     "test:evidence": "node --test tests/evidence-url.test.js",
     "test:roadmap": "node --test tests/roadmap-reevaluation.test.js",
     "test:validation": "node --test tests/form-validation.test.js"
+    "test:roadmap": "node --test tests/roadmap-reevaluation.test.js tests/roadmap-connectors.test.js"
   },
   "dependencies": {
     "react": "19.3.1",

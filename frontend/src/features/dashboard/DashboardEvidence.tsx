@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { Link } from 'react-router'
 import { FindingEvidenceExplorer } from '@/features/github/FindingEvidenceExplorer'
 import type { CollaborationEvidenceListResult } from '@/features/github/types'
@@ -11,7 +12,7 @@ function ReportSkills({ repoId, reportId }: { repoId: number; reportId: number }
   const { state, retry } = useDashboardQuery<SkillScore[]>(
     `/scoring/repositories/${repoId}/skills?report_id=${reportId}`,
   )
-  if (state.phase === 'loading') return <p role="status">Đang tải kỹ năng…</p>
+  if (state.phase === 'loading') return <LoadingState message="Đang tải kỹ năng…" variant="rows" />
   if (state.phase === 'error') return <p role="alert">
     Không tải được kỹ năng. <button type="button" onClick={retry}>Thử lại</button>
   </p>
@@ -40,7 +41,7 @@ function PullRequestEvidence({ repoId, dates }: { repoId: number; dates: string 
       <label>Số PR <input type="number" name="pr" min={1} max={2147483647} step={1} /></label>{' '}
       <button type="submit">Lọc PR</button>
     </form>
-    {state.phase === 'loading' && <p role="status">Đang tải bằng chứng PR…</p>}
+    {state.phase === 'loading' && <LoadingState message="Đang tải bằng chứng PR…" variant="rows" />}
     {state.phase === 'error' && <p role="alert">
       Không tải được bằng chứng PR. <button type="button" onClick={retry}>Thử lại</button>
     </p>}
@@ -65,7 +66,7 @@ export function DashboardEvidence({ repoId, dates }: { repoId: number; dates: st
   const { state, retry } = useDashboardQuery<Report | null>(
     `/repositories/${repoId}/analysis/dashboard-report?${dates}`,
   )
-  if (state.phase === 'loading') return <p role="status">Đang tải báo cáo…</p>
+  if (state.phase === 'loading') return <LoadingState message="Đang tải báo cáo…" variant="card" />
   if (state.phase === 'error') return <p role="alert">
     Không tải được báo cáo. Hãy kiểm tra quyền và consent.{' '}
     <button type="button" onClick={retry}>Thử lại</button>

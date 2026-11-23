@@ -87,15 +87,15 @@ export function MentorActionCard({
       {requestError && <p role="alert">Chưa nhận được kết quả. Bạn có thể gửi lại quyết định.</p>}
       <div className="mentor-action-buttons">
         {requestError ? (
-          <Button type="button" disabled={busy} onClick={() => void decide(lastDecision.current)}>
+          <Button type="button" disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void decide(lastDecision.current)}>
             Kiểm tra lại
           </Button>
         ) : !result || result.status === 'pending' ? (
           <>
-            <Button type="button" variant="primary" disabled={busy} onClick={() => void decide('confirm')}>
+            <Button type="button" variant="primary" disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void decide('confirm')}>
               Xác nhận
             </Button>
-            <Button type="button" disabled={busy} onClick={() => void decide('decline')}>
+            <Button type="button" disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void decide('decline')}>
               Từ chối
             </Button>
           </>

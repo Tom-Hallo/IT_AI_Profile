@@ -83,6 +83,7 @@ let mentorOpenFrame;
 let aboutMotion;
 let toastTimer;
 let mapObserver;
+let jdTextareaObserver;
 let stopRoadAnimation;
 let radar;
 let mentorLayout;
@@ -164,6 +165,26 @@ function replaceView(view,content) {
   view.querySelectorAll('details').forEach(el => { if (openDetails.includes(el.className)) el.open = true; });
   paintBots(view);
   if (key) view.querySelector(key)?.focus({preventScroll:true});
+}
+// Keep the JD field sized to its wrapped content, with limits owned by CSS.
+function resizeJDTextarea(textarea = $('#jd-form textarea[name="jd"]')) {
+  if (!textarea) return;
+  const previousHeight = textarea.getBoundingClientRect().height;
+  const previousScrollTop = textarea.scrollTop;
+  textarea.style.height = 'auto';
+  const computed = getComputedStyle(textarea);
+  const minHeight = Number.parseFloat(computed.minHeight) || 0;
+  const maxHeight = Number.parseFloat(computed.maxHeight) || Infinity;
+  const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+  const targetHeight = Math.ceil(Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + borderHeight)));
+
+  // Transition between numeric heights, never directly to/from "auto".
+  if (Math.abs(previousHeight - targetHeight) > 1) {
+    textarea.style.height = previousHeight + 'px';
+    void textarea.offsetHeight;
+  }
+  textarea.style.height = targetHeight + 'px';
+  textarea.scrollTop = previousScrollTop;
 }
 function updateStudio() {
   if (!isStudio()) return;
@@ -286,15 +307,37 @@ function enter() {
   navigate('dashboard');
 }
 function prepareView() {
+  jdTextareaObserver?.disconnect();
+  jdTextareaObserver = null;
+  if (isStudio('jobs')) {
+    const textarea = $('#jd-form textarea[name="jd"]');
+    resizeJDTextarea(textarea);
+    if (textarea) {
+      let previousWidth = textarea.clientWidth;
+      jdTextareaObserver = new ResizeObserver(() => {
+        if (!textarea.isConnected) return;
+        const currentWidth = textarea.clientWidth;
+        if (currentWidth !== previousWidth) {
+          previousWidth = currentWidth;
+          resizeJDTextarea(textarea);
+        }
+      });
+      jdTextareaObserver.observe(textarea);
+    }
+  }
   if (isStudio('roadmap')) {
     mapObserver?.disconnect();
     stopRoadAnimation?.();
     stopRoadAnimation = null;
     const map = $('.road-map');
     if (map) {
-      paintMap(map,state,null,live?.data.tracking?.milestones);
-      mapObserver = new ResizeObserver(() => paintMap(map,state,null,live?.data.tracking?.milestones));
+      const repaint = () => paintMap(map,state,null,live?.data.tracking?.milestones);
+      repaint();
+      mapObserver = new ResizeObserver(repaint);
       mapObserver.observe(map);
+      // Some node positions can move without changing the map's outer size.
+      // Track their dimensions too, including when the Mentor panel is resized.
+      map.querySelectorAll('.node').forEach(node => mapObserver.observe(node));
     }
   }
   if (isStudio('dashboard')) {
@@ -1158,11 +1201,7 @@ document.addEventListener('input',event => {
   if (control.name === 'question') runtime.chatDraft = control.value;
   if (live) {
     if (control.name === 'query') live.data.jobQuery = control.value;
-    if (control.name === 'jd' && control.closest('#jd-form')) {
-      live.data.jobText = control.value;
-      control.style.height = 'auto';
-      control.style.height = Math.min(Math.max(control.scrollHeight + 4, 85), 200) + 'px';
-    }
+    if (control.name === 'jd' && control.closest('#jd-form')) live.data.jobText = control.value;
     if (control.name === 'jd-url') live.data.jobURL = control.value;
     if (control.name === 'ats-jd') live.data.atsJD = control.value;
     if (control.name === 'mentor-jd') live.data.mentorJD = control.value;
@@ -1176,6 +1215,7 @@ document.addEventListener('input',event => {
     $('#ats-result')?.replaceChildren();
     previewCV();
   }
+  if (control.name === 'jd' && control.closest('#jd-form')) resizeJDTextarea(control);
   if (control.name === 'jd') runtime.jdText = control.value;
   if (control.name === 'query') runtime.jobQuery = control.value;
 });
@@ -1249,6 +1289,9 @@ document.addEventListener('keydown',event => {
   if (!runtime.mentorOpen || dialog.open || event.defaultPrevented || event.key !== 'Escape') return;
   event.preventDefault();
   closeMentor(true);
+});
+window.addEventListener('resize', () => {
+  if (isStudio('jobs')) resizeJDTextarea();
 });
 window.addEventListener('afterprint',() => document.body.classList.remove('print-cv'));
 window.addEventListener('hashchange',() => {
