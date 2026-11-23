@@ -1111,6 +1111,12 @@
   font-size: 12px;
   color: var(--muted);
 }
+.evidence-score-pill.is-unavailable {
+  font-size: 15px;
+  color: var(--muted);
+  background: var(--inset);
+  border-color: var(--line);
+}
 
 /* Job Matching Summary & Groups */
 .job-match-summary {
