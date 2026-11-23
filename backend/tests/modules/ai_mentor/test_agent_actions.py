@@ -464,6 +464,41 @@ def test_mentor_steps_append_distinct_rows_and_do_not_renumber_existing(pg):
     assert data["milestones"][0]["status"] == "completed"
 
 
+def test_mentor_legacy_empty_milestones_cannot_hide_existing_steps(pg):
+    owner = World(pg).user("legacy-steps-owner@example.test")
+    data = {
+        "goal": "backend",
+        "steps": ["Complete Python fundamentals"],
+        "milestones": [],
+        "total": 1,
+    }
+    roadmap = Roadmap(user_id=owner.id, title="Legacy roadmap", data=data)
+    pg.add(roadmap)
+    pg.commit()
+
+    action = propose(
+        pg,
+        owner,
+        {
+            "tool": "update_roadmap",
+            "roadmap_id": roadmap.id,
+            "steps": ["Add distributed system design"],
+        },
+    )
+    assert action is not None
+    assert actions.decide_action(pg, owner, action.id, CONFIRM).status == "denied"
+    pg.expire_all()
+    assert pg.get(Roadmap, roadmap.id).data == data
+    assert (
+        pg.scalar(
+            select(func.count())
+            .select_from(Milestone)
+            .where(Milestone.roadmap_id == roadmap.id)
+        )
+        == 0
+    )
+
+
 def test_mentor_steps_append_rejects_existing_skill_name(pg):
     owner = World(pg).user("step-duplicate@example.test")
     roadmap = _seed_roadmap_with_progress(pg, owner)
