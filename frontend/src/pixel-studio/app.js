@@ -21,7 +21,7 @@ import {settingsView, syncThemeControls} from './settings-view.js';
 import {applyTheme, colorFields, defaultPreset, hexColor, loadTheme, presets, saveTheme, themeColors, themeKey} from './theme.js';
 import {mountAboutMotion} from './about-motion.js';
 import {createLiveStudio} from './live.js';
-import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus} from './live-views.js';
+import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus,orderedTrackingMilestones} from './live-views.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
@@ -289,8 +289,8 @@ function prepareView() {
     stopRoadAnimation = null;
     const map = $('.road-map');
     if (map) {
-      paintMap(map,state,null,live?.data.tracking?.milestones);
-      mapObserver = new ResizeObserver(() => paintMap(map,state,null,live?.data.tracking?.milestones));
+      paintMap(map,state,null,live ? orderedTrackingMilestones(live.data) : null);
+      mapObserver = new ResizeObserver(() => paintMap(map,state,null,live ? orderedTrackingMilestones(live.data) : null));
       mapObserver.observe(map);
     }
   }
