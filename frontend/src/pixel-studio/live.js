@@ -22,7 +22,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   } catch {}
   const active = () => data.repos.find(repo => String(repo.id) === String(state.repo)) ?? data.repos[0];
   const repository = repo => '/repositories/' + repo.id;
-  const trackingPath = () => '/roadmap-tracking/' + data.road.id;
+  const trackingPath = () => data.road ? '/roadmap-tracking/' + data.road.id : '';
   const cvPath = doc => '/cv-studio/' + encodeURIComponent(doc.document_id);
   const currentReport = () => active() ? data.repoData[active().id] : null;
   let repoRequest = 0;
@@ -409,6 +409,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         method:'PATCH',json:{status,expected_version:milestone.version}
       });
       data.tracking = await request(trackingPath());
+      if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
       await roadHistory();
     });
   }
@@ -848,6 +849,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     'road-suggestion':button => work('road',async () => {
       await post(trackingPath() + '/suggestions/' + button.dataset.id + '/' + button.dataset.decision);
       data.tracking = await request(trackingPath());
+      if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
       await roadHistory();
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
@@ -1114,18 +1116,23 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.references = await request('/cvs/references?' + query(data.referencesQuery));
     }),
     'cv-form':cvSave,
-    'milestone-evidence-form':form => work('road',async () => {
-      const milestoneId = Number(form.dataset.milestone || data.milestone);
-      const url = String(form.get('evidence_url')).trim();
-      const note = String(form.get('evidence_note') || '').trim();
+    'milestone-evidence-form':(values,formElement) => work('road',async () => {
+      const milestoneId = Number(
+        values.get?.('milestone_id') ||
+        formElement?.dataset?.milestone ||
+        data.milestone
+      );
+      const url = String(values.get?.('evidence_url') || '').trim();
+      const note = String(values.get?.('evidence_note') || '').trim();
       if (!url) throw new Error(copy('Vui lòng nhập link minh chứng.', 'Please enter evidence URL.'));
       const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
         evidence_url:url,note:note || null,repository_id:null
       });
       data.tracking = await request(trackingPath());
+      if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
       await roadHistory();
       notice(res.verification_status === 'verified'
-        ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn!', 'Successfully verified evidence from your GitHub repository!')
+        ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
         : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
       );
     }),

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
@@ -10,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.modules.ai_audit.models import AIUsageEvent, Consent, Provider, Status, Tool
 from app.modules.ai_mentor.action_models import MentorAction, MentorActionEvent
@@ -164,7 +166,7 @@ def propose_action(
         db.commit()
     except (SQLAlchemyError, UnicodeError) as exc:
         db.rollback()
-        logger.error("Cannot store mentor proposal: %s", type(exc).__name__)
+        logger.error("Cannot store mentor proposal: %s: %s", type(exc).__name__, exc)
         raise HTTPException(503, "Unable to store mentor proposal") from None
     return ActionPreview(
         id=action.id,
@@ -181,8 +183,28 @@ def _check_draft_sources(db: Session, user: User, refs: list[tuple[str, int]]) -
         if kind == "github":
             if analysis.verify_repository_access(db, id_, user).private:
                 raise HTTPException(403, "Repository visibility changed")
+        elif kind == "roadmap":
+            is_valid_roadmap = (
+                db.scalar(
+                    select(Roadmap.id).where(
+                        Roadmap.id == id_, Roadmap.user_id == user.id
+                    )
+                )
+                is not None
+            )
+            if not is_valid_roadmap:
+                is_valid_milestone = (
+                    db.scalar(
+                        select(Milestone.id)
+                        .join(Roadmap, Milestone.roadmap_id == Roadmap.id)
+                        .where(Milestone.id == id_, Roadmap.user_id == user.id)
+                    )
+                    is not None
+                )
+                if not is_valid_milestone:
+                    raise HTTPException(403, "Mentor source is no longer available")
         else:
-            model = CV if kind == "cv" else Roadmap
+            model = CV
             if (
                 db.scalar(
                     select(model.id).where(model.id == id_, model.user_id == user.id)
@@ -279,7 +301,7 @@ def decide_action(
                     )
                 if roadmap is None:
                     raise HTTPException(404, "Roadmap not found")
-                data = dict(roadmap.data)
+                data = deepcopy(roadmap.data) if isinstance(roadmap.data, dict) else {}
                 milestones_data = list(data.get("milestones", []))
 
                 # Handle add_milestone
@@ -290,12 +312,13 @@ def decide_action(
                         (
                             i
                             for i, m in enumerate(milestones_data)
-                            if m.get("skill", "").lower() == skill_key
+                            if str(m.get("skill", "")).lower() == skill_key
                         ),
                         -1,
                     )
                     new_item = {
                         "skill": skill_key,
+                        "title": patch.title,
                         "target_score": patch.target_score,
                         "current_score": None,
                         "gap": None,
@@ -314,7 +337,7 @@ def decide_action(
                         if patch.after_skill:
                             after_key = patch.after_skill.lower().strip()
                             for idx, m in enumerate(milestones_data):
-                                if after_key in m.get("skill", "").lower():
+                                if after_key in str(m.get("skill", "")).lower():
                                     insert_idx = idx + 1
                                     break
                         milestones_data.insert(insert_idx, new_item)
@@ -365,7 +388,9 @@ def decide_action(
                     patch = proposal.modify_milestone
                     skill_key = patch.skill.lower().strip()
                     for m in milestones_data:
-                        if skill_key in m.get("skill", "").lower():
+                        if skill_key in str(m.get("skill", "")).lower():
+                            if patch.title:
+                                m["title"] = patch.title
                             if patch.objective:
                                 m["objective"] = patch.objective
                             if patch.metric:
@@ -379,6 +404,8 @@ def decide_action(
                         )
                     )
                     if db_m:
+                        if patch.title:
+                            db_m.title = patch.title
                         db_m.version += 1
                         db.add(
                             MilestoneHistory(
@@ -396,6 +423,7 @@ def decide_action(
                 data["milestones"] = milestones_data
                 data["total"] = len(milestones_data)
                 roadmap.data = data
+                flag_modified(roadmap, "data")
                 if proposal.title:
                     roadmap.title = proposal.title
                 result_id = str(roadmap.id)

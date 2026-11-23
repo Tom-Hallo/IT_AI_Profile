@@ -52,9 +52,14 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
         ]
     milestones = []
     for original in data.get("milestones", []):
-        m = dict(original)
+        m = dict(original) if isinstance(original, dict) else {}
+        m.setdefault("gap_type", "missing_evidence")
         links = [
-            e for e in m.get("evidence", []) if e.get("repository_id") in permitted
+            e
+            for e in m.get("evidence", [])
+            if "repository_id" not in e
+            or e.get("repository_id") is None
+            or e.get("repository_id") in permitted
         ]
         if len(links) != len(m.get("evidence", [])) or (
             m.get("gap_type") == "skill_gap" and not links
@@ -67,7 +72,9 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
         milestones.append(m)
     data["milestones"] = milestones
     data["evidence_gaps"] = [
-        m["skill"] for m in milestones if m["gap_type"] == "missing_evidence"
+        m.get("skill")
+        for m in milestones
+        if m.get("gap_type") == "missing_evidence" and m.get("skill")
     ]
     return {"id": item.id, "title": item.title, "created_at": item.created_at, **data}
 
