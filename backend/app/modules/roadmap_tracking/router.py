@@ -435,6 +435,17 @@ def reevaluate(
     return {
         "snapshot_id": snapshot.key,
         "suggestions": [serialize_suggestion(s) for s in suggestions],
+        "evaluation": {
+            "source": "stored_public_analysis",
+            "checked_milestones": sum(m.status != "completed" for m in milestones),
+            "verified_skill_count": sum(
+                any(
+                    evidence.get("verified") is True and evidence.get("ref")
+                    for evidence in items
+                )
+                for items in snapshot.skills.values()
+            ),
+        },
     }
 
 
