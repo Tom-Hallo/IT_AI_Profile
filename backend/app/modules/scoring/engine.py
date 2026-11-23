@@ -108,10 +108,15 @@ def calculate_framework(
     active_weights = dict(FRAMEWORK_WEIGHTS if weights is None else weights)
     if (
         set(active_weights) != set(FRAMEWORK_WEIGHTS)
-        or any(type(weight) is not int or weight < 0 for weight in active_weights.values())
+        or any(
+            type(weight) is not int or weight < 0
+            for weight in active_weights.values()
+        )
         or sum(active_weights.values()) != 100
     ):
-        raise ValueError("Framework rubric must have four nonnegative weights totaling 100")
+        raise ValueError(
+            "Framework rubric must have four nonnegative weights totaling 100"
+        )
     missing = [
         name
         for name in active_weights
@@ -126,7 +131,9 @@ def calculate_framework(
             "rubric_version": rubric_version,
             "breakdown": [],
             "missing_metrics": missing,
-            "explanation": "Chưa có đóng góp framework được xác minh trên tệp mã nguồn.",
+            "explanation": (
+                "Chưa có đóng góp framework được xác minh trên tệp mã nguồn."
+            ),
         }
 
     breakdown = []
@@ -149,5 +156,8 @@ def calculate_framework(
         "rubric_version": rubric_version,
         "breakdown": breakdown,
         "missing_metrics": [],
-        "explanation": "Đánh giá dựa trên đóng góp GitHub đã xác minh tại tệp sử dụng framework.",
+        "explanation": (
+            "Đánh giá dựa trên đóng góp GitHub đã xác minh "
+            "tại tệp sử dụng framework."
+        ),
     }
