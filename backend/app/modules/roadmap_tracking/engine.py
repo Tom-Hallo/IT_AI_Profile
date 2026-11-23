@@ -48,7 +48,8 @@ def evaluate(
     # (e.g. "Python" vs "python"); compare keys without weakening verification.
     normalized_skills: dict[str, list[dict[str, Any]]] = {}
     for skill_key, items in snapshot.skills.items():
-        normalized_skills.setdefault(str(skill_key).strip().casefold(), []).extend(items)
+        normalized_key = str(skill_key).strip().casefold()
+        normalized_skills.setdefault(normalized_key, []).extend(items)
 
     result = []
     for m in milestones:
