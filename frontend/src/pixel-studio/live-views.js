@@ -129,10 +129,13 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
   const emptySkillState = '<div class="pixel-empty-card">'
     + '<div class="empty-pixel-icon">' + icon('search') + '</div>'
     + '<h3>' + copy('Chưa có điểm kỹ năng nào được tính toán', 'No skill scores calculated yet') + '</h3>'
-    + '<p class="empty-reason">' + copy(
-      'Lý do: Hồ sơ của bạn chưa có repository nào được phân tích trong phạm vi <strong>' + scopeLabel(state.scope) + '</strong> và kỳ <strong>' + rangeLabel(state.range) + '</strong>.',
-      'Reason: No analyzed GitHub repository found in scope <strong>' + scopeLabel(state.scope) + '</strong> and window <strong>' + rangeLabel(state.range) + '</strong>.'
-    ) + '</p>'
+    + '<p class="empty-reason">' + (analyzedCount ? copy(
+      'Đã tải báo cáo GitHub nhưng chưa có bản ghi điểm kỹ năng trong phạm vi này. Kiểm tra quá trình xác minh đóng góp và cảnh báo tải dữ liệu.',
+      'GitHub reports were loaded but no skill scores are available in this scope. Check contribution verification and data-loading warnings.'
+    ) : copy(
+      'Chưa có báo cáo GitHub trong phạm vi <strong>' + scopeLabel(state.scope) + '</strong> và kỳ <strong>' + rangeLabel(state.range) + '</strong>.',
+      'No GitHub reports were found in scope <strong>' + scopeLabel(state.scope) + '</strong> and window <strong>' + rangeLabel(state.range) + '</strong>.'
+    )) + '</p>'
     + '<div class="empty-steps-guide">'
     + '<div class="guide-step"><span class="step-num">1</span><span>' + copy('Chuyển sang trang Phân tích GitHub', 'Go to GitHub Analysis') + '</span></div>'
     + '<div class="guide-step"><span class="step-num">2</span><span>' + copy('Chọn repository của bạn và bấm Phân tích', 'Select your repository and click Analyze') + '</span></div>'
@@ -214,7 +217,10 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     }
   } else {
     scores = '<div class="project-skills"><h3>' + escape(t('profile.verifiedHeading')) + '</h3>'
-      + tags([...new Set(data.scores.filter(item => verifiedSkillScore(item.score, item.status) !== null).map(item => item.technology))], 'green')
+      + tags([...new Set(data.scores.filter(item => verifiedSkillScore(item.score, item.status) !== null &&
+        item.breakdown?.some(part => Array.isArray(part.evidence_ids) &&
+          part.evidence_ids.some(id => Number.isSafeInteger(id) && id > 0)))
+        .map(item => item.technology))], 'green')
       + '<h3>' + escape(t('profile.supplementary')) + '</h3>' + tags(data.skills.map(item => item.skill_name), 'blue') + '</div>';
     evidence = '<h3>' + escape(t('profile.self')) + '</h3><form id="skill-form" class="skill-form">'
       + field(t('profile.skill'), '<input name="skill" maxlength="120" required>')
@@ -321,7 +327,7 @@ export function liveDashboard(state, runtime, data) {
   const scopeBanner = '<section class="panel dashboard-scope-banner" aria-label="' + copy('Ngữ cảnh điểm kỹ năng tổng hợp', 'Aggregated skill context') + '">'
     + '<div class="scope-banner-head">'
     + '<div class="scope-banner-title"><span class="scope-pill-icon">' + icon('pulse') + '</span>'
-    + '<div><h2>' + copy('Điểm kỹ năng tổng hợp toàn hồ sơ', 'Aggregated Profile Skill Scores') + '</h2>'
+    + '<div><h2>' + copy('Điểm kỹ năng từ báo cáo GitHub', 'GitHub Evidence-backed Skill Scores') + '</h2>'
     + '<p class="subtle">' + copy('Tổng hợp bằng chứng năng lực từ tất cả repository đã phân tích trong hồ sơ.', 'Aggregated competency evidence across all analyzed repositories in your profile.') + '</p>'
     + '</div></div>'
     + '<div class="scope-banner-tags">'
@@ -336,10 +342,10 @@ export function liveDashboard(state, runtime, data) {
         'Some repositories could not be loaded; metrics include only successfully loaded reports.')
       + '</p>' : '')
     + (data.dashboardLoadErrors?.length ? '<p class="notice yellow" role="status">'
-      + escape(copy('Không tải được đầy đủ ', 'Failed to load all '))
+      + escape(copy('Có lỗi khi tải ', 'Failed to load '))
       + data.dashboardLoadErrors.length
-      + copy(' nguồn dữ liệu GitHub/điểm vai trò. Không tự tạo số thay thế.',
-        ' GitHub/role score sources. No substitute scores were generated.')
+      + copy(' nguồn dữ liệu. Không tự tạo số thay thế.',
+        ' data sources. No substitute scores were generated.')
       + '</p>' : '')
     + '<div class="dashboard-scope-notice">'
     + '<span class="notice-icon">' + icon('info') + '</span>'
