@@ -15,7 +15,7 @@ export function numericScore(score) {
  */
 export function reportBackedSkillScore(item) {
   const value = verifiedSkillScore(item?.score, item?.status);
-  if (value === null) return null;
+  if (value === null || value < 0 || value > 100) return null;
   const linked = item.breakdown?.some(part =>
     part.evidence_kind === 'verification' &&
     Array.isArray(part.evidence_ids) &&
