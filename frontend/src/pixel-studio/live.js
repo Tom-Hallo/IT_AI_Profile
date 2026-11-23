@@ -1146,16 +1146,18 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
       urlInput?.removeAttribute('aria-invalid');
       return work('road', async () => {
-        const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
-        evidence_url:url,note:note || null,repository_id:null
-      });
-      data.tracking = await request(trackingPath());
-      if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
-      await roadHistory();
-      notice(res.verification_status === 'verified'
-        ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
-        : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
-      );
+        const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence', {
+          evidence_url: url,
+          note: note || null,
+          repository_id: null
+        });
+        data.tracking = await request(trackingPath());
+        if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
+        await roadHistory();
+        notice(res.verification_status === 'verified'
+          ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
+          : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
+        );
       });
     },
     'skill-form':form => work('skill',async () => {
