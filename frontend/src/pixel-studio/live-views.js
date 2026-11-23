@@ -840,7 +840,7 @@ export function liveCV(state, runtime, data) {
     + '</small>'
     + '</div>'
     + '<div class="cv-command-actions">'
-    + btn(icon('pulse') + ' ' + escape(copy('Chèn kỹ năng & dự án từ GitHub', 'Insert skills & projects from GitHub')), 'cv-insert-github', 'secondary small pulse-button')
+    + btn(icon('pulse') + ' ' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')), 'cv-insert-github', 'secondary small pulse-button')
     + namedButton(copy('Tạo CV bằng AI', 'Generate with AI'), 'cv-generate', 'secondary small')
     + '<div class="cv-export-group">'
     + namedButton('PDF', 'cv-export', 'secondary small', 'pdf')

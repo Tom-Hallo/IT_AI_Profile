@@ -807,44 +807,56 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
     'cv-check':ats,
-    'cv-insert-github':() => {
-      const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
-      if (data.repoData) {
-        Object.entries(data.repoData).forEach(([repoId, d]) => {
-          if (d?.report) analyzedRepoIds.add(Number(repoId));
-        });
-      }
-      const analyzedRepos = data.repos.filter(repo => analyzedRepoIds.has(repo.id));
-      const verifiedSkills = data.scores.filter(s => s.score != null).map(s => `${s.technology} (${s.score}/100)`);
-      const topLanguages = [...new Set(analyzedRepos.map(r => r.primary_language).filter(Boolean))];
+    "cv-insert-github": () => {
+      const verifiedScores = data.scores.filter(
+        (item) =>
+          item.status === "Scored" &&
+          Number.isFinite(item.score) &&
+          item.report_id != null &&
+          item.repo?.id &&
+          Array.isArray(item.breakdown) &&
+          item.breakdown.length > 0 &&
+          item.breakdown.every(
+            (metric) =>
+              Array.isArray(metric.evidence_ids) &&
+              metric.evidence_ids.length > 0,
+          ),
+      );
 
-      let snippet = '\n\n### KỸ NĂNG CÔNG NGHỆ (ĐÃ XÁC MINH QUA GITHUB)\n';
-      if (verifiedSkills.length) {
-        snippet += '- ' + verifiedSkills.join(', ') + '\n';
-      } else if (topLanguages.length) {
-        snippet += '- Ngôn ngữ: ' + topLanguages.join(', ') + '\n';
-      } else {
-        snippet += '- Python (FastAPI, SQLAlchemy), TypeScript (React), Docker, Git\n';
-      }
-
-      snippet += '\n### DỰ ÁN TIÊU BIỂU (BẰNG CHỨNG THỰC TẾ TỪ GITHUB)\n';
-      if (analyzedRepos.length) {
-        analyzedRepos.forEach(repo => {
-          const rep = data.repoData[repo.id]?.report;
-          const arch = rep?.architecture?.[0]?.name || copy('Kiến trúc tiêu chuẩn', 'Standard Architecture');
-          const fileCount = rep?.structure?.inspected_files || '15+';
-          snippet += `* **${repo.full_name || repo.name}** (${repo.primary_language || 'Fullstack'})\n`;
-          snippet += `  - Vai trò: Đóng góp mã nguồn chính, triển khai ${arch}.\n`;
-          snippet += `  - Minh chứng: Đã kiểm tra ${fileCount} tệp mã nguồn, xác minh quyền tác giả và commit sạch qua hệ thống IT Talent AI Profile.\n`;
-        });
-      } else {
-        snippet += '* **IT_AI_Profile**: Đánh giá năng lực lập trình viên tự động từ GitHub với FastAPI, React và Docker.\n';
+      if (!verifiedScores.length) {
+        notice(
+          copy(
+            "Chưa có điểm kỹ năng đủ bằng chứng xác thực. Hãy phân tích repository và tải Dashboard trước khi chèn.",
+            "No skill scores have sufficient verified evidence. Analyze a repository and load Dashboard first.",
+          ),
+        );
+        return;
       }
 
-      runtime.cvDraft.body = (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + '\n' : '') + snippet;
+      const lines = verifiedScores.map(
+        (item) =>
+          `- ${item.technology}: ${item.score}/100 (${item.repo.full_name || item.repo.name})`,
+      );
+
+      const snippet =
+        "\n\n### KỸ NĂNG ĐƯỢC CHẤM TỪ BẰNG CHỨNG GITHUB\n" +
+        [...new Set(lines)].join("\n") +
+        "\n";
+
+      runtime.cvDraft.body =
+        (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + "\n" : "") +
+        snippet;
+
       render();
-      notice(copy('Đã chèn kỹ năng và dự án từ GitHub vào CV!', 'Inserted verified GitHub skills & projects into CV!'));
+
+      notice(
+        copy(
+          "Đã chèn các điểm kỹ năng có bằng chứng vào CV.",
+          "Inserted evidence-backed skill scores into CV.",
+        ),
+      );
     },
+
     'clear-repo-search': () => {
       data.search = '';
       return work('repos', () => repos({page: 1}));
