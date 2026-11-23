@@ -143,7 +143,7 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
       const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
       const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : '—';
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
-        + '<span class="tag-badge ' + (selectedValue === null ? 'amber' : 'green') + '">' + (selectedValue === null
+        + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + (selectedValue === null
           ? copy('Chưa đủ bằng chứng xác minh', 'Insufficient verified evidence')
           : copy('Đủ bằng chứng xác minh', 'Verified evidence')) + '</span></div>'
         + scorePill(selectedValue) + '</div>'
@@ -165,7 +165,7 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     if (selected) {
       const selectedValue = numericScore(selected.role_score);
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name) + '</h3>'
-        + '<span class="tag-badge ' + (selectedValue === null ? 'amber' : 'green') + '">' + (selectedValue === null
+        + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + (selectedValue === null
           ? copy('Chưa đủ bằng chứng', 'Insufficient evidence')
           : copy('Đánh giá vai trò', 'Role evaluation')) + '</span></div>'
         + scorePill(selectedValue) + '</div>'
