@@ -47,7 +47,11 @@ function RoadmapWorkspace() {
       try {
         const items = await apiFetch<Roadmap[]>('/career-roadmaps', { signal })
         let savedId = 0
-        try { savedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || 0 } catch {}
+        try {
+          savedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || 0
+        } catch {
+          // Session storage can be disabled; load from API normally.
+        }
         const latest = items.find(item => item.id === savedId && Array.isArray(item.milestones))
           ?? items.slice().reverse().find(item => Array.isArray(item.milestones) && item.goal)
         if (!latest || signal.aborted) return
@@ -81,7 +85,11 @@ function RoadmapWorkspace() {
   async function create(signal: AbortSignal) {
     const item = await apiFetch<Roadmap>('/career-roadmaps', { method: 'POST', body: { goal }, signal })
     setRoadmap(item)
-    try { sessionStorage.setItem('ita-studio-selected-roadmap', String(item.id)) } catch {}
+    try {
+      sessionStorage.setItem('ita-studio-selected-roadmap', String(item.id))
+    } catch {
+      // The newly created roadmap still stays selected in React state.
+    }
     setHistory(undefined)
     setTracking(undefined)
     setTracking(await apiFetch<Tracking>(`/roadmap-tracking/${item.id}`, { signal }))
