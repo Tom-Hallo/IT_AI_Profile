@@ -246,7 +246,7 @@ def list_source_options(db: Session, user_id: int) -> MentorSourceOptions:
     roadmaps = db.execute(
         select(Roadmap.id, Roadmap.title)
         .where(Roadmap.user_id == user_id)
-        .order_by(Roadmap.created_at.desc(), Roadmap.id.desc())
+        .order_by(Roadmap.created_at.asc(), Roadmap.id.asc())
     )
     return MentorSourceOptions(
         cvs=[MentorCVOption(id=id_, uploaded_at=date) for id_, date in cvs],
