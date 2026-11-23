@@ -1286,3 +1286,16 @@
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* Roadmap evidence validation: visible failure without losing the entered URL. */
+.road-evidence-form input[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+.road-evidence-validation:not([hidden]) {
+  display: block;
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+}
