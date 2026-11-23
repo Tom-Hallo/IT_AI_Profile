@@ -289,7 +289,7 @@ def decide_action(
                     raise HTTPException(409, "Roadmap data is not a valid object")
                 data = deepcopy(roadmap.data)
                 # Do not overwrite an unmigrated legacy steps-only roadmap.
-                if data.get("steps") and "milestones" not in data:
+                if data.get("steps") and not data.get("milestones"):
                     raise HTTPException(
                         409, "Load roadmap tracking before extending legacy steps"
                     )
