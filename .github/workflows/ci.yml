@@ -122,7 +122,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         run: |
           export GITHUB_TOKEN_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-          pytest -q tests/modules/ai_mentor/test_agent_actions.py -k "mentor_append_two or mentor_steps_append or mentor_duplicate_skill or mentor_wrong_or_removed or decision_api_requires_owner_origin or mentor_legacy_empty"
+          pytest -q tests/modules/ai_mentor/test_agent_actions.py -k "mentor_append or mentor_steps_append or mentor_duplicate_skill or mentor_wrong_or_removed or decision_api_requires_owner_origin or mentor_legacy_empty or tracking_persisted_order"
 
   gitleaks:
     name: Secret Scan
