@@ -306,7 +306,11 @@ def test_database_skill_snapshot_source_fetches_and_maps(db, world):
     assert len(res.snapshot.items) == 1
     item = res.snapshot.items[0]
     assert item.skill_key == "python"
-    assert item.score == 88.0
-    assert item.status.value == "SCORED"
+    # A static analysis link is evidence of repository content, not verified
+    # individual authorship. The role adapter must not manufacture a score.
+    assert item.score is None
+    assert item.confidence is None
+    assert item.status.value == "INSUFFICIENT"
     assert len(item.evidence_refs) == 1
     assert item.evidence_refs[0].file_path == "app/main.py"
+    assert item.evidence_refs[0].verified is False
