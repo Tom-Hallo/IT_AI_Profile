@@ -3,6 +3,8 @@
  * responses. No sample data, file-count scoring, unverified detections or
  * fabricated 0/100 fallback are permitted in live mode.
  */
+import {reportBackedSkillScore} from './score-presentation.js';
+
 export const RADAR_KEYS = ['code', 'architecture', 'testing', 'collaboration', 'ci'];
 
 const scored = (value, status) =>
@@ -37,10 +39,7 @@ function scoreFromLanguage(scores) {
   // A scored language must have actual linked verification event IDs.
   // Identifying a language by its file extension alone is not proof of skill.
   const eligible = scores.filter(item =>
-    item.kind === 'language' &&
-    verifiedScore(item) &&
-    item.breakdown?.some(part => Array.isArray(part.evidence_ids) &&
-      part.evidence_ids.some(id => Number.isSafeInteger(id) && id > 0))
+    item.kind === 'language' && reportBackedSkillScore(item) !== null
   );
   const row = eligible.sort((a, b) => b.score - a.score ||
     String(a.technology).localeCompare(String(b.technology)))[0];
