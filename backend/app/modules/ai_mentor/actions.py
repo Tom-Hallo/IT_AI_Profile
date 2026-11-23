@@ -381,9 +381,8 @@ def decide_action(
                     )
 
                 for patch in (
-                    ([proposal.add_milestone] if proposal.add_milestone else [])
-                    + proposal.add_milestones
-                ):
+                    [proposal.add_milestone] if proposal.add_milestone else []
+                ) + proposal.add_milestones:
                     append_new(
                         patch.skill,
                         patch.title,
