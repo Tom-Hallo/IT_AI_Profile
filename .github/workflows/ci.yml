@@ -74,6 +74,10 @@ jobs:
         working-directory: frontend
         run: npm run test:evidence
 
+      - name: Roadmap Re-evaluation Regression Tests
+        working-directory: frontend
+        run: npm run test:roadmap
+
       - name: Build
         working-directory: frontend
         env:
