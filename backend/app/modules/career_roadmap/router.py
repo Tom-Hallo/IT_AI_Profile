@@ -31,7 +31,11 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
     data = dict(item.data) if isinstance(item.data, dict) else {}
     permitted = public_repo_ids(db, user_id)
-    if not data.get("milestones") and isinstance(data.get("steps"), list) and data["steps"]:
+    if (
+        not data.get("milestones")
+        and isinstance(data.get("steps"), list)
+        and data["steps"]
+    ):
         data.setdefault("goal", "backend")
         data["milestones"] = [
             {
