@@ -26,9 +26,9 @@ from app.modules.ai_mentor.action_schemas import ActionDecision, tool_proposal_a
 from app.modules.ai_mentor.schemas import MentorChatRequest
 from app.modules.analysis import router as analysis_router
 from app.modules.analysis.models import AnalysisJob
+from app.modules.career_roadmap.router import _serialize, list_roadmaps
 from app.modules.consent.models import PrivateConsent
 from app.modules.cvs.models import CV
-from app.modules.career_roadmap.router import _serialize, list_roadmaps
 from app.modules.roadmap_tracking.models import Milestone
 from app.modules.roadmap_tracking.router import get_tracking
 from app.modules.roadmaps.models import Roadmap
