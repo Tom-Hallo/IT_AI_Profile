@@ -9,6 +9,7 @@ const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
+    dashboardRepos:null, dashboardPartial:false, dashboardLoadErrors:[],
     road:null, tracking:null, pendingRoadmapFocus:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
@@ -110,7 +111,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     if (state.scope !== 'public' && state.access !== 'combined') state.scope = 'public';
   }
 
-  async function repos({page=data.page,loadSelected=true}={}) {
+  async function repos({page=data.page,loadSelected=true,search=data.search}={}) {
     const token = ++pageRequest;
     const status = await request('/github/sync/status');
     if (token !== pageRequest) return;
@@ -118,7 +119,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const result = state.access === 'none' ? {items:[],total:0,page:1}
       : await request('/github/repositories?' + query({
         visibility:state.scope === 'combined' ? 'all' : state.scope,
-        page, per_page:30, search:data.search
+        page, per_page:30, search
       }));
     if (token !== pageRequest) return;
     data.repos = result.items;
@@ -368,32 +369,110 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   async function dashboard() {
     const token = ++dashboardRequest;
+    data.dashboardRepos = null;
+    data.dashboardPartial = false;
+    data.dashboardLoadErrors = [];
     await Promise.all([
-      repos({page:1,loadSelected:false}),
+      repos({page:1,loadSelected:false,search:''}),
       road().catch(() => {}),
       request('/self-reported-skills').then(items => { data.skills = items; })
+        .catch(error => { if (token === dashboardRequest) data.dashboardLoadErrors.push(errorText(error)); })
     ]);
     if (token !== dashboardRequest) return;
+
     const dates = period(state.range);
     const filters = query({date_from:dates.start_date,date_to:dates.end_date});
-    const roles = await request('/role-scoring/roles');
-    const settings = roles.roles ?? [];
-    const [scopes,skills] = await Promise.all([
-      Promise.allSettled(settings.map(role => request('/role-scoring/roles/' + encodeURIComponent(role.role_key) + '/score/scoped?' + filters))),
-      Promise.allSettled(data.repos.map(async repo => {
-        const report = await request(repository(repo) + '/analysis/dashboard-report?' + filters);
-        if (!report) return [];
-        data.repoData[repo.id] ??= { errors: {} };
-        data.repoData[repo.id].report = report;
-        const scores = await request('/scoring/repositories/' + repo.id + '/skills?report_id=' + report.id);
-        return scores.map(item => ({...item,repo}));
-      }))
-    ]);
+    const visibility = state.scope === 'combined' ? 'all' : state.scope;
+    const MAX_DASHBOARD_REPOS = 500;
+    const PAGE_SIZE = 100;
+    let dashboardRepos = data.repos;
+    if (state.access !== 'none') {
+      try {
+        const list = await request('/github/repositories?' + query({
+          visibility, page:1, per_page:PAGE_SIZE, search:''
+        }));
+        if (token !== dashboardRequest) return;
+        const total = Number(list.total) || 0;
+        const pages = Math.ceil(total / PAGE_SIZE);
+        dashboardRepos = Array.isArray(list.items) ? [...list.items] : [];
+        if (total > MAX_DASHBOARD_REPOS) data.dashboardPartial = true;
+        for (let page = 2; page <= Math.min(pages, MAX_DASHBOARD_REPOS / PAGE_SIZE); page++) {
+          try {
+            const next = await request('/github/repositories?' + query({
+              visibility, page, per_page:PAGE_SIZE, search:''
+            }));
+            if (token !== dashboardRequest) return;
+            dashboardRepos.push(...(next.items || []));
+          } catch (error) {
+            if (token !== dashboardRequest) return;
+            data.dashboardPartial = true;
+            data.dashboardLoadErrors.push(errorText(error));
+          }
+        }
+      } catch (error) {
+        if (token !== dashboardRequest) return;
+        data.dashboardPartial = true;
+        data.dashboardLoadErrors.push(errorText(error));
+      }
+    }
+    data.dashboardRepos = dashboardRepos;
+    const rolesResult = await request('/role-scoring/roles')
+      .catch(error => {
+        if (token === dashboardRequest) data.dashboardLoadErrors.push(errorText(error));
+        return {roles:[]};
+      });
     if (token !== dashboardRequest) return;
-    data.roles = scopes.flatMap((result,index) => result.status === 'fulfilled' ? [{
-      key:settings[index].role_key,name:settings[index].name,...result.value[state.scope]
-    }] : []);
-    data.scores = skills.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+    const settings = rolesResult.roles ?? [];
+
+    const scoped = await Promise.allSettled(settings.map(role =>
+      request('/role-scoring/roles/' + encodeURIComponent(role.role_key) +
+        '/score/scoped?' + filters)
+    ));
+    if (token !== dashboardRequest) return;
+    data.roles = settings.map((role, index) => {
+      const result = scoped[index];
+      if (result.status === 'rejected') {
+        data.dashboardLoadErrors.push(errorText(result.reason));
+        return {key:role.role_key,name:role.name,score:null,limitations:[]};
+      }
+      return {
+        key:role.role_key,name:role.name,
+        ...(result.value?.[state.scope] ?? {score:null,limitations:[]})
+      };
+    });
+
+    // Per-repository requests may fail independently. Do not discard a real
+    // analysis report if its skill score endpoint temporarily fails.
+    const collected = [];
+    for (let i = 0; i < dashboardRepos.length; i += 8) {
+      const batch = await Promise.all(dashboardRepos.slice(i, i + 8).map(async repo => {
+        try {
+          const report = await request(repository(repo) + '/analysis/dashboard-report?' + filters);
+          if (!report) return {repo,report:null,scores:[]};
+          try {
+            const scores = await request('/scoring/repositories/' + repo.id +
+              '/skills?report_id=' + report.id);
+            return {repo,report,scores:Array.isArray(scores) ? scores : []};
+          } catch (error) {
+            return {repo,report,scores:[],error};
+          }
+        } catch (error) {
+          return {repo,report:null,scores:[],error};
+        }
+      }));
+      if (token !== dashboardRequest) return;
+      for (const result of batch) {
+        data.repoData[result.repo.id] ??= {errors:{}};
+        data.repoData[result.repo.id].report = result.report;
+        if (result.error) {
+          data.dashboardLoadErrors.push(errorText(result.error));
+          data.dashboardPartial = true;
+        }
+        collected.push(...result.scores.map(item => ({...item,repo:result.repo})));
+      }
+    }
+    if (token !== dashboardRequest) return;
+    data.scores = collected;
   }
 
   async function road(targetId) {
@@ -846,6 +925,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.repoData = {};
     data.scores = [];
     data.roles = [];
+    data.dashboardRepos = null;
+    data.dashboardPartial = false;
+    data.dashboardLoadErrors = [];
     data.jobMatch = null;
     clearChat();
     return location.hash === '#studio/dashboard' ? loads.dashboard() : work('repos',() => repos({page:1}));
@@ -875,6 +957,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.roles = [];
       data.scores = [];
       data.repoData = {};
+      data.dashboardRepos = null;
+      data.dashboardPartial = false;
+      data.dashboardLoadErrors = [];
       return location.hash === '#studio/dashboard' ? loads.dashboard() : loads.repos();
     },
     repo:button => focusRepo(button.dataset.id),
