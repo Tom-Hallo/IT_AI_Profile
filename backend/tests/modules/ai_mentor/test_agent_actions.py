@@ -28,7 +28,7 @@ from app.modules.analysis import router as analysis_router
 from app.modules.analysis.models import AnalysisJob
 from app.modules.consent.models import PrivateConsent
 from app.modules.cvs.models import CV
-from app.modules.career_roadmap.router import list_roadmaps
+from app.modules.career_roadmap.router import _serialize, list_roadmaps
 from app.modules.roadmap_tracking.models import Milestone
 from app.modules.roadmap_tracking.router import get_tracking
 from app.modules.roadmaps.models import Roadmap
@@ -457,6 +457,31 @@ def test_mentor_independent_roadmap_created_at_end_of_list(pg):
     ]
     pg.expire_all()
     assert pg.get(Roadmap, original.id).data == original_progress
+
+
+def test_tracking_and_roadmap_reads_tolerate_null_legacy_evidence(pg):
+    owner = World(pg).user("null-evidence-roadmap@example.test")
+    roadmap = Roadmap(
+        user_id=owner.id,
+        title="Legacy null evidence",
+        data={"milestones": [{"skill": "python", "evidence": None}], "total": 1},
+    )
+    pg.add(roadmap)
+    pg.flush()
+    pg.add(
+        Milestone(
+            roadmap_id=roadmap.id,
+            external_key="python",
+            title="Python",
+            required_skills=["python"],
+            status="pending",
+        )
+    )
+    pg.commit()
+    assert get_tracking(roadmap.id, owner, pg)["milestones"][0]["evidence"] == []
+    assert _serialize(roadmap, pg, owner.id)["milestones"][0]["evidence"] == []
+    pg.expire_all()
+    assert pg.get(Roadmap, roadmap.id).data["milestones"][0]["evidence"] is None
 
 
 def test_tracking_persisted_order_not_database_row_id(pg):
