@@ -787,7 +787,7 @@ export function liveRoadmap(data) {
       : evaluation?.kind === 'all-completed'
         ? copy('Các mốc hiện tại đều đã hoàn thành', 'All milestones are already completed')
         : copy('Chưa có mốc mới đáp ứng đủ điều kiện', 'No additional milestones meet the criteria');
-  const evaluationDescription = evaluation?.kind === 'suggestions'
+  const evaluationDescription = !evaluation ? '' : evaluation.kind === 'suggestions'
     ? copy('Có ' + evaluationSuggestions.length + ' đề xuất từ dữ liệu đã xác minh. Chọn Áp dụng hoặc Bỏ qua cho từng mốc.',
       evaluationSuggestions.length + ' verified suggestions. Apply or dismiss each one.')
     : evaluation?.kind === 'no-verified-evidence'
