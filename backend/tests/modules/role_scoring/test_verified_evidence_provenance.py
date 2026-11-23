@@ -113,3 +113,77 @@ def test_unlinked_scored_row_never_creates_a_fake_evidence_reference(db, world):
         assert item.score is None
         assert item.confidence is None
         assert item.evidence_refs == []
+
+
+def test_same_report_prefers_new_rubric_over_legacy_score(db, world):
+    user = world.user("upgraded-framework@example.test")
+    repo = world.repo(user)
+    world.verification(user, repo)
+    report = world.report(repo, [])
+    verification = db.scalar(
+        select(RepositoryVerification).where(
+            RepositoryVerification.repository_id == repo.id
+        )
+    )
+    verification.report_id = report.id
+    pr = VerificationEvidence(
+        verification_id=verification.id,
+        repository_id=repo.id,
+        user_id=user.id,
+        evidence_type="pull_request",
+        target_identifier="72",
+        verification_status="verified",
+        rationale="Author matched",
+    )
+    db.add(pr)
+    legacy = RubricVersion(kind="framework", version="2.1.0", criteria={})
+    current = RubricVersion(kind="framework", version="2.2.0", criteria={})
+    db.add_all([legacy, current])
+    db.flush()
+    db.add_all(
+        [
+            SkillScore(
+                user_id=user.id,
+                repository_id=repo.id,
+                report_id=report.id,
+                rubric_id=legacy.id,
+                commit_sha=report.commit_sha,
+                kind="framework",
+                technology="FastAPI",
+                status="Insufficient",
+                score=None,
+                breakdown=[],
+                explanation="Legacy score",
+            ),
+            SkillScore(
+                user_id=user.id,
+                repository_id=repo.id,
+                report_id=report.id,
+                rubric_id=current.id,
+                commit_sha=report.commit_sha,
+                kind="framework",
+                technology="FastAPI",
+                status="Scored",
+                score=52,
+                breakdown=[
+                    {
+                        "criterion": "confidence",
+                        "normalized_value": 0.6,
+                        "evidence_kind": "verification",
+                        "evidence_ids": [pr.id],
+                    }
+                ],
+                explanation="New verified PR score",
+            ),
+        ]
+    )
+    db.commit()
+
+    raw = DatabaseSkillSnapshotSource(
+        db, repo_id_filter=frozenset({repo.id})
+    ).fetch(user.id)
+    assert raw is not None
+    assert len(raw.payload.items) == 1
+    assert raw.payload.items[0].score == 52
+    assert raw.payload.items[0].status.value == "SCORED"
+    assert raw.payload.items[0].evidence_refs[0].pr_number == 72
