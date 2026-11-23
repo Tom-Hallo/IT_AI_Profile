@@ -31,9 +31,7 @@ def test_verified_pr_only_skill_is_available_in_both_role_scopes(db, world):
     db.add(pr)
     db.flush()
 
-    rubric = RubricVersion(
-        kind="framework", version="2.2.0", criteria={"weights": {}}
-    )
+    rubric = RubricVersion(kind="framework", version="2.2.0", criteria={"weights": {}})
     db.add(rubric)
     db.flush()
     db.add(
@@ -88,9 +86,7 @@ def test_unlinked_scored_row_never_creates_a_fake_evidence_reference(db, world):
     user = world.user("unlinked-role@example.test")
     repo = world.repo(user)
     report = world.report(repo, [])
-    rubric = RubricVersion(
-        kind="language", version="1.0.0", criteria={"weights": {}}
-    )
+    rubric = RubricVersion(kind="language", version="1.0.0", criteria={"weights": {}})
     db.add(rubric)
     db.flush()
     db.add(
