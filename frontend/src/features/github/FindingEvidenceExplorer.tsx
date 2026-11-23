@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { fetchFindingDetail, fetchFindings } from './api'
 import type { FindingDetail, FindingSummary } from './api'
 import './FindingEvidenceExplorer.css'
@@ -57,7 +58,7 @@ export function FindingEvidenceExplorer({ repositoryId, reportId, commitSha }: P
       <div className="finding-filters" aria-label="Lọc loại finding">
         {['all', ...types].map((type) => <button type="button" key={type} aria-pressed={filter === type} onClick={() => setFilter(type)}>{type === 'all' ? 'Tất cả' : type}</button>)}
       </div>
-      {loading && <p role="status">Đang tải findings…</p>}
+      {loading && <LoadingState message="Đang tải findings…" variant="rows" />
       {error && <p role="alert" className="finding-error">{error}</p>}
       {!loading && !error && findings.length === 0 && <p>Chưa có Finding cho báo cáo này. Báo cáo cũ có thể cần chạy phân tích lại.</p>}
       <div className="finding-layout">
@@ -68,7 +69,7 @@ export function FindingEvidenceExplorer({ repositoryId, reportId, commitSha }: P
         </div>
         <div className="finding-detail" aria-live="polite">
           {selectedId === null && <p>Chọn một finding để xem nguồn bằng chứng.</p>}
-          {detailLoading && <p role="status">Đang tải chi tiết…</p>}
+          {detailLoading && <LoadingState message="Đang tải chi tiết…" variant="card" />
           {detail && <>
             <h4>{detail.classification}</h4>
             <p>{detail.rationale}</p>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { apiFetch } from '@/shared/api/client'
 import { SkillScores, type SkillScore } from './SkillScores'
 
@@ -21,7 +22,7 @@ export function ReportSkillScores({ repoId, reportId }: { repoId: number; report
   return (
     <section className="card" aria-labelledby="report-skills-heading">
       <h3 id="report-skills-heading">Điểm năng lực theo công nghệ</h3>
-      {!state ? <p role="status">Đang tải điểm…</p> :
+      {!state ? <LoadingState message="Đang tải điểm…" variant="rows" /> :
         'failed' in state ? <p role="alert">Chưa tải được điểm cho báo cáo này.</p> :
         state.scores.length ? <SkillScores scores={state.scores} /> :
         <p>Báo cáo này chưa có công nghệ phù hợp để đánh giá.</p>}
