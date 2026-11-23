@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
-
 _PATH = re.compile(
     r"^/(?P<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})"
     r"/(?P<repo>[A-Za-z0-9_.-]+)"
