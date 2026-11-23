@@ -401,7 +401,10 @@ def decide_action(
                 # action-scoped keys. Never change existing skills to fit them.
                 for idx, step in enumerate(proposal.steps, 1):
                     objective = step.strip()
-                    if objective.casefold() in used_descriptions:
+                    if (
+                        objective.casefold() in used_descriptions
+                        or objective.lower() in used_keys
+                    ):
                         raise HTTPException(409, "Milestone step already exists")
                     used_descriptions.add(objective.casefold())
                     append_new(
@@ -417,7 +420,7 @@ def decide_action(
                     patch = proposal.modify_milestone
                     skill_key = patch.skill.lower().strip()
                     for m in milestones_data:
-                        if skill_key in str(m.get("skill", "")).lower():
+                        if skill_key == str(m.get("skill", "")).strip().lower():
                             if patch.title:
                                 m["title"] = patch.title
                             if patch.objective:
