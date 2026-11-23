@@ -20,8 +20,8 @@ from app.modules.scoring.snapshots import VERSION
 from app.modules.users.models import User
 
 from .adapters import current_snapshot
-from .evidence_urls import parse_github_evidence_url
 from .engine import IncomparableSnapshot, evaluate, normalize_rubric
+from .evidence_urls import parse_github_evidence_url
 from .models import Milestone, MilestoneHistory, RoadmapSuggestion
 
 router = APIRouter(prefix="/roadmap-tracking", tags=["Roadmap Tracking"])
