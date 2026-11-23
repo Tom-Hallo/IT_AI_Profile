@@ -73,14 +73,14 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
 
     if (selected) {
       const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
-      const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : 90;
+      const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : '—';
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
         + '<span class="tag-badge green">' + copy('Đủ bằng chứng xác minh', 'Verified evidence') + '</span></div>'
         + '<strong class="evidence-score-pill">' + (selected.score ?? 0) + '<span>/100</span></strong></div>'
         + paragraph(selected.explanation)
         + details([
             [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
-            [copy('Độ tin cậy', 'Confidence'), confPct + '/100'],
+            [copy('Độ tin cậy', 'Confidence'), confPct + (confPct === '—' ? '' : '/100')],
             [copy('Trạng thái xác minh', 'Verification Status'), escape(selected.status)]
           ])
         + '<div class="evidence-action-row" style="margin-top:14px">'
@@ -136,11 +136,11 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
 function getLiveRadar(state, data) {
   const standardKeys = ['code', 'architecture', 'testing', 'collaboration', 'ci'];
   const baseScores = {
-    code: 0,
-    architecture: 0,
-    testing: 0,
-    collaboration: 0,
-    ci: 0
+    code: null,
+    architecture: null,
+    testing: null,
+    collaboration: null,
+    ci: null
   };
 
   const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
@@ -156,7 +156,7 @@ function getLiveRadar(state, data) {
   const activeRepoAnalyzed = activeRepo ? analyzedRepoIds.has(activeRepo.id) : false;
 
   const role = (data.roles.find(item => item.key === data.roleKey) ?? data.roles[0])?.score;
-  const coveragePct = role?.coverage != null ? Math.round(role.coverage * 100) : (analyzedCount > 0 ? 55 : 0);
+  const coveragePct = role?.coverage != null ? Math.round(role.coverage * 100) : null;
 
   if (role?.criteria?.length) {
     const findCrit = (...keywords) => {
@@ -179,45 +179,12 @@ function getLiveRadar(state, data) {
     if (ciScore != null && ciScore >= 0 && ciScore <= 100) baseScores.ci = ciScore;
   }
 
-  // Nếu criteria chưa có điểm cho testing/collaboration/ci, tính toán từ dữ liệu thực tế của repo đã phân tích
-  if (analyzedCount > 0) {
-    if (baseScores.code === 0 && data.scores.length > 0) {
-      const codeSkills = data.scores.filter(s => s.kind === 'language' || s.kind === 'framework');
-      if (codeSkills.length) baseScores.code = Math.min(100, Math.round(codeSkills.length * 20));
-    }
-    if (baseScores.architecture === 0 && data.scores.length > 0) {
-      const archSkills = data.scores.filter(s => s.kind === 'architecture' || s.kind === 'pattern');
-      if (archSkills.length) baseScores.architecture = Math.min(100, Math.round(archSkills.length * 25));
-    }
-    let totalChecks = 0, successChecks = 0, totalPrs = 0, totalReviews = 0;
-    if (data.repoData) {
-      Object.values(data.repoData).forEach(d => {
-        if (d?.collaboration) {
-          totalChecks += d.collaboration.total_checks_analyzed || 0;
-          successChecks += d.collaboration.successful_checks_count || 0;
-          totalPrs += d.collaboration.total_prs_analyzed || 0;
-          totalReviews += d.collaboration.total_reviews_analyzed || 0;
-        }
-      });
-    }
-    if (baseScores.ci === 0 && totalChecks > 0) {
-      baseScores.ci = Math.round((successChecks / totalChecks) * 100);
-    } else if (baseScores.ci === 0 && analyzedCount > 0) {
-      baseScores.ci = Math.min(100, 70 + analyzedCount * 5);
-    }
-    if (baseScores.collaboration === 0 && (totalPrs > 0 || totalReviews > 0)) {
-      baseScores.collaboration = Math.min(100, Math.round((totalPrs * 10 + totalReviews * 15)));
-    } else if (baseScores.collaboration === 0 && analyzedCount > 0) {
-      baseScores.collaboration = Math.min(100, 65 + analyzedCount * 4);
-    }
-    if (baseScores.testing === 0 && analyzedCount > 0) {
-      const hasTestSkill = data.scores.some(s => (s.technology || '').toLowerCase().includes('test'));
-      baseScores.testing = hasTestSkill ? 80 : Math.min(100, 50 + analyzedCount * 5);
-    }
+  // Never invent a proficiency score from repo count or detected technologies.
+  // Unknown criteria must remain "insufficient", not be displayed as 0-100.
+  if (standardKeys.some(key => baseScores[key] === null)) {
+    return {metrics:[],comparison:{},metricDetails:'',count:analyzedCount,
+      analyzedRepos,activeRepo,activeRepoAnalyzed};
   }
-
-  // previousScores bằng baseScores để không tạo delta ảo khi chưa có lịch sử so sánh
-  const previousScores = { ...baseScores };
 
   const metrics = standardKeys.map(key => ({
     key,
@@ -225,28 +192,18 @@ function getLiveRadar(state, data) {
     score: baseScores[key]
   }));
 
-  const comparison = Object.fromEntries(standardKeys.map(key => [
-    key,
-    {
-      current: baseScores[key],
-      before: previousScores[key],
-      delta: baseScores[key] - previousScores[key]
-    }
-  ]));
+  // Historical comparisons require actual previous snapshots, not copied values.
+  const comparison = {};
 
   const metricDetails = standardKeys.map(key => {
-    const trend = comparison[key];
-    const trendCopy = trend.delta !== 0
-      ? '<div class="radar-trend"><strong>' + trend.before + ' <span aria-hidden="true">→</span> ' + trend.current + '<small>/100</small></strong>'
-      + '<span>' + escape(t('radar.compared', { version: '1.0' })) + '</span></div>'
-      : '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>';
+    const trendCopy = '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>';
     
     const evidenceRepo = activeRepoAnalyzed ? activeRepo : (analyzedRepos[0] ?? activeRepo);
     let evidence = '';
     if (evidenceRepo) {
       const isCurrent = activeRepo && evidenceRepo.id === activeRepo.id;
       evidence = '<div class="radar-evidence-line"><div><strong>' + escape(evidenceRepo.full_name || evidenceRepo.name) + '</strong>'
-        + '<small>' + escape(t('profile.coverage', { value: coveragePct })) + ' · ' + escape(t('radar.confidenceBasis'))
+        + '<small>' + escape(coveragePct === null ? copy('Độ phủ: chưa xác định', 'Coverage: unavailable') : t('profile.coverage', { value: coveragePct })) + ' · ' + escape(t('radar.confidenceBasis'))
         + (isCurrent ? ' · <span class="badge-success">' + copy('Repo đang chọn', 'Selected repo') + '</span>' : '')
         + '</small></div>'
         + btn(icon('file') + escape(t('radar.openEvidence')), 'evidence', 'secondary small', attr('id', evidenceRepo.id)) + '</div>';

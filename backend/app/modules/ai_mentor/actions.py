@@ -122,6 +122,23 @@ def propose_action(
         scope = "private" if repo.private else "public"
         sources = [f"GitHub repository #{repo_id} ({scope})"]
         context_refs = []
+    elif isinstance(proposal, UpdateRoadmapProposal):
+        valid_roadmap = db.scalar(
+            select(Roadmap.id).where(
+                Roadmap.id == proposal.roadmap_id, Roadmap.user_id == user.id
+            )
+        )
+        if valid_roadmap is None:
+            latest_id = db.scalar(
+                select(Roadmap.id)
+                .where(Roadmap.user_id == user.id)
+                .order_by(Roadmap.id.desc())
+                .limit(1)
+            )
+            if latest_id is not None:
+                proposal.roadmap_id = latest_id
+            else:
+                return None
     elif uses_private_github:
         # Persisted CVs and roadmaps are reusable after GitHub consent is revoked.
         return None
@@ -252,6 +269,14 @@ def decide_action(
                     )
                     .with_for_update()
                 )
+                if roadmap is None:
+                    roadmap = db.scalar(
+                        select(Roadmap)
+                        .where(Roadmap.user_id == user.id)
+                        .order_by(Roadmap.id.desc())
+                        .limit(1)
+                        .with_for_update()
+                    )
                 if roadmap is None:
                     raise HTTPException(404, "Roadmap not found")
                 data = dict(roadmap.data)
@@ -421,7 +446,12 @@ def decide_action(
                         )
                     )
                 result_id = str(draft.id)
-    except HTTPException:
+    except HTTPException as exc:
+        logger.warning(
+            "Mentor draft action denied by HTTPException: %s (status %s)",
+            exc.detail,
+            exc.status_code,
+        )
         return _finish(db, action, "denied")
     except SQLAlchemyError as exc:
         logger.error("Mentor draft action failed: %s", type(exc).__name__)

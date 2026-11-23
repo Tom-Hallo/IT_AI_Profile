@@ -33,6 +33,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   let analysisStarted = false;
   let analysisPolling;
   let analysisEpoch = 0;
+  let goalWasChosen = false;
 
   function errorText(error) {
     if (error.name === 'TimeoutError') return copy('Yêu cầu quá thời gian chờ. Vui lòng thử lại.', 'Request timed out. Please try again.');
@@ -337,9 +338,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     if (targetId) {
       data.road = items.find(item => item.id === targetId) ?? null;
     } else {
-      data.road = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? items[0] ?? null;
+      const matchingGoal = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? items.find(item => item.goal === data.goal);
+      data.road = matchingGoal
+        ?? (goalWasChosen ? null : items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0) ?? items[0] ?? null);
     }
     if (data.road) {
       data.goal = data.road.goal;
@@ -600,7 +602,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             include_cv:false,
             cv_ids:sources.has('cv') && data.mentorCV ? [Number(data.mentorCV)] : [],
             jd_text:sources.has('job') ? (data.mentorJD?.trim() || data.jobText || null) : null,
-            roadmap_ids:sources.has('roadmap') && (data.mentorRoad || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : [],
+            roadmap_ids:(sources.has('roadmap') || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : [],
             milestone_id: targetMilestoneId
           }
         }
@@ -642,7 +644,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             await loads.cv();
           }
         } else if (approved) {
-          notice(copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
+          notice(result.status === 'denied'
+            ? copy('Thao tác không thể thực hiện do không tìm thấy lộ trình phù hợp hoặc thiếu quyền.', 'Action denied: roadmap not found or missing permissions.')
+            : copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
         } else {
           notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
         }
@@ -734,6 +738,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.jobMatch = null;
         analysisEpoch++;
         clearTimeout(analysisPolling); analysisJob = null; data.analysis = null;
+        try { sessionStorage.removeItem('ita-active-job'); } catch {}
         state.access = 'none'; state.scope = 'public';
         clearChat();
         await userData();
@@ -965,7 +970,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   function change(control) {
     if (control.id === 'repo-switch') { void focusRepo(control.value); return true; }
-    if (control.id === 'road-goal') { data.goal = control.value; void loads.road(); return true; }
+    if (control.id === 'road-goal') { data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
     if (control.id === 'road-select') { void work('road', () => road(Number(control.value))); return true; }
     if (control.dataset.act === 'repo-page-select') { void repos({page: Number(control.value)}); return true; }
     if (control.classList.contains('repo-select-check')) {

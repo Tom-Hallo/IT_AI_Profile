@@ -71,7 +71,7 @@ export function filterControls(state, busy=false) {
 
 const heroPhrases = ['about.rotateCode','about.rotateProjects','about.rotateFixes'];
 
-function aboutContent() {
+function aboutContent(live=false) {
   const phrases = heroPhrases.map(key => '<span class="hero-phrase-size">' + escape(t(key)) + '<span class="hero-caret"></span></span>').join('');
   const features = [['evidence','repo'],['mentor','bot'],['road','branch']];
   return '<section class="about-hero" aria-labelledby="about-title"><div class="about-copy">'
@@ -82,7 +82,7 @@ function aboutContent() {
     + '<p class="hero-lede">' + escape(t('about.lede')) + '</p>'
     + '<div class="action-row">' + btn(escape(t('about.tryStudio')) + icon('arrow'),'enter','primary')
     + '<a class="button secondary" data-act="show-mentor-preview" href="#mentor-preview">' + escape(t('about.lookInside')) + '</a></div>'
-    + '<p class="sample-entry-note">' + escape(t('about.sampleNote')) + '</p></div>'
+    + '<p class="sample-entry-note">' + escape(live ? (getLanguage() === 'en' ? 'Connect GitHub to access live data.' : 'Kết nối GitHub để truy cập dữ liệu thật.') : t('about.sampleNote')) + '</p></div>'
     + '<section class="terminal" id="mentor-preview"' + labelAttr(t('about.chatLabel')) + '><header class="terminal-bar"><span class="terminal-mark">' + icon('bot') + '</span><strong>AI Mentor</strong>'
     + '</header>'
     + '<div class="bot-stage" aria-hidden="true"><div class="bot-orbit-plane"><span class="orbit orbit-outer"><i></i></span><span class="orbit orbit-inner"><i></i></span><span class="art-star s1"></span><span class="art-star s2"></span><span class="art-star s3"></span><span class="art-star s4"></span>'
@@ -97,18 +97,18 @@ function aboutContent() {
       + escape(t('about.' + key + 'Title')) + '</h2><p>' + escape(t('about.' + key + 'Copy')) + '</p></div></article>').join('') + '</section>';
 }
 
-export function landing() {
+export function landing(live=false) {
   return '<div class="public-page"><header class="public-top"><div class="site-shell">' + brand()
     + '<div class="public-menu"><a aria-current="page" href="#about">' + escape(t('nav.about')) + '</a></div><div class="public-actions">' + languagePicker()
     + '<a class="button small secondary" href="#login">' + escape(t('nav.signin')) + ' ' + icon('arrow') + '</a></div></div></header>'
-    + '<main class="site-shell">' + aboutContent() + '</main><footer class="public-foot site-shell"><span>IT Talent AI Profile</span></footer></div>';
+    + '<main class="site-shell">' + aboutContent(live) + '</main><footer class="public-foot site-shell"><span>IT Talent AI Profile</span></footer></div>';
 }
 
 export function login(live=false) {
   return '<main class="login-page"><div class="login-shell"><div class="login-top"><a class="back-link" href="#about">← ' + escape(t('nav.about')) + '</a>'
     + languagePicker() + '</div><article class="login-card"><div class="login-emblem">' + bot('pixel-login') + '</div><h1>' + escape(t('login.title'))
     + '</h1><p>' + escape(live ? (document.documentElement.lang === 'en' ? 'Connect GitHub to open your Studio.' : 'Kết nối GitHub để mở Studio của bạn.') : t('login.copy')) + '</p><div class="login-actions">' + btn('<svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.2 11.2 0 0 0-3.54 21.82c.56.1.77-.24.77-.54v-1.9c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.54 0-1.23.44-2.23 1.15-3.02-.12-.28-.5-1.42.11-2.97 0 0 .94-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.13-1.45 3.07-1.15 3.07-1.15.61 1.55.23 2.69.12 2.97.72.79 1.15 1.79 1.15 3.02 0 4.3-2.63 5.25-5.14 5.53.4.35.76 1.04.76 2.09v2.89c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg> ' + escape(t('login.github')),'oauth','primary')
-    + (live ? '<a class="button secondary" href="#about">' + escape(t('login.sample')) + icon('arrow') + '</a>'
+    + (live ? '<a class="button secondary" href="#about">' + escape(getLanguage() === 'en' ? 'Back to About' : 'Quay lại giới thiệu') + icon('arrow') + '</a>'
       : btn(escape(t('login.sample')) + ' ' + icon('arrow'),'enter')) + '</div><p class="login-note">' + icon('lock') + ' '
     + escape(live ? (document.documentElement.lang === 'en' ? 'Private repository access is optional.' : 'Quyền repository riêng tư là tùy chọn.') : t('login.note')) + '</p></article></div></main>';
 }
