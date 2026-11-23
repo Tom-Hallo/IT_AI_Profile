@@ -5,6 +5,7 @@ import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
 import {numericScore, verifiedSkillScore} from './score-presentation.js';
+import {githubRadarMetrics} from './dashboard-github-metrics.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
@@ -213,7 +214,7 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     }
   } else {
     scores = '<div class="project-skills"><h3>' + escape(t('profile.verifiedHeading')) + '</h3>'
-      + tags([...new Set(data.scores.filter(item => item.score != null).map(item => item.technology))], 'green')
+      + tags([...new Set(data.scores.filter(item => verifiedSkillScore(item.score, item.status) !== null).map(item => item.technology))], 'green')
       + '<h3>' + escape(t('profile.supplementary')) + '</h3>' + tags(data.skills.map(item => item.skill_name), 'blue') + '</div>';
     evidence = '<h3>' + escape(t('profile.self')) + '</h3><form id="skill-form" class="skill-form">'
       + field(t('profile.skill'), '<input name="skill" maxlength="120" required>')
@@ -235,109 +236,55 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
 }
 
 function getLiveRadar(state, data) {
-  const standardKeys = ['code', 'architecture', 'testing', 'collaboration', 'ci'];
-  const baseScores = {
-    code: null,
-    architecture: null,
-    testing: null,
-    collaboration: null,
-    ci: null
-  };
-
-  const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
-  if (data.repoData) {
-    Object.entries(data.repoData).forEach(([repoId, d]) => {
-      if (d?.report) analyzedRepoIds.add(Number(repoId));
-    });
-  }
-  const analyzedRepos = data.repos.filter(repo => analyzedRepoIds.has(repo.id));
-  const analyzedCount = analyzedRepos.length;
-
+  const availableRepos = data.dashboardRepos ?? data.repos;
+  const analyzedRepos = availableRepos.filter(repo =>
+    Boolean(data.repoData?.[repo.id]?.report?.id)
+  );
+  const analyzedIds = new Set(analyzedRepos.map(repo => repo.id));
   const activeRepo = data.repos.find(repo => String(repo.id) === String(state.repo)) ?? data.repos[0];
-  const activeRepoAnalyzed = activeRepo ? analyzedRepoIds.has(activeRepo.id) : false;
+  const activeRepoAnalyzed = activeRepo ? analyzedIds.has(activeRepo.id) : false;
+  const rawMetrics = githubRadarMetrics({
+    roles: data.roles,
+    scores: data.scores,
+    roleKey: data.roleKey
+  });
+  const hasVerifiedScores = rawMetrics.some(item => item.score !== null);
+  const metrics = analyzedRepos.length || hasVerifiedScores
+    ? rawMetrics.map(item => ({...item, label: t('metric.' + item.key)}))
+    : [];
 
-  const role = (data.roles.find(item => item.key === data.roleKey) ?? data.roles[0])?.score;
-  const coveragePct = role?.coverage != null ? Math.round(role.coverage * 100) : null;
-
-  if (role?.criteria?.length) {
-    const findCrit = (...keywords) => {
-      const match = role.criteria.find(c => keywords.some(k =>
-        (c.key && c.key.toLowerCase().includes(k)) ||
-        (c.name && c.name.toLowerCase().includes(k))
-      ));
-      return match && Number.isFinite(match.score) ? Math.round(match.score) : null;
-    };
-    const codeScore = findCrit('language', 'framework', 'ngôn ngữ', 'chất lượng', 'mã', 'backend_language');
-    const archScore = findCrit('architecture', 'api', 'kiến trúc', 'dịch vụ', 'api_service_design', 'database_migration');
-    const testScore = findCrit('test', 'kiểm thử', 'unit_test', 'automated_test');
-    const collabScore = findCrit('collab', 'cộng tác', 'review', 'pr');
-    const ciScore = findCrit('ci', 'cd', 'build', 'pipeline');
-
-    if (codeScore != null && codeScore >= 0 && codeScore <= 100) baseScores.code = codeScore;
-    if (archScore != null && archScore >= 0 && archScore <= 100) baseScores.architecture = archScore;
-    if (testScore != null && testScore >= 0 && testScore <= 100) baseScores.testing = testScore;
-    if (collabScore != null && collabScore >= 0 && collabScore <= 100) baseScores.collaboration = collabScore;
-    if (ciScore != null && ciScore >= 0 && ciScore <= 100) baseScores.ci = ciScore;
-  }
-
-  // Never invent a proficiency score from repo count or detected technologies.
-  // Unknown criteria must remain "insufficient", not be displayed as 0-100.
-  if (standardKeys.some(key => baseScores[key] === null)) {
-    return {
-      metrics: [], comparison: {}, metricDetails: '', count: analyzedCount,
-      analyzedRepos, activeRepo, activeRepoAnalyzed
-    };
-  }
-
-  const metrics = standardKeys.map(key => ({
-    key,
-    label: t('metric.' + key),
-    score: baseScores[key]
-  }));
-
-  // Historical comparisons require actual previous snapshots, not copied values.
+  // Snapshot comparisons are unavailable unless the backend supplies a real
+  // historical score with matching rubric and scope. Never invent deltas.
   const comparison = {};
-
-  const metricDetails = standardKeys.map(key => {
-    const trendCopy = '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>';
-
-    const evidenceRepo = activeRepoAnalyzed ? activeRepo : (analyzedRepos[0] ?? activeRepo);
-    let evidence = '';
-    if (evidenceRepo) {
-      const isCurrent = activeRepo && evidenceRepo.id === activeRepo.id;
-      evidence = '<div class="radar-evidence-line"><div><strong>' + escape(evidenceRepo.full_name || evidenceRepo.name) + '</strong>'
-        + '<small>' + escape(coveragePct === null ? copy('Độ phủ: chưa xác định', 'Coverage: unavailable') : t('profile.coverage', { value: coveragePct })) + ' · ' + escape(t('radar.confidenceBasis'))
-        + (isCurrent ? ' · <span class="badge-success">' + copy('Repo đang chọn', 'Selected repo') + '</span>' : '')
-        + '</small></div>'
-        + btn(icon('file') + escape(t('radar.openEvidence')), 'evidence', 'secondary small', attr('id', evidenceRepo.id)) + '</div>';
-      if (!activeRepoAnalyzed && activeRepo) {
-        evidence += '<p class="subtle" style="margin-top:6px;font-size:12px;">'
-          + icon('alert') + ' ' + copy(
-            'Lưu ý: Repo đang chọn (' + (activeRepo.full_name || activeRepo.name) + ') chưa được phân tích. Bằng chứng trên được tổng hợp từ repository đã phân tích.',
-            'Note: Selected repo (' + (activeRepo.full_name || activeRepo.name) + ') is not analyzed yet. Above evidence is aggregated from an analyzed repository.'
-          )
-          + '</p>';
-      }
-    } else {
-      evidence = '<p class="subtle">' + escape(t('radar.noMetricEvidence')) + '</p>';
-    }
-
-    return '<section id="radar-detail-' + key + '" class="radar-insight" aria-labelledby="radar-label-' + key + '" hidden>'
-      + '<div class="radar-insight-head"><h3 id="radar-label-' + key + '">' + escape(t('metric.' + key)) + '</h3><b>' + baseScores[key] + '<small>/100</small></b></div>'
-      + '<p>' + escape(t('radar.meaning.' + key)) + '</p>' + trendCopy + evidence
+  const metricDetails = metrics.map(item => {
+    const source = item.evidence;
+    const repo = source?.repository_id != null
+      ? availableRepos.find(repo => repo.id === source.repository_id) : null;
+    const sourceDescription = source ? source.origin === 'role'
+      ? copy('Tiêu chí đã chấm từ rubric vai trò: ', 'Scored role criterion: ') + source.source
+      : copy('Điểm kỹ năng đã chấm từ GitHub: ', 'Scored GitHub skill: ') + source.source
+      : copy('Chưa có điểm được xác minh cho nhóm này. Đây không phải 0 điểm.',
+        'No verified score for this category. This does not mean zero.');
+    return '<section id="radar-detail-' + item.key + '" class="radar-insight"'
+      + ' aria-labelledby="radar-label-' + item.key + '" hidden>'
+      + '<div class="radar-insight-head"><h3 id="radar-label-' + item.key + '">'
+      + escape(item.label) + '</h3><b>'
+      + (item.score === null ? '—' : number(item.score) + '<small>/100</small>') + '</b></div>'
+      + '<p>' + escape(sourceDescription) + '</p>'
+      + (source?.detail ? paragraph(source.detail) : '')
+      + '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>'
+      + (repo ? '<div class="radar-evidence-line"><div><strong>'
+        + escape(repo.full_name || repo.name) + '</strong></div>'
+        + btn(icon('file') + escape(t('radar.openEvidence')), 'evidence', 'secondary small',
+          attr('id', repo.id)) + '</div>' : '')
       + '<div class="radar-next-actions">'
-      + btn(icon('bot') + escape(t('radar.askMetric')), 'ask-metric', 'secondary small', attr('id', key))
-      + '</div></section>';
+      + btn(icon('bot') + escape(t('radar.askMetric')), 'ask-metric', 'secondary small',
+        attr('id', item.key)) + '</div></section>';
   }).join('');
 
   return {
-    metrics,
-    comparison,
-    metricDetails,
-    count: analyzedCount,
-    analyzedRepos,
-    activeRepo,
-    activeRepoAnalyzed
+    metrics, comparison, metricDetails, count: analyzedRepos.length,
+    analyzedRepos, activeRepo, activeRepoAnalyzed
   };
 }
 
@@ -384,11 +331,21 @@ export function liveDashboard(state, runtime, data) {
     + '</div>'
     + '</div>'
     + repoStatusHtml
+    + (data.dashboardPartial ? '<p class="notice yellow" role="status">'
+      + copy('Một số repository chưa tải được; số liệu chỉ tính từ các báo cáo đã tải thành công.',
+        'Some repositories could not be loaded; metrics include only successfully loaded reports.')
+      + '</p>' : '')
+    + (data.dashboardLoadErrors?.length ? '<p class="notice yellow" role="status">'
+      + escape(copy('Không tải được đầy đủ ', 'Failed to load all '))
+      + data.dashboardLoadErrors.length
+      + copy(' nguồn dữ liệu GitHub/điểm vai trò. Không tự tạo số thay thế.',
+        ' GitHub/role score sources. No substitute scores were generated.')
+      + '</p>' : '')
     + '<div class="dashboard-scope-notice">'
     + '<span class="notice-icon">' + icon('info') + '</span>'
     + '<p>' + copy(
-      'Lưu ý người dùng: Điểm Radar và Điểm vai trò trên màn hình này là <strong>Điểm kỹ năng tổng hợp toàn hồ sơ</strong> trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Thao tác chuyển đổi giữa Repo A và Repo B là để xem hoặc chạy phân tích mã nguồn chi tiết ở trang <em>Phân tích GitHub</em>; điểm tổng hợp tại Dashboard chỉ thay đổi khi bạn đổi phạm vi (Công khai / Riêng tư) hoặc hoàn tất phân tích thêm repository mới.',
-      'User Note: Radar and Role scores on this dashboard are <strong>Aggregated Profile Skill Scores</strong> for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Selecting Repo A or Repo B focuses the deep code analysis view on the <em>GitHub Analysis</em> page; aggregated scores here only recalculate when changing scope/window or completing analysis for new repositories.'
+      'Radar chỉ hiển thị những điểm kỹ năng hoặc tiêu chí vai trò đã được chấm từ bằng chứng GitHub thực tế trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Trục chưa đủ dữ liệu sẽ hiển thị dấu —, không coi là 0 điểm. Các chỉ số kiểm thử, cộng tác và CI/CD chỉ có điểm khi backend có rubric và bằng chứng tương ứng. Chọn repository để mở báo cáo chi tiết tại trang <em>Phân tích GitHub</em>.',
+      'The Radar displays only scored GitHub skills or role criteria for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Missing axes display —, not zero. Testing, collaboration, and CI/CD require their own verified rubric evidence. Select a repository to inspect its report under <em>GitHub Analysis</em>.'
     ) + '</p>'
     + '</div>'
     + '</section>';
@@ -426,7 +383,7 @@ function reportContent(report, info, tab) {
       ['Dòng thêm (Additions)', '+' + escape(v.verified_additions ?? 0)],
       ['Dòng xóa (Deletions)', '−' + escape(v.verified_deletions ?? 0)],
       ['Cờ chống thổi phồng', v.anti_inflation_flag ? copy('Đã phát hiện bất thường', 'Inflation detected') : copy('Bình thường', 'Normal')],
-      ['Độ tin cậy', escape(v.confidence ?? 'high')]
+      ['Độ tin cậy', escape(v.confidence ?? '—')]
     ]) + refs(v.evidence) : muted(copy('Chưa có kết quả xác minh.', 'No verification yet.')))
       + namedButton(copy('Xác minh đóng góp', 'Verify contributions'), 'repo-analyze-tab', 'secondary small', 'ownership');
   }
