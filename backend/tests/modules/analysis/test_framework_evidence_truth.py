@@ -10,10 +10,7 @@ async def test_fastapi_source_import_is_reported_without_claiming_authorship():
     source = InMemoryContentSource(
         {
             "backend/requirements.txt": "fastapi==0.162.0\n",
-            "backend/app/main.py": (
-                "from fastapi import FastAPI\n"
-                "app = FastAPI()\n"
-            ),
+            "backend/app/main.py": ("from fastapi import FastAPI\napp = FastAPI()\n"),
         }
     )
     result = await RepositoryInspector(1, "a" * 40).inspect(source)
@@ -38,9 +35,7 @@ async def test_vite_config_is_not_proof_of_vue():
                 '{"dependencies":{"react":"^19.0.0"},'
                 '"devDependencies":{"vite":"^8.0.0"}}'
             ),
-            "frontend/vite.config.ts": (
-                "import { defineConfig } from 'vite';\n"
-            ),
+            "frontend/vite.config.ts": ("import { defineConfig } from 'vite';\n"),
             "frontend/src/App.tsx": (
                 "import React from 'react';\n"
                 "export default function App() { return null; }\n"
