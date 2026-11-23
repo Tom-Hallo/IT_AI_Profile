@@ -282,7 +282,8 @@ def submit_milestone_evidence(
             )
             if repo is not None:
                 evidence = db.scalar(
-                    select(VerificationEvidence.id).where(
+                    select(VerificationEvidence.id)
+                    .where(
                         VerificationEvidence.repository_id == repo.id,
                         VerificationEvidence.user_id == user.id,
                         VerificationEvidence.evidence_type == evidence_type,
@@ -290,7 +291,8 @@ def submit_milestone_evidence(
                         VerificationEvidence.verification_status == "verified",
                         VerificationEvidence.is_bot.is_(False),
                         VerificationEvidence.is_fork_inherited.is_(False),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 if evidence is not None:
                     is_verified = True
