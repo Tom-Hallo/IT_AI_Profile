@@ -868,12 +868,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.jobMatch = null;
         render();
         const textarea = document.querySelector('#jd-form textarea');
-        if (textarea) {
-          textarea.focus();
-          textarea.style.height = 'auto';
-          const targetHeight = Math.min(Math.max(textarea.scrollHeight + 4, 120), 280);
-          textarea.style.height = targetHeight + 'px';
-        }
+        // updateStudio() already sizes the textarea after rendering the selected JD.
+        textarea?.focus();
       }
     },
     'road-create':roadCreate,

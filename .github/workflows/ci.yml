@@ -78,6 +78,10 @@ jobs:
         working-directory: frontend
         run: npm run test:roadmap
 
+      - name: Mentor Proposal UI Regression Tests
+        working-directory: frontend
+        run: node --test tests/mentor-proposal-controls.test.js
+
       - name: Build
         working-directory: frontend
         env:
