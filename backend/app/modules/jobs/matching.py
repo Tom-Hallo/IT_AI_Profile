@@ -40,6 +40,8 @@ SKILL_ALIASES = {
     "tailwindcss": "tailwind",
     "postgres": "postgresql",
     "ci_cd": "cicd",
+    "net": "csharp",
+    "dotnet": "csharp",
 }
 
 
@@ -76,6 +78,9 @@ class MatchEvidence(BaseModel):
     commit_sha: str | None
     file_path: str | None
     source_scope: Literal["public", "private"]
+    repository_name: str | None = None
+    repository_full_name: str | None = None
+    commit_url: str | None = None
 
 
 class JobSkillMatch(JobRequirement):
@@ -124,6 +129,7 @@ def _match_skill(
     requirement: JobRequirement,
     candidates: list[tuple[SkillScoreItem, Literal["public", "private"]]],
     allowed: set[int],
+    repos_map: dict[int, Repository] | None = None,
 ) -> JobSkillMatch:
     fields = requirement.model_dump()
     if not candidates:
@@ -137,6 +143,17 @@ def _match_skill(
         best.evidence_refs, key=lambda ref: (ref.dedup_key, ref.evidence_id or "")
     ):
         if _usable_ref(ref, allowed) and ref.repository_id is not None:
+            repo = (repos_map or {}).get(ref.repository_id)
+            repo_full_name = repo.full_name or repo.name if repo else None
+            repo_name = repo.name if repo else None
+            commit_url = None
+            if repo and ref.commit_sha:
+                if getattr(repo, "html_url", None):
+                    commit_url = f"{repo.html_url.rstrip('/')}/commit/{ref.commit_sha}"
+                elif repo_full_name:
+                    commit_url = (
+                        f"https://github.com/{repo_full_name}/commit/{ref.commit_sha}"
+                    )
             refs.setdefault(
                 ref.dedup_key,
                 MatchEvidence(
@@ -145,6 +162,9 @@ def _match_skill(
                     commit_sha=ref.commit_sha,
                     file_path=ref.file_path,
                     source_scope=scope,
+                    repository_name=repo_name,
+                    repository_full_name=repo_full_name,
+                    commit_url=commit_url,
                 ),
             )
     if meets_threshold:
@@ -254,12 +274,18 @@ def match_job(db: Session, user: User, request: JobMatchRequest) -> JobMatchResp
         cutoff = datetime.now(UTC) - STALE_AFTER
         stale |= any(timestamp < cutoff for timestamp in latest_by_repo)
 
+    repos_map: dict[int, Repository] = {}
+    if allowed:
+        repos = db.scalars(select(Repository).where(Repository.id.in_(allowed))).all()
+        repos_map = {r.id: r for r in repos}
+
     unique: dict[str, JobRequirement] = {}
     for item in request.skills:
         if item.skill_key not in unique or item.level == SkillRequirementLevel.REQUIRED:
             unique[item.skill_key] = item
     matches = [
-        _match_skill(item, candidates[key], allowed) for key, item in unique.items()
+        _match_skill(item, candidates[key], allowed, repos_map)
+        for key, item in unique.items()
     ]
     required = [
         item for item in matches if item.level == SkillRequirementLevel.REQUIRED

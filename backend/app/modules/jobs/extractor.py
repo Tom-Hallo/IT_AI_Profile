@@ -17,6 +17,13 @@ REQUIRED_PATTERNS: Final[list[str]] = [
     r"yêu cầu( bắt buộc)?",
     r"yêu cầu công việc",
     r"kỹ năng bắt buộc",
+    r"kỹ năng cần có",
+    r"kỹ năng yêu cầu",
+    r"bạn cần có",
+    r"chúng tôi tìm kiếm",
+    r"who we(?:['’]re| are) looking for",
+    r"what you(?:['’]ll| will) bring",
+    r"what we(?:['’]re| are) looking for",
     r"requirements?",
     r"must[ -]haves?",
     r"what you need",
@@ -48,12 +55,20 @@ SKILL_TAXONOMY: Final[dict[str, list[str]]] = {
     "java": [r"\bjava\b(?!script)"],
     "golang": [r"\bgolang\b", r"\bgo language\b"],
     "rust": [r"\brust\b"],
-    "csharp": [r"\bc#\b", r"\bcsharp\b", r"\b\.net\b", r"\bdotnet\b"],
-    "cpp": [r"\bc\+\+\b", r"\bcpp\b"],
+    "c": [r"(?<!\w)c(?=[,\s/])"],
+    "csharp": [r"\bc#(?!\w)", r"\bcsharp\b", r"(?<!\w)\.net\b", r"\bdotnet\b"],
+    "cpp": [r"\bc\+\+(?!\w)", r"\bcpp\b"],
     "php": [r"\bphp\b"],
     "kotlin": [r"\bkotlin\b"],
     "swift": [r"\bswift\b"],
     "sql": [r"\bsql\b"],
+    "android": [r"\bandroid\b"],
+    "apache": [r"\bapache\b"],
+    "data_science": [
+        r"\bdata science\b",
+        r"\bdata and analytics\b",
+        r"\bdata analytics\b",
+    ],
     # Backend Frameworks
     "fastapi": [r"\bfastapi\b"],
     "django": [r"\bdjango\b"],
@@ -150,11 +165,19 @@ class JDSkillExtractor:
             r"^(#+|\d+\.|\*|-)?\s*(" + "|".join(PREFERRED_PATTERNS) + r")\s*[:\-]?",
             re.IGNORECASE,
         )
+        footer_pattern = (
+            r"^(#+|\d+\.|\*|-)?\s*"
+            r"(not your tech stack|other (?:open )?roles|other positions|vị trí khác)\b"
+        )
+        footer_re = re.compile(footer_pattern, re.IGNORECASE)
 
         for line in lines:
             line_str = line.strip()
             if not line_str:
                 continue
+
+            if footer_re.search(line_str):
+                break
 
             if pref_re.search(line_str):
                 current_section = "preferred"
@@ -200,21 +223,21 @@ class JDSkillExtractor:
                     compiled_patterns, gen_text
                 )
 
-            if pref_match:
-                preferred_skills[skill_key] = ExtractedSkill(
-                    skill_key=skill_key,
-                    raw_name=pref_match,
-                    level=SkillRequirementLevel.PREFERRED,
-                    confidence=0.95,
-                    context_snippet=pref_snippet,
-                )
-            elif req_match:
+            if req_match:
                 required_skills[skill_key] = ExtractedSkill(
                     skill_key=skill_key,
                     raw_name=req_match,
                     level=SkillRequirementLevel.REQUIRED,
                     confidence=0.95,
                     context_snippet=req_snippet,
+                )
+            elif pref_match:
+                preferred_skills[skill_key] = ExtractedSkill(
+                    skill_key=skill_key,
+                    raw_name=pref_match,
+                    level=SkillRequirementLevel.PREFERRED,
+                    confidence=0.95,
+                    context_snippet=pref_snippet,
                 )
             elif gen_match:
                 required_skills[skill_key] = ExtractedSkill(

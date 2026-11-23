@@ -192,6 +192,10 @@ class JobItem(BaseModel):
         None,
         description="Short description preview if provided by source",
     )
+    description_text: str | None = Field(
+        None,
+        description="Full cleaned text description of the job posting",
+    )
 
 
 class SourceStatus(BaseModel):

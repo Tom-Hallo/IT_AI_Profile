@@ -86,6 +86,48 @@ class TestJobSearchService:
         assert job.url.startswith("https://")
         assert job.fetched_at  # ISO string
         assert job.expired is False
+        assert job.description_text is not None
+
+    def test_search_filters_by_query_tokens(self) -> None:
+        service = JobSearchService()
+        req = JobSearchRequest(query="python", limit=10)
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = _make_remotive_payload()
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__.return_value = mock_client
+            mock_client.__exit__.return_value = None
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            result = service.search(req)
+
+        assert result.total == 1
+        assert "Python" in result.jobs[0].title
+        assert not any("React" in job.title for job in result.jobs)
+
+    def test_search_unrelated_query_returns_empty(self) -> None:
+        service = JobSearchService()
+        req = JobSearchRequest(query="nongnghiep123", limit=10)
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = _make_remotive_payload()
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__.return_value = mock_client
+            mock_client.__exit__.return_value = None
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            result = service.search(req)
+
+        assert result.total == 0
+        assert any("Không tìm thấy tin tuyển dụng" in w for w in result.warnings)
 
     def test_deduplicate_by_title_and_company(self) -> None:
         service = JobSearchService()

@@ -18,6 +18,23 @@ export const field = (label,control) => '<label class="field"><span>' + escape(l
 export const link = (label,page,style='secondary') => '<a class="button ' + style + '" href="#studio/' + page + '">' + label + '</a>';
 export const panelHead = (title,copy='') => '<header class="panel-head"><div><h2>' + escape(title) + '</h2>' + (copy ? '<p class="subtle">' + escape(copy) + '</p>' : '') + '</div></header>';
 export const tags = (items,tone='') => '<div class="badge-list">' + items.map(item => badge(item,tone)).join('') + '</div>';
+export function formatSkillName(key) {
+  const clean = String(key || '').trim().toLowerCase();
+  const map = {
+    python: 'Python', typescript: 'TypeScript', javascript: 'JavaScript', java: 'Java',
+    golang: 'Go', rust: 'Rust', csharp: 'C#', cpp: 'C++', c: 'C', php: 'PHP', kotlin: 'Kotlin',
+    swift: 'Swift', sql: 'SQL', fastapi: 'FastAPI', django: 'Django', flask: 'Flask',
+    nodejs: 'Node.js', express: 'Express.js', nestjs: 'NestJS', springboot: 'Spring Boot',
+    react: 'React', vue: 'Vue.js', nextjs: 'Next.js', angular: 'Angular', tailwind: 'Tailwind CSS',
+    postgresql: 'PostgreSQL', mysql: 'MySQL', mongodb: 'MongoDB', redis: 'Redis',
+    elasticsearch: 'Elasticsearch', sqlite: 'SQLite', docker: 'Docker', kubernetes: 'Kubernetes',
+    aws: 'AWS', gcp: 'GCP', azure: 'Azure', cicd: 'CI/CD', git: 'Git', terraform: 'Terraform',
+    linux: 'Linux', rest_api: 'REST API', graphql: 'GraphQL', microservices: 'Microservices',
+    unit_testing: 'Unit Testing', agile_scrum: 'Agile/Scrum', android: 'Android', apache: 'Apache',
+    data_science: 'Data Science', net: '.NET'
+  };
+  return map[clean] || clean.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 export const details = rows => '<dl class="detail-list">' + rows.map(([name,html]) => '<div><dt>' + escape(name) + '</dt><dd>' + html + '</dd></div>').join('') + '</dl>';
 export const checkRow = (label,name,checked=false) => '<label class="option-row"><input type="checkbox" name="' + name + '"' + (checked ? ' checked' : '') + '><span>' + escape(label) + '</span></label>';
 

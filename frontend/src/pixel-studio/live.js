@@ -1,5 +1,5 @@
 import {request,post,remove,query,period,parseSkills,exportURL} from './live-api.js';
-import {escape,field,tags} from './ui.js';
+import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
@@ -520,11 +520,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       if (data.jobDraft.fallback) data.messages.jobs = data.jobDraft.fallback.message;
     });
     if (!loaded || !data.jobDraft || data.jobDraft.fallback) return;
-    const required = data.jobDraft.required_skills.map(item => item.skill_key).join(', ');
-    const preferred = data.jobDraft.preferred_skills.map(item => item.skill_key).join(', ');
+    const required = data.jobDraft.required_skills.map(item => formatSkillName(item.raw_name || item.skill_key)).join(', ');
+    const preferred = data.jobDraft.preferred_skills.map(item => formatSkillName(item.raw_name || item.skill_key)).join(', ');
     showModal(copy('Xác nhận kỹ năng', 'Confirm skills'),'<div class="stack">'
-      + field(copy('Bắt buộc', 'Required'),'<textarea name="required" rows="3">' + escape(required) + '</textarea>')
-      + field(copy('Ưu tiên', 'Preferred'),'<textarea name="preferred" rows="3">' + escape(preferred) + '</textarea>') + '</div>',
+      + field(copy('Kỹ năng yêu cầu (Bắt buộc)', 'Required Skills (Must-have)'),'<textarea name="required" rows="3">' + escape(required) + '</textarea>')
+      + field(copy('Kỹ năng thêm (Ưu tiên)', 'Additional Skills (Preferred)'),'<textarea name="preferred" rows="3">' + escape(preferred) + '</textarea>') + '</div>',
       copy('Đối chiếu', 'Match'),form => void work('jobs',async () => {
         const skills = [...parseSkills(String(form.get('required')),'required'),...parseSkills(String(form.get('preferred')),'preferred')];
         if (!skills.length) throw new Error(copy('Nhập ít nhất một kỹ năng để đối chiếu.', 'Enter at least one skill to match.'));
@@ -831,12 +831,27 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }),
     'use-live-job':button => {
       const item = data.jobResults?.jobs.find(job => job.id === button.dataset.id);
-      if (item?.description_preview) {
-        data.jobText = item.description_preview;
-        data.jobURL = '';
+      if (item) {
+        const isVi = getLanguage() === 'vi';
+        const fullDesc = (item.description_text || item.description_preview || '').trim();
+
+        if (isVi) {
+          data.jobText = `Vị trí: ${item.title} - ${item.company} (${item.location || 'Từ xa'})\n\n`
+            + `Mô tả công việc:\n${fullDesc}`;
+        } else {
+          data.jobText = `Position: ${item.title} - ${item.company} (${item.location || 'Remote'})\n\n`
+            + `Job Description:\n${fullDesc}`;
+        }
+        data.jobURL = item.url || '';
         data.jobMatch = null;
         render();
-        document.querySelector('#jd-form textarea')?.focus();
+        const textarea = document.querySelector('#jd-form textarea');
+        if (textarea) {
+          textarea.focus();
+          textarea.style.height = 'auto';
+          const targetHeight = Math.min(Math.max(textarea.scrollHeight + 4, 120), 280);
+          textarea.style.height = targetHeight + 'px';
+        }
       }
     },
     'road-create':roadCreate,
@@ -861,6 +876,58 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         : copy('Đã bỏ qua đề xuất.', 'Suggestion dismissed.');
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
+    'ask-gap-skill':button => {
+      const rawSkill = button.dataset.skill || '';
+      const skillName = formatSkillName(rawSkill);
+      openMentor();
+      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và một dự án thực tế để rèn luyện kỹ năng này.`;
+      const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and a hands-on project to practice this skill.`;
+      void send(copy(promptVi, promptEn));
+    },
+    'view-skill-roadmap':async button => {
+      const rawSkill = button.dataset.skill || '';
+      const skillKey = rawSkill.toLowerCase().trim();
+      const formatted = formatSkillName(skillKey);
+      await work('road',async () => {
+        const items = await request('/career-roadmaps');
+        data.roadmaps = items;
+        let targetRoadmap = items.find(r => r.milestones?.some(m => (m.skill || m.title || '').toLowerCase().includes(skillKey)));
+        if (!targetRoadmap) {
+          const goalMap = {
+            python: 'backend', fastapi: 'backend', postgresql: 'backend', sql: 'backend', redis: 'backend', rest_api: 'backend', django: 'backend',
+            react: 'frontend', typescript: 'frontend', javascript: 'frontend', css: 'frontend', vue: 'frontend', html: 'frontend',
+            docker: 'devops', kubernetes: 'devops', cicd: 'devops', linux: 'devops', aws: 'devops'
+          };
+          const suggestedGoal = goalMap[skillKey];
+          if (suggestedGoal) {
+            targetRoadmap = items.find(r => r.goal?.toLowerCase() === suggestedGoal);
+          }
+        }
+        if (!targetRoadmap && items.length > 0) {
+          targetRoadmap = data.road || items[0];
+        }
+        if (targetRoadmap) {
+          data.road = targetRoadmap;
+          data.goal = targetRoadmap.goal;
+          data.tracking = await request(trackingPath());
+          const matchingMilestone = data.tracking?.milestones?.find(m =>
+            (m.external_key || '').toLowerCase().includes(skillKey) ||
+            (m.title || '').toLowerCase().includes(skillKey)
+          );
+          if (matchingMilestone) {
+            data.milestone = matchingMilestone.id;
+            await roadHistory();
+          } else {
+            data.milestone = data.tracking?.milestones[0]?.id ?? null;
+          }
+        }
+        navigate('roadmap','#milestone-detail');
+        data.messages.road = copy(
+          `Đã chuyển đến Lộ trình cho kỹ năng "${formatted}".`,
+          `Navigated to Roadmap for skill "${formatted}".`
+        );
+      });
+    },
     'cv-check':ats,
     "cv-insert-github": () => {
       const verifiedScores = data.scores.filter(

@@ -1,5 +1,5 @@
 import { dateLabel, getLanguage, rangeLabel, scopeLabel, t } from './i18n.js';
-import { attr, badge, blank, brand, btn, details, escape, field, filterControls, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
+import { attr, badge, blank, brand, btn, details, escape, field, filterControls, formatSkillName, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
 import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
@@ -21,10 +21,46 @@ function feedback(data, ...keys) {
       : data.busy.has(key) ? '<p class="subtle" role="status">' + escape(copy('Đang tải…', 'Loading…')) + '</p>' : '').join('');
 }
 
-function refs(items = []) {
-  return items.length ? '<ul class="audit-list">' + items.slice(0, 20).map(item => '<li><span>'
-    + escape(item.file_path || item.label || item.evidence_id || item.target_identifier || item.commit_sha) + '</span>'
-    + (item.commit_sha ? '<code>' + escape(item.commit_sha.slice(0, 12)) + '</code>' : '') + '</li>').join('') + '</ul>' : '';
+function formatEvidenceItem(item, data) {
+  const sha = item.commit_sha || (typeof item.evidence_id === 'string' && item.evidence_id.startsWith('verification-commit:') ? item.evidence_id.split(':').pop() : '');
+  const repoName = item.repository_full_name || item.repository_name || (data?.repos?.find(r => r.id === item.repository_id)?.full_name) || (data?.repos?.find(r => r.id === item.repository_id)?.name) || '';
+  const commitUrl = item.commit_url || (repoName && sha ? ('https://github.com/' + repoName + '/commit/' + sha) : '');
+
+  const repoBadge = repoName
+    ? '<span class="evidence-repo" title="' + escape(copy('Kho lưu trữ GitHub', 'GitHub repository')) + '">' + icon('branch') + ' <strong>' + escape(repoName) + '</strong></span>'
+    : '';
+
+  const fileBadge = item.file_path
+    ? '<span class="evidence-file" title="' + escape(copy('File mã nguồn', 'Source file')) + '">' + icon('file') + ' ' + escape(item.file_path) + '</span>'
+    : '';
+
+  let commitBadge = '';
+  if (sha) {
+    const shortSha = sha.slice(0, 7);
+    if (commitUrl) {
+      commitBadge = '<a href="' + escape(commitUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link" title="'
+        + escape(copy('Mở commit ' + sha + ' trên GitHub', 'Open commit ' + sha + ' on GitHub')) + '">'
+        + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code> <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    } else {
+      commitBadge = '<span class="evidence-commit-label">' + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code></span>';
+    }
+  }
+
+  const label = item.label || item.target_identifier || item.evidence_id || '';
+  const generalBadge = (!repoBadge && !fileBadge && !commitBadge && label)
+    ? '<span class="evidence-general">' + icon('check') + ' ' + escape(label) + '</span>'
+    : '';
+
+  const infoRow = [repoBadge, fileBadge].filter(Boolean).join(' · ');
+
+  return '<li class="evidence-item">'
+    + '<div class="evidence-info">' + (infoRow || generalBadge || '<span class="evidence-general">' + icon('check') + ' ' + escape(copy('Minh chứng mã nguồn GitHub', 'GitHub source evidence')) + '</span>') + '</div>'
+    + (commitBadge ? '<div class="evidence-action">' + commitBadge + '</div>' : '')
+    + '</li>';
+}
+
+function refs(items = [], data = null) {
+  return items.length ? '<ul class="audit-list evidence-list">' + items.slice(0, 20).map(item => formatEvidenceItem(item, data)).join('') + '</ul>' : '';
 }
 
 function progressOverview(data) {
@@ -926,29 +962,37 @@ export function liveJobs(state, data) {
   if (report?.skills?.length) {
     const matchedSkills = report.skills.filter(s => s.status === 'matched');
     const gapSkills = report.skills.filter(s => s.status !== 'matched');
+    const reqSkills = report.skills.filter(s => s.level === 'required');
+    const matchedReqSkills = reqSkills.filter(s => s.status === 'matched');
     const pct = report.required_matched_percent != null ? Math.round(report.required_matched_percent) : 0;
 
     const summaryBlock = '<div class="job-match-summary">'
       + '<div class="match-summary-head"><div><p class="eyebrow">' + copy('Độ phù hợp hồ sơ', 'Profile Match Rate') + '</p>'
-      + '<h3>' + copy('Đáp ứng ', 'Matching ') + matchedSkills.length + '/' + report.skills.length + copy(' kỹ năng yêu cầu', ' required skills') + '</h3>'
+      + '<h3>' + copy('Đáp ứng ', 'Matching ') + matchedSkills.length + '/' + report.skills.length + copy(' kỹ năng', ' skills')
+      + (reqSkills.length ? '<small style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px">(' + matchedReqSkills.length + '/' + reqSkills.length + copy(' bắt buộc)', ' required)') + '</small>' : '')
+      + '</h3>'
       + '</div>' + badge(pct + '%', pct >= 70 ? 'green' : pct >= 40 ? 'amber' : '') + '</div>'
       + progress(pct, copy('Độ phù hợp yêu cầu', 'Match rate'))
       + (report.disclaimer ? '<p class="subtle" style="margin-top:6px">' + escape(report.disclaimer) + '</p>' : '')
       + '</div>';
 
-    const matchedHtml = matchedSkills.length ? '<div class="job-group-block"><h4 class="job-group-title green">'
+    const matchedHtml = '<div class="job-group-block"><h4 class="job-group-title green">'
       + icon('check') + ' ' + copy('Kỹ năng đã đáp ứng từ GitHub (Matching)', 'Matching Skills from GitHub') + ' (' + matchedSkills.length + ')</h4>'
-      + '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(item.skill_key) + '</strong>'
-        + badge(t('jobs.has'), 'green') + '</div>' + paragraph(item.reason) + refs(item.evidence) + '</li>').join('') + '</ul></div>' : '';
+      + (matchedSkills.length
+        ? '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
+          + badge(t('jobs.has'), 'green') + '</div>' + paragraph(item.reason) + refs(item.evidence, data) + '</li>').join('') + '</ul>'
+        : '<p class="subtle" style="padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px dashed var(--line);margin:6px 0;">'
+          + escape(copy('Chưa có kỹ năng nào đạt ngưỡng đối chiếu từ mã nguồn GitHub của bạn trong phạm vi này.', 'No skills reached matching threshold from your GitHub source code in this scope.')) + '</p>')
+      + '</div>';
 
     const gapHtml = gapSkills.length ? '<div class="job-group-block"><h4 class="job-group-title amber">'
       + icon('pulse') + ' ' + copy('Khoảng cách kỹ năng cần bổ sung (Skill Gaps)', 'Skill Gaps to Address') + ' (' + gapSkills.length + ')</h4>'
-      + '<ul class="job-evidence-list">' + gapSkills.map(item => '<li><div><strong>' + escape(item.skill_key) + '</strong>'
-        + badge(t('jobs.' + ({ partial: 'partial', unknown: 'missing' })[item.status]), item.status === 'partial' ? 'amber' : '')
+      + '<ul class="job-evidence-list">' + gapSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
+        + badge(t('jobs.' + ({ partial: 'partial', unknown: 'missing' })[item.status]), 'amber')
         + '</div>' + paragraph(item.reason)
         + '<div class="gap-action-row" style="margin-top:6px">'
-        + '<a href="#studio/roadmap" class="button quiet small">' + icon('branch') + ' ' + copy('Xem gợi ý lộ trình', 'Add to roadmap') + '</a>'
-        + namedButton(copy('Hỏi AI Mentor cách học', 'Ask AI Mentor'), 'ask-step', 'quiet small')
+        + btn(icon('branch') + ' ' + copy('Xem gợi ý lộ trình', 'View in roadmap'), 'view-skill-roadmap', 'quiet small', attr('skill', item.skill_key))
+        + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor cách học', 'Ask AI Mentor'), 'ask-gap-skill', 'quiet small', attr('skill', item.skill_key))
         + '</div>'
         + '</li>').join('') + '</ul></div>' : '';
 
@@ -963,7 +1007,7 @@ export function liveJobs(state, data) {
     + '<div class="rows view-rows">' + (data.jobResults?.warnings ?? []).map(muted).join('')
     + (rows || (data.jobResults ? muted(t('jobs.noMatch')) : '')) + '</div></article>'
     + '<article class="panel">' + panelHead(t('jobs.paste')) + '<form id="jd-form" class="stack">'
-    + field(t('jobs.description'), '<textarea name="jd" rows="4" maxlength="50000" placeholder="' + escape(t('jobs.placeholder'))
+    + field(t('jobs.description'), '<textarea name="jd" id="jd-textarea" rows="4" maxlength="50000" class="auto-scale-textarea" placeholder="' + escape(t('jobs.placeholder'))
       + '">' + escape(data.jobText ?? '') + '</textarea>')
     + field(copy('Hoặc URL tuyển dụng', 'Or listing URL'), '<input name="jd-url" type="url" value="' + escape(data.jobURL ?? '') + '">')
     + '<button class="button primary" type="submit"' + (data.busy.has('jobs') ? ' disabled' : '') + '>' + escape(t('jobs.analyze')) + '</button></form></article></div>'
