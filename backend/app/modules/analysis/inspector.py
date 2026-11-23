@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import PurePosixPath
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Any
 
 from app.modules.analysis.architecture import ArchitectureAnalyzer, ArchitectureFinding
@@ -233,8 +233,12 @@ class RepositoryInspector:
         # non-merge commits/PRs. Manifest evidence alone must not earn points.
         # Only scan safe first-party source, without recording source snippets.
         if frameworks:
-            source_extensions = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue"}
-            entry_names = {"main.py", "app.py", "app.tsx", "main.ts", "main.tsx", "index.tsx"}
+            source_extensions = {
+                ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue"
+            }
+            entry_names = {
+                "main.py", "app.py", "app.tsx", "main.ts", "main.tsx", "index.tsx"
+            }
             source_paths = [
                 path
                 for path in valid_tree_paths
@@ -267,7 +271,9 @@ class RepositoryInspector:
                     > self.limits.analysis_timeout_seconds * 0.75
                 ):
                     break
-                content = await source.get_file_content(path, max_bytes=source_max_bytes)
+                content = await source.get_file_content(
+                    path, max_bytes=source_max_bytes
+                )
                 if content is None:
                     continue
                 self.budget.record_file_inspected(len(content.encode("utf-8")))
