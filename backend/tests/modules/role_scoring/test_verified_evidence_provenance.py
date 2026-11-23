@@ -179,9 +179,9 @@ def test_same_report_prefers_new_rubric_over_legacy_score(db, world):
     )
     db.commit()
 
-    raw = DatabaseSkillSnapshotSource(
-        db, repo_id_filter=frozenset({repo.id})
-    ).fetch(user.id)
+    raw = DatabaseSkillSnapshotSource(db, repo_id_filter=frozenset({repo.id})).fetch(
+        user.id
+    )
     assert raw is not None
     assert len(raw.payload.items) == 1
     assert raw.payload.items[0].score == 52
