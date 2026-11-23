@@ -4,7 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, verifiedSkillScore} from './score-presentation.js';
+import {numericScore, reportBackedSkillScore, verifiedSkillScore} from './score-presentation.js';
 import {githubRadarMetrics} from './dashboard-github-metrics.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
@@ -149,11 +149,11 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     const selected = data.scores.find(item => key(item) === data.scoreKey) ?? data.scores[0];
     scores = data.scores.map(item => {
       const isSelected = selected === item;
-      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), verifiedSkillScore(item.score, item.status), 'score', key(item), isSelected);
+      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), reportBackedSkillScore(item), 'score', key(item), isSelected);
     }).join('');
 
     if (selected) {
-      const selectedValue = verifiedSkillScore(selected.score, selected.status);
+      const selectedValue = reportBackedSkillScore(selected);
       const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
       const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : '—';
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
@@ -217,9 +217,7 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     }
   } else {
     scores = '<div class="project-skills"><h3>' + escape(t('profile.verifiedHeading')) + '</h3>'
-      + tags([...new Set(data.scores.filter(item => verifiedSkillScore(item.score, item.status) !== null &&
-        item.breakdown?.some(part => Array.isArray(part.evidence_ids) &&
-          part.evidence_ids.some(id => Number.isSafeInteger(id) && id > 0)))
+      + tags([...new Set(data.scores.filter(item => reportBackedSkillScore(item) !== null)
         .map(item => item.technology))], 'green')
       + '<h3>' + escape(t('profile.supplementary')) + '</h3>' + tags(data.skills.map(item => item.skill_name), 'blue') + '</div>';
     evidence = '<h3>' + escape(t('profile.self')) + '</h3><form id="skill-form" class="skill-form">'
