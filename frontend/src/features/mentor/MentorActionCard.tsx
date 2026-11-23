@@ -92,10 +92,10 @@ export function MentorActionCard({
           </Button>
         ) : !result || result.status === 'pending' ? (
           <>
-            <Button type="button" variant="primary" disabled={busy} className={busy && lastDecision.current === 'confirm' ? 'ita-app-loading-btn' : ''} onClick={() => void decide('confirm')}>
+            <Button type="button" variant="primary" disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void decide('confirm')}>
               Xác nhận
             </Button>
-            <Button type="button" disabled={busy} className={busy && lastDecision.current === 'decline' ? 'ita-app-loading-btn' : ''} onClick={() => void decide('decline')}>
+            <Button type="button" disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void decide('decline')}>
               Từ chối
             </Button>
           </>
