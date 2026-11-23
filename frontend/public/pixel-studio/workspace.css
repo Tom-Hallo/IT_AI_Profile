@@ -1299,3 +1299,31 @@
   font-weight: 600;
   color: #dc2626;
 }
+
+/* Roadmap scenario 6: explicit re-evaluation state and actionable suggestions. */
+.road-review-result {
+  margin: 12px 0 16px;
+  padding: 16px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--accent-panel);
+}
+.road-review-result h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+.road-review-result > p { margin: 5px 0 9px; font-size: 13px; }
+.road-review-result > a { margin-top: 10px; }
+.road-review-suggestions { display: grid; gap: 10px; margin-top: 14px; }
+.road-review-suggestion {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--inset);
+}
+.road-review-suggestion h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.road-review-suggestion p { margin: 4px 0; font-size: 12px; }
+.road-review-suggestion .action-row { margin-top: 10px; flex-wrap: wrap; }
