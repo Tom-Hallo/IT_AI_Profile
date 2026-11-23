@@ -33,7 +33,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   let analysisStarted = false;
   let analysisPolling;
   let analysisEpoch = 0;
-  let goalWasChosen = false;
+  let roadRequest = 0;
 
   function errorText(error) {
     if (error.name === 'TimeoutError') return copy('Yêu cầu quá thời gian chờ. Vui lòng thử lại.', 'Request timed out. Please try again.');
@@ -372,23 +372,48 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.scores = skills.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   }
 
+  // Always keep the selected career role and the visible roadmap in sync.
+  // The request token prevents an older response from restoring another role.
   async function road(targetId) {
+    const requestToken = ++roadRequest;
+    const requestedGoal = data.goal;
     const items = await request('/career-roadmaps');
+    if (requestToken !== roadRequest || requestedGoal !== data.goal) return;
+    const roleRoadmaps = items.filter(item => item.goal === requestedGoal);
+    const selected = targetId != null
+      ? roleRoadmaps.find(item => Number(item.id) === Number(targetId))
+      : roleRoadmaps.find(item => Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? roleRoadmaps[0];
+    const tracking = selected ? await request('/roadmap-tracking/' + selected.id) : null;
+    if (requestToken !== roadRequest || requestedGoal !== data.goal) return;
     data.roadmaps = items;
-    if (targetId) {
-      data.road = items.find(item => item.id === targetId) ?? null;
-    } else {
-      const matchingGoal = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? items.find(item => item.goal === data.goal);
-      data.road = matchingGoal
-        ?? (goalWasChosen ? null : items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0) ?? items[0] ?? null);
-    }
-    if (data.road) {
-      data.goal = data.road.goal;
-    }
-    data.tracking = data.road ? await request(trackingPath()) : null;
-    data.milestone = data.tracking?.milestones[0]?.id ?? null;
+    data.road = selected ?? null;
+    data.tracking = tracking;
+    data.milestone = tracking?.milestones?.[0]?.id ?? null;
     data.history = [];
+  }
+
+  function chooseRoadGoal(goal) {
+    if (!['backend', 'frontend', 'fullstack', 'devops'].includes(goal)
+      || goal === data.goal || data.busy.has('road')) return;
+    ++roadRequest;
+    data.goal = goal;
+    data.road = null;
+    data.tracking = null;
+    data.milestone = null;
+    data.history = [];
+    void loads.road();
+  }
+
+  function chooseRoadPlan(id) {
+    const selected = data.roadmaps?.find(item => Number(item.id) === Number(id) && item.goal === data.goal);
+    if (!selected || data.road?.id === selected.id || data.busy.has('road')) return;
+    ++roadRequest;
+    data.road = null;
+    data.tracking = null;
+    data.milestone = null;
+    data.history = [];
+    void work('road', () => road(id));
   }
 
   async function roadCreate() {
@@ -836,6 +861,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
     },
     'road-create':roadCreate,
+    'road-goal-option':button => chooseRoadGoal(button.dataset.id),
+    'road-plan-option':button => chooseRoadPlan(Number(button.dataset.id)),
     'road-draft':() => work('road',async () => {
       const result = await post(trackingPath() + '/re-evaluate');
       data.tracking = await request(trackingPath());
@@ -1149,8 +1176,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   function change(control) {
     if (control.id === 'repo-switch') { void focusRepo(control.value); return true; }
-    if (control.id === 'road-goal') { data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
-    if (control.id === 'road-select') { void work('road', () => road(Number(control.value))); return true; }
+    if (control.id === 'road-goal') { chooseRoadGoal(control.value); return true; }
+    if (control.id === 'road-select') { chooseRoadPlan(Number(control.value)); return true; }
     if (control.dataset.act === 'repo-page-select') { void repos({page: Number(control.value)}); return true; }
     if (control.classList.contains('repo-select-check')) {
       data.selectedRepos ??= new Set();
