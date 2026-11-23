@@ -422,7 +422,10 @@ def test_mentor_append_two_milestones_preserves_original_progress_and_order(pg):
             for m in tracking["milestones"]
         }
         assert all(after_rows[key] == value for key, value in before_rows.items())
-        assert stored.data["milestones"][0]["evidence"] == before["milestones"][0]["evidence"]
+        assert (
+            stored.data["milestones"][0]["evidence"]
+            == before["milestones"][0]["evidence"]
+        )
 
 
 def test_mentor_steps_append_distinct_rows_and_do_not_renumber_existing(pg):
