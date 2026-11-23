@@ -376,21 +376,30 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   async function road(targetId) {
     const items = await request('/career-roadmaps');
-    data.roadmaps = items;
-    if (targetId) {
-      data.road = items.find(item => item.id === targetId) ?? null;
-    } else {
-      const matchingGoal = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? items.find(item => item.goal === data.goal);
-      data.road = matchingGoal
-        ?? (goalWasChosen ? null : items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0) ?? items[0] ?? null);
-    }
+    data.roadmaps = Array.isArray(items) ? items : [];
+    let storedId = null;
+    try {
+      storedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || null;
+    } catch {}
+    const preferredId = targetId ?? data.road?.id ?? storedId;
+    const preferred = data.roadmaps.find(item => item.id === preferredId
+      && (targetId || !goalWasChosen || item.goal === data.goal));
+    const matchingGoal = data.roadmaps.find(item => item.goal === data.goal
+      && Array.isArray(item.milestones) && item.milestones.length > 0)
+      ?? data.roadmaps.find(item => item.goal === data.goal);
+    data.road = targetId ? (preferred ?? null) : (preferred ?? matchingGoal
+      ?? (goalWasChosen ? null : data.roadmaps.find(item =>
+        Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? data.roadmaps[0] ?? null));
     if (data.road) {
-      data.goal = data.road.goal;
+      data.goal = data.road.goal || data.goal;
+      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
     }
+    const previousMilestone = data.milestone;
     data.tracking = data.road ? await request(trackingPath()) : null;
     data.reevaluation = null;
-    data.milestone = data.tracking?.milestones[0]?.id ?? null;
+    data.milestone = data.tracking?.milestones?.some(m => m.id === previousMilestone)
+      ? previousMilestone : data.tracking?.milestones?.[0]?.id ?? null;
     data.history = [];
   }
 
@@ -398,6 +407,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     await work('road',async () => {
       data.road = await post('/career-roadmaps',{goal:data.goal});
       data.roadmaps = await request('/career-roadmaps');
+      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
       data.tracking = await request(trackingPath());
       data.reevaluation = null;
       data.milestone = data.tracking.milestones[0]?.id ?? null;
@@ -627,6 +637,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     if (!message || runtime.chatPending) return;
     const repo = (context.repoId && data.repos.find(item => String(item.id) === String(context.repoId))) || active();
     const sources = runtime.chosen;
+    const selectedRoadmapId = Number(data.mentorRoad || data.road?.id);
+    const selectedRoadmapIds = Number.isSafeInteger(selectedRoadmapId) && selectedRoadmapId > 0
+      && (sources.has('roadmap') || data.road?.id) ? [selectedRoadmapId] : [];
     const repoSelected = repo && (sources.has('github') || sources.has('report') || sources.has('private'))
       && (!repo.private || sources.has('private'));
     const controller = new AbortController();
@@ -647,7 +660,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             include_cv:false,
             cv_ids:sources.has('cv') && data.mentorCV ? [Number(data.mentorCV)] : [],
             jd_text:sources.has('job') ? (data.mentorJD?.trim() || data.jobText || null) : null,
-            roadmap_ids:(sources.has('roadmap') || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : [],
+            roadmap_ids:selectedRoadmapIds,
             milestone_id: targetMilestoneId
           }
         }
@@ -683,8 +696,12 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         item.actionDismissed = !approved;
         if (item.actionApplied) {
           notice(copy('Đã áp dụng thành công!', 'Successfully applied!'));
-          if (action.tool === 'create_roadmap' || action.tool === 'update_roadmap') {
-            await loads.road();
+          if (action.tool === 'create_roadmap') {
+            // A new independent roadmap can be selected explicitly by result ID.
+            await road(Number(result.result_id));
+          } else if (action.tool === 'update_roadmap') {
+            // Keep the user's current selection, not the newest roadmap.
+            await road(data.road?.id);
           } else if (action.tool === 'create_cv') {
             await loads.cv();
           }
@@ -703,10 +720,15 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       if (action.proposal.title) {
         detailHtml += '<p><strong>' + escape(action.proposal.title) + '</strong></p>';
       }
-      if (action.proposal.add_milestone) {
-        const m = action.proposal.add_milestone;
-        detailHtml += '<div class="notice" style="margin:0.5rem 0;"><strong>' + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</div>';
-      } else if (action.proposal.steps?.length) {
+      const newMilestones = [
+        ...(action.proposal.add_milestone ? [action.proposal.add_milestone] : []),
+        ...(action.proposal.add_milestones || [])
+      ];
+      if (newMilestones.length) {
+        detailHtml += '<ul>' + newMilestones.map(m => '<li><strong>'
+          + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</li>').join('') + '</ul>';
+      }
+      if (action.proposal.steps?.length) {
         detailHtml += '<ul>' + action.proposal.steps.map(s => '<li>' + escape(s) + '</li>').join('') + '</ul>';
       }
     }
