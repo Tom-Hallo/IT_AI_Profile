@@ -50,15 +50,10 @@ def assess(rows, evidence=None, *, files_partial=False):
 
 
 def test_verified_pr_only_scores_without_fabricating_commits():
-    result, metrics = assess(
-        [event(11, "pull_request"), event(12, "pull_request")]
-    )
+    result, metrics = assess([event(11, "pull_request"), event(12, "pull_request")])
     assert result["status"] == "Scored"
     assert result["score"] is not None and 0 < result["score"] <= 100
-    assert all(
-        set(part["evidence_ids"]) <= {11, 12}
-        for part in result["breakdown"]
-    )
+    assert all(set(part["evidence_ids"]) <= {11, 12} for part in result["breakdown"])
     assert metrics["verified_activity"].evidence_ids == (11, 12)
     assert [part["criterion"] for part in result["breakdown"]] == [
         "code_contribution",
@@ -113,9 +108,7 @@ def test_manifest_evidence_alone_never_proves_personal_skill():
 
 
 def test_legacy_strict_rubric_unchanged():
-    raw = framework_metrics(
-        [event(1, "pull_request")], "FastAPI", [source_evidence()]
-    )
+    raw = framework_metrics([event(1, "pull_request")], "FastAPI", [source_evidence()])
     strict = calculate(raw, rubric_version="2.1.0")
     assert strict["status"] == "Insufficient"
     assert strict["score"] is None
