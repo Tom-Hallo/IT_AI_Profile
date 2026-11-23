@@ -1,16 +1,21 @@
 """PBI-024 API; all roadmap access is user-scoped."""
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
+from app.modules.analysis.models import VerificationEvidence
 from app.modules.consent.router import csrf
+from app.modules.github.models import Repository, user_repository
 from app.modules.roadmaps.models import Roadmap
 from app.modules.users.models import User
 
@@ -103,7 +108,10 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
                 }
                 for idx, step in enumerate(roadmap.data["steps"], 1)
             ]
-            roadmap.data["milestones"] = ms_list
+            data = deepcopy(roadmap.data)
+            data["milestones"] = ms_list
+            roadmap.data = data
+            flag_modified(roadmap, "data")
             db.commit()
         if ms_list:
             db.add_all(
@@ -218,8 +226,6 @@ def submit_milestone_evidence(
     user: CurrentUser,
     db: DB,
 ):
-    import re
-
     roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
     m = db.scalar(
         select(Milestone)
@@ -241,34 +247,69 @@ def submit_milestone_evidence(
         "Cần bằng chứng quét từ repository để xác minh."
     )
 
-    gh_match = re.search(r"github\.com/([^/]+)/([^/]+)", url)
-    if gh_match:
-        from app.models.github import Repository
-
-        repo_name = f"{gh_match.group(1)}/{gh_match.group(2)}"
-        repo = db.scalar(
-            select(Repository).where(
-                Repository.user_id == user.id, Repository.full_name == repo_name
-            )
+    # Accept an official GitHub URL only; do not trust lookalike hosts or paths.
+    parsed = urlsplit(url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.scheme == "https"
+        and parsed.hostname == "github.com"
+        and parsed.username is None
+        and parsed.password is None
+        and len(path_parts) == 4
+    ):
+        owner, repo_slug, kind, identifier = path_parts
+        repo_name = f"{owner}/{repo_slug}"
+        evidence_type = (
+            "commit"
+            if kind == "commit"
+            and len(identifier) == 40
+            and all(ch in "0123456789abcdefABCDEF" for ch in identifier)
+            else "pull_request"
+            if kind == "pull"
+            and identifier.isascii()
+            and identifier.isdecimal()
+            and int(identifier) > 0
+            else None
         )
-        if repo:
-            is_commit = "/commit/" in url or "/commits/" in url or "/pull/" in url
-            if is_commit:
-                is_verified = True
-                verification_status = "verified"
-                explanation = (
-                    "Minh chứng đã được đối chiếu và xác nhận "
-                    f"từ repository {repo_name}."
+        if evidence_type:
+            repo = db.scalar(
+                select(Repository)
+                .join(user_repository, Repository.id == user_repository.c.repository_id)
+                .where(
+                    user_repository.c.user_id == user.id,
+                    Repository.full_name == repo_name,
                 )
-            else:
-                verification_status = "self_reported"
-                explanation = (
-                    f"Đã ghi nhận liên kết repository {repo_name}. "
-                    "Đang chờ đối soát commit/PR chi tiết."
+            )
+            if repo is not None:
+                evidence = db.scalar(
+                    select(VerificationEvidence.id)
+                    .where(
+                        VerificationEvidence.repository_id == repo.id,
+                        VerificationEvidence.user_id == user.id,
+                        VerificationEvidence.evidence_type == evidence_type,
+                        VerificationEvidence.target_identifier == identifier,
+                        VerificationEvidence.verification_status == "verified",
+                        VerificationEvidence.is_bot.is_(False),
+                        VerificationEvidence.is_fork_inherited.is_(False),
+                    )
+                    .limit(1)
                 )
+                if evidence is not None:
+                    is_verified = True
+                    verification_status = "verified"
+                    explanation = (
+                        "Đã đối chiếu minh chứng với đóng góp GitHub "
+                        f"được hệ thống xác minh trong {repo_name}."
+                    )
+                else:
+                    explanation = (
+                        f"Đã ghi nhận liên kết từ {repo_name}. "
+                        "Chưa tìm thấy bản ghi xác minh đóng góp tương ứng."
+                    )
 
-    data = dict(roadmap.data)
-    milestones = list(data.get("milestones", []))
+    # Deep-copy JSONB to guarantee SQLAlchemy detects and persists the update.
+    data = deepcopy(roadmap.data)
+    milestones = data.get("milestones", [])
     for item in milestones:
         if item.get("skill") == m.external_key:
             item.setdefault("evidence", [])
@@ -287,6 +328,7 @@ def submit_milestone_evidence(
                 item["confidence"] = "high"
             break
     roadmap.data = data
+    flag_modified(roadmap, "data")
 
     old_status = m.status
     if is_verified and m.status != "completed":

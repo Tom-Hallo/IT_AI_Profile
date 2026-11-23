@@ -215,7 +215,7 @@ function renderRoute(force=false) {
   } else {
     const content = next.kind === 'login' ? login(Boolean(live))
       : next.kind === 'share' ? (live ? livePublic(live.data.publicToken === next.id ? live.data.public : undefined) : shareView(findSharedProfile(next.id),signedIn))
-      : landing();
+      : landing(Boolean(live));
     replaceView(root,content);
   }
   document.documentElement.lang = getLanguage();
