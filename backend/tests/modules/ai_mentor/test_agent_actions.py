@@ -28,6 +28,7 @@ from app.modules.analysis import router as analysis_router
 from app.modules.analysis.models import AnalysisJob
 from app.modules.consent.models import PrivateConsent
 from app.modules.cvs.models import CV
+from app.modules.career_roadmap.router import list_roadmaps
 from app.modules.roadmap_tracking.models import Milestone
 from app.modules.roadmap_tracking.router import get_tracking
 from app.modules.roadmaps.models import Roadmap
@@ -439,6 +440,23 @@ def test_mentor_append_two_milestones_preserves_original_progress_and_order(pg):
             stored.data["milestones"][0]["evidence"]
             == before["milestones"][0]["evidence"]
         )
+
+
+def test_mentor_independent_roadmap_created_at_end_of_list(pg):
+    owner = World(pg).user("independent-roadmap@example.test")
+    original = _seed_roadmap_with_progress(pg, owner)
+    original_progress = deepcopy(original.data)
+    proposal = propose(pg, owner, ROADMAP_DRAFT)
+    assert proposal is not None
+    result = actions.decide_action(pg, owner, proposal.id, CONFIRM)
+    assert result.status == "succeeded"
+    items = list_roadmaps(owner, pg)
+    assert [item["id"] for item in items] == [
+        original.id,
+        int(result.result_id),
+    ]
+    pg.expire_all()
+    assert pg.get(Roadmap, original.id).data == original_progress
 
 
 def test_tracking_persisted_order_not_database_row_id(pg):
