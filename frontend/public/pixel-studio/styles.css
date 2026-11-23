@@ -429,7 +429,7 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:2px}
 .chat-action-toolbar .button{min-width:0;max-width:100%;margin-left:auto}
 .chat-action-trigger,.chat-action-reopen{
   white-space:normal;overflow-wrap:anywhere;transform-origin:top right;
-  animation:chat-action-control-in 340ms var(--ease) both;
+  animation:chat-action-control-in 340ms var(--ease);
   transition:background 180ms,border-color 180ms,color 180ms,transform 180ms var(--ease),box-shadow 180ms var(--ease)
 }
 .chat-action-trigger:hover:not(:disabled),.chat-action-reopen:hover:not(:disabled){transform:translateY(-2px) scale(1.02);box-shadow:0 7px 16px rgba(9,9,11,0.16)}
