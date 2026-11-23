@@ -13,6 +13,14 @@ function formattedDate(value) {
   return value && Number.isFinite(time) ? dateLabel(time) : '—';
 }
 const number = value => Number.isFinite(value) ? String(Math.round(value * 10) / 10) : '—';
+const isScored = item => String(item?.status ?? '').toUpperCase() === 'SCORED' && Number.isFinite(item?.score);
+const isScoredRole = item => String(item?.status ?? '').toUpperCase() === 'SCORED' && Number.isFinite(item?.role_score);
+const scoreStatusLabel = status => ({
+  scored: copy('Đã chấm điểm', 'Scored'),
+  insufficient: copy('Chưa đủ bằng chứng', 'Insufficient evidence'),
+  unknown: copy('Chưa xác định', 'Unknown'),
+  conflicting: copy('Bằng chứng mâu thuẫn', 'Conflicting evidence')
+})[String(status ?? '').toLowerCase()] ?? (status ? String(status) : copy('Chưa xác định', 'Unknown'));
 
 function feedback(data, ...keys) {
   return keys.map(key => data.errors[key] ? '<p class="notice red" role="alert">' + escape(data.errors[key]) + '</p>'
@@ -68,20 +76,20 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
     const selected = data.scores.find(item => key(item) === data.scoreKey) ?? data.scores[0];
     scores = data.scores.map(item => {
       const isSelected = selected === item;
-      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), item.score, 'score', key(item), isSelected);
+      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), isScored(item) ? item.score : null, 'score', key(item), isSelected);
     }).join('');
 
     if (selected) {
       const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
-      const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : 90;
+      const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : null;
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
-        + '<span class="tag-badge green">' + copy('Đủ bằng chứng xác minh', 'Verified evidence') + '</span></div>'
-        + '<strong class="evidence-score-pill">' + (selected.score ?? 0) + '<span>/100</span></strong></div>'
+        + '<span class="tag-badge ' + (isScored(selected) ? 'green' : 'yellow') + '">' + escape(scoreStatusLabel(selected.status)) + '</span></div>'
+        + '<strong class="evidence-score-pill">' + (isScored(selected) ? number(selected.score) + '<span>/100</span>' : '—') + '</strong></div>'
         + paragraph(selected.explanation)
         + details([
             [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
-            [copy('Độ tin cậy', 'Confidence'), confPct + '/100'],
-            [copy('Trạng thái xác minh', 'Verification Status'), escape(selected.status)]
+            [copy('Độ tin cậy', 'Confidence'), confPct == null ? '—' : confPct + '/100'],
+            [copy('Trạng thái chấm điểm', 'Scoring status'), escape(scoreStatusLabel(selected.status))]
           ])
         + '<div class="evidence-action-row" style="margin-top:14px">'
         + btn(icon('file') + ' ' + copy('Xem mã nguồn & bằng chứng tại repo ', 'Inspect code & evidence in ') + escape(selected.repo.full_name || selected.repo.name) + ' ↗',
@@ -91,15 +99,15 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
   } else if (runtime.scoreTab === 'roles') {
     const selection = data.roles.find(item => item.key === data.roleKey) ?? data.roles[0];
     const selected = selection?.score;
-    scores = data.roles.map(item => scoreRow(item.name, item.score?.role_score, 'role-score', item.key, selection === item)).join('');
+    scores = data.roles.map(item => scoreRow(item.name, isScoredRole(item.score) ? item.score.role_score : null, 'role-score', item.key, selection === item)).join('');
     if (selected) {
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name) + '</h3>'
-        + '<span class="tag-badge green">' + copy('Đánh giá vai trò', 'Role evaluation') + '</span></div>'
-        + '<strong class="evidence-score-pill">' + (selected.role_score ?? 0) + '<span>/100</span></strong></div>'
+        + '<span class="tag-badge ' + (isScoredRole(selected) ? 'green' : 'yellow') + '">' + escape(scoreStatusLabel(selected.status)) + '</span></div>'
+        + '<strong class="evidence-score-pill">' + (isScoredRole(selected) ? number(selected.role_score) + '<span>/100</span>' : '—') + '</strong></div>'
         + paragraph(selected.rationale)
         + details([
             [copy('Độ tin cậy', 'Confidence'), number(selected.confidence)],
-            [copy('Trạng thái', 'Status'), escape(selected.status)]
+            [copy('Trạng thái', 'Status'), escape(scoreStatusLabel(selected.status))]
           ])
         + (selected.limitations ?? []).map(item => muted(item.message ?? item.label ?? item.code)).join('')
         + refs(selected.evidence_refs)
@@ -112,7 +120,7 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
     }
   } else {
     scores = '<div class="project-skills"><h3>' + escape(t('profile.verifiedHeading')) + '</h3>'
-      + tags([...new Set(data.scores.filter(item => item.score != null).map(item => item.technology))], 'green')
+      + tags([...new Set(data.scores.filter(isScored).map(item => item.technology))], 'green')
       + '<h3>' + escape(t('profile.supplementary')) + '</h3>' + tags(data.skills.map(item => item.skill_name), 'blue') + '</div>';
     evidence = '<h3>' + escape(t('profile.self')) + '</h3><form id="skill-form" class="skill-form">'
       + field(t('profile.skill'), '<input name="skill" maxlength="120" required>')
@@ -135,12 +143,13 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
 
 function getLiveRadar(state, data) {
   const standardKeys = ['code', 'architecture', 'testing', 'collaboration', 'ci'];
+  // Absence of verified criteria is unknown, never a score of zero.
   const baseScores = {
-    code: 0,
-    architecture: 0,
-    testing: 0,
-    collaboration: 0,
-    ci: 0
+    code: null,
+    architecture: null,
+    testing: null,
+    collaboration: null,
+    ci: null
   };
 
   const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
@@ -156,7 +165,7 @@ function getLiveRadar(state, data) {
   const activeRepoAnalyzed = activeRepo ? analyzedRepoIds.has(activeRepo.id) : false;
 
   const role = (data.roles.find(item => item.key === data.roleKey) ?? data.roles[0])?.score;
-  const coveragePct = role?.coverage != null ? Math.round(role.coverage * 100) : (analyzedCount > 0 ? 55 : 0);
+  const coveragePct = Number.isFinite(role?.coverage) ? Math.round(role.coverage * 100) : null;
 
   if (role?.criteria?.length) {
     const findCrit = (...keywords) => {
@@ -164,7 +173,7 @@ function getLiveRadar(state, data) {
         (c.key && c.key.toLowerCase().includes(k)) ||
         (c.name && c.name.toLowerCase().includes(k))
       ));
-      return match && Number.isFinite(match.score) ? Math.round(match.score) : null;
+      return match && String(match.status ?? '').toUpperCase() === 'SCORED' && Number.isFinite(match.score) ? Math.round(match.score) : null;
     };
     const codeScore = findCrit('language', 'framework', 'ngôn ngữ', 'chất lượng', 'mã', 'backend_language');
     const archScore = findCrit('architecture', 'api', 'kiến trúc', 'dịch vụ', 'api_service_design', 'database_migration');
@@ -179,64 +188,19 @@ function getLiveRadar(state, data) {
     if (ciScore != null && ciScore >= 0 && ciScore <= 100) baseScores.ci = ciScore;
   }
 
-  // Nếu criteria chưa có điểm cho testing/collaboration/ci, tính toán từ dữ liệu thực tế của repo đã phân tích
-  if (analyzedCount > 0) {
-    if (baseScores.code === 0 && data.scores.length > 0) {
-      const codeSkills = data.scores.filter(s => s.kind === 'language' || s.kind === 'framework');
-      if (codeSkills.length) baseScores.code = Math.min(100, Math.round(codeSkills.length * 20));
-    }
-    if (baseScores.architecture === 0 && data.scores.length > 0) {
-      const archSkills = data.scores.filter(s => s.kind === 'architecture' || s.kind === 'pattern');
-      if (archSkills.length) baseScores.architecture = Math.min(100, Math.round(archSkills.length * 25));
-    }
-    let totalChecks = 0, successChecks = 0, totalPrs = 0, totalReviews = 0;
-    if (data.repoData) {
-      Object.values(data.repoData).forEach(d => {
-        if (d?.collaboration) {
-          totalChecks += d.collaboration.total_checks_analyzed || 0;
-          successChecks += d.collaboration.successful_checks_count || 0;
-          totalPrs += d.collaboration.total_prs_analyzed || 0;
-          totalReviews += d.collaboration.total_reviews_analyzed || 0;
-        }
-      });
-    }
-    if (baseScores.ci === 0 && totalChecks > 0) {
-      baseScores.ci = Math.round((successChecks / totalChecks) * 100);
-    } else if (baseScores.ci === 0 && analyzedCount > 0) {
-      baseScores.ci = Math.min(100, 70 + analyzedCount * 5);
-    }
-    if (baseScores.collaboration === 0 && (totalPrs > 0 || totalReviews > 0)) {
-      baseScores.collaboration = Math.min(100, Math.round((totalPrs * 10 + totalReviews * 15)));
-    } else if (baseScores.collaboration === 0 && analyzedCount > 0) {
-      baseScores.collaboration = Math.min(100, 65 + analyzedCount * 4);
-    }
-    if (baseScores.testing === 0 && analyzedCount > 0) {
-      const hasTestSkill = data.scores.some(s => (s.technology || '').toLowerCase().includes('test'));
-      baseScores.testing = hasTestSkill ? 80 : Math.min(100, 50 + analyzedCount * 5);
-    }
-  }
-
-  // previousScores bằng baseScores để không tạo delta ảo khi chưa có lịch sử so sánh
-  const previousScores = { ...baseScores };
-
+  // Missing dimensions stay unknown; repository counts and file detections are not proficiency evidence.
   const metrics = standardKeys.map(key => ({
     key,
     label: t('metric.' + key),
     score: baseScores[key]
   }));
 
-  const comparison = Object.fromEntries(standardKeys.map(key => [
-    key,
-    {
-      current: baseScores[key],
-      before: previousScores[key],
-      delta: baseScores[key] - previousScores[key]
-    }
-  ]));
+  // No historical snapshot has been loaded: avoid drawing a fictitious previous-score series.
+  const comparison = {};
 
   const metricDetails = standardKeys.map(key => {
     const trend = comparison[key];
-    const trendCopy = trend.delta !== 0
+    const trendCopy = trend && trend.delta !== 0
       ? '<div class="radar-trend"><strong>' + trend.before + ' <span aria-hidden="true">→</span> ' + trend.current + '<small>/100</small></strong>'
       + '<span>' + escape(t('radar.compared', { version: '1.0' })) + '</span></div>'
       : '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>';
@@ -246,7 +210,7 @@ function getLiveRadar(state, data) {
     if (evidenceRepo) {
       const isCurrent = activeRepo && evidenceRepo.id === activeRepo.id;
       evidence = '<div class="radar-evidence-line"><div><strong>' + escape(evidenceRepo.full_name || evidenceRepo.name) + '</strong>'
-        + '<small>' + escape(t('profile.coverage', { value: coveragePct })) + ' · ' + escape(t('radar.confidenceBasis'))
+        + '<small>' + (coveragePct == null ? copy('Độ phủ: chưa xác định', 'Coverage: unavailable') : escape(t('profile.coverage', { value: coveragePct }))) + ' · ' + escape(t('radar.confidenceBasis'))
         + (isCurrent ? ' · <span class="badge-success">' + copy('Repo đang chọn', 'Selected repo') + '</span>' : '')
         + '</small></div>'
         + btn(icon('file') + escape(t('radar.openEvidence')), 'evidence', 'secondary small', attr('id', evidenceRepo.id)) + '</div>';
@@ -263,7 +227,7 @@ function getLiveRadar(state, data) {
     }
 
     return '<section id="radar-detail-' + key + '" class="radar-insight" aria-labelledby="radar-label-' + key + '" hidden>'
-      + '<div class="radar-insight-head"><h3 id="radar-label-' + key + '">' + escape(t('metric.' + key)) + '</h3><b>' + baseScores[key] + '<small>/100</small></b></div>'
+      + '<div class="radar-insight-head"><h3 id="radar-label-' + key + '">' + escape(t('metric.' + key)) + '</h3><b>' + (Number.isFinite(baseScores[key]) ? baseScores[key] + '<small>/100</small>' : '—') + '</b></div>'
       + '<p>' + escape(t('radar.meaning.' + key)) + '</p>' + trendCopy + evidence
       + '<div class="radar-next-actions">'
       + btn(icon('bot') + escape(t('radar.askMetric')), 'ask-metric', 'secondary small', attr('id', key))
@@ -941,20 +905,27 @@ export function liveCV(state, runtime, data) {
 }
 
 function auditRows(items) {
+  const statusText = status => ({
+    started: copy('Đã bắt đầu', 'Started'),
+    retrieved: copy('Đã truy xuất nguồn', 'Sources retrieved'),
+    failed: copy('Thất bại', 'Failed'),
+    succeeded: copy('Thành công', 'Succeeded'),
+    completed: copy('Hoàn thành', 'Completed')
+  })[String(status ?? '').toLowerCase()] ?? status;
   return items.length ? '<ul class="audit-list">' + items.map(item => '<li><time>' + escape(formattedDate(item.created_at))
-    + '</time><span>' + escape([item.feature, item.source, item.status].filter(Boolean).join(' · ')) + '</span></li>').join('') + '</ul>' : muted(t('data.noLogs'));
+    + '</time><span>' + escape([item.feature, item.source, statusText(item.status)].filter(Boolean).join(' · ')) + '</span></li>').join('') + '</ul>' : muted(t('data.noLogs'));
 }
 
 export function liveData(state, data) {
   const share = data.shared;
   return heading(t('data.heading'), t('data.intro')) + feedback(data, 'data')
     + '<div class="columns"><article class="panel stack">' + panelHead(t('data.connection'))
-    + details([[t('data.github'), badge(t('data.' + (state.access === 'none' ? 'disconnected' : state.access)))]])
+    + details([[copy('Kết nối GitHub', 'GitHub connection'), badge(t('data.' + (state.access === 'none' ? 'disconnected' : state.access)))]])
     + muted(copy('Quyền xem mã riêng tư và quyền AI được xác nhận riêng trên repository đã chọn.', 'Manage private analysis and external AI consent on the relevant repository.'))
     + '<div class="action-row">' + (state.access === 'none'
       ? namedButton(t('repos.connect'), 'reconnect', 'secondary small')
       : namedButton(t('privacy.disconnect'), 'disconnect', 'quiet small') + link(escape(t('action.openRepo')), 'repos', 'secondary small')) + '</div></article>'
-    + '<article class="panel stack">' + panelHead(t('data.share')) + muted(t('data.shareIntro'))
+    + '<article class="panel stack">' + panelHead(t('data.share')) + muted(copy('Chọn thông tin hồ sơ được chia sẻ qua liên kết.', 'Choose which profile information to share through the link.'))
     + namedButton(copy('Tạo liên kết', 'Create link'), 'share-start', 'secondary small')
     + (share ? field(t('data.shareLink'), '<input id="share-link" value="' + escape(share.url) + '" readonly>')
       + '<div class="action-row"><a class="button secondary small" href="' + escape(share.url) + '" target="_blank" rel="noopener noreferrer">'
@@ -969,7 +940,7 @@ export function liveStatus(data) {
   const health = data.health;
   const checks = health?.checks ?? {};
   return heading(t('nav.status'), copy('Trạng thái lấy trực tiếp từ hệ thống.', 'Status from the running system.'))
-    + feedback(data, 'status') + '<div class="columns"><article class="panel stack">' + panelHead(t('status.environment'))
+    + feedback(data, 'status') + '<div class="columns"><article class="panel stack">' + panelHead(copy('Trạng thái dịch vụ', 'Service health'))
     + details([[t('status.frontend'), badge(t('status.open'), 'green')], ['FastAPI', badge(fallback(health?.status), health?.httpStatus === 200 ? 'green' : 'amber')],
     ['PostgreSQL', escape(fallback(checks.database))], ['Redis', escape(fallback(checks.redis))]])
     + namedButton(copy('Kiểm tra lại', 'Refresh status'), 'status-refresh', 'secondary small') + '</article><article class="panel">'
