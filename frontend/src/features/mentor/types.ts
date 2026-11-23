@@ -52,9 +52,27 @@ export type ChatMessage = {
   confidence?: number | null
 }
 
+export type MentorMilestonePatch = {
+  title: string
+  skill: string
+  objective: string
+  metric: string
+  target_score: number
+  after_skill?: string | null // Legacy field; ignored for append-only updates
+}
+
 export type MentorToolProposal =
   | { tool: 'create_cv'; title: string; summary: string; skills: string[] }
   | { tool: 'create_roadmap'; title: string; steps: string[] }
+  | {
+      tool: 'update_roadmap'
+      roadmap_id: number
+      title?: string | null
+      add_milestone?: MentorMilestonePatch | null
+      add_milestones?: MentorMilestonePatch[]
+      modify_milestone?: MentorMilestonePatch | null
+      steps?: string[]
+    }
   | { tool: 'reanalyze_repository'; repository_id: number }
 
 export type MentorAction = {

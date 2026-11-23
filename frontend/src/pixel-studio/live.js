@@ -9,7 +9,7 @@ const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
-    road:null, tracking:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
+    road:null, tracking:null, pendingRoadmapFocus:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
     errors:{}, messages:{}, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
@@ -25,6 +25,28 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   const active = () => data.repos.find(repo => String(repo.id) === String(state.repo)) ?? data.repos[0];
   const repository = repo => '/repositories/' + repo.id;
   const trackingPath = () => data.road ? '/roadmap-tracking/' + data.road.id : '';
+
+  // Match complete skill tokens, never substrings (SQL must not match PostgreSQL).
+  function normalizeRoadmapSkill(value) {
+    const normalized = String(value ?? '').toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return ({reactjs:'react', react_js:'react', ci_cd:'cicd'})[normalized] || normalized;
+  }
+
+  function matchesRoadmapSkill(milestone, skillKey) {
+    if (!milestone || typeof milestone !== 'object' || !skillKey) return false;
+    const hasSkillToken = value => {
+      const key = normalizeRoadmapSkill(value);
+      return key === skillKey || Boolean(key) && ('_' + key + '_').includes('_' + skillKey + '_');
+    };
+    const stableKeys = [milestone.skill, milestone.external_key].map(normalizeRoadmapSkill)
+      .filter(key => key && !/^(step|ms)_\d+$/.test(key));
+    // Canonical keys take precedence over potentially misleading descriptive titles.
+    if (stableKeys.length) return stableKeys.some(hasSkillToken);
+    const required = Array.isArray(milestone.required_skills) ? milestone.required_skills : [];
+    if (required.some(hasSkillToken)) return true;
+    return hasSkillToken(milestone.title) || hasSkillToken(milestone.objective);
+  }
   const cvPath = doc => '/cv-studio/' + encodeURIComponent(doc.document_id);
   const currentReport = () => active() ? data.repoData[active().id] : null;
   let repoRequest = 0;
@@ -375,22 +397,66 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   async function road(targetId) {
+    // A Skill Gap navigation is one-shot; normal roadmap opening keeps its old behavior.
+    const pendingFocus = !targetId ? data.pendingRoadmapFocus : null;
+    data.pendingRoadmapFocus = null;
     const items = await request('/career-roadmaps');
-    data.roadmaps = items;
+    data.roadmaps = Array.isArray(items) ? items : [];
+    let storedId = null;
+    try {
+      storedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || null;
+    } catch {}
+    const preferredId = targetId ?? data.road?.id ?? storedId;
+    const preferred = data.roadmaps.find(item => item.id === preferredId
+      && (targetId || !goalWasChosen || item.goal === data.goal));
+    const matchingGoal = data.roadmaps.find(item => item.goal === data.goal
+      && Array.isArray(item.milestones) && item.milestones.length > 0)
+      ?? data.roadmaps.find(item => item.goal === data.goal);
+    data.road = targetId ? (preferred ?? null) : (preferred ?? matchingGoal
+      ?? (goalWasChosen ? null : data.roadmaps.find(item =>
+        Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? data.roadmaps[0] ?? null));
+
+    if (pendingFocus) {
+      const targetRoadmap = data.roadmaps.find(item => String(item?.id) === String(pendingFocus.roadmapId));
+      if (!targetRoadmap) {
+        data.messages.road = copy('Lộ trình được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected roadmap no longer exists. Please check again.');
+        return;
+      }
+      const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
+      const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
+      const targetMilestone = milestones.find(item => String(item?.id) === String(pendingFocus.milestoneId));
+      if (!targetMilestone) {
+        data.messages.road = copy('Mốc kỹ năng được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected skill milestone no longer exists. Please check again.');
+        return;
+      }
+      data.road = targetRoadmap;
+      data.goal = targetRoadmap.goal;
+      data.tracking = tracking;
+      data.reevaluation = null;
+      data.milestone = targetMilestone.id;
+      data.history = [];
+      return;
+    }
+
     if (targetId) {
-      data.road = items.find(item => item.id === targetId) ?? null;
+      data.road = data.roadmaps.find(item => item?.id === targetId) ?? null;
     } else {
-      const matchingGoal = items.find(item => item.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? items.find(item => item.goal === data.goal);
+      const matchingGoal = data.roadmaps.find(item => item?.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
+        ?? data.roadmaps.find(item => item?.goal === data.goal);
       data.road = matchingGoal
-        ?? (goalWasChosen ? null : items.find(item => Array.isArray(item.milestones) && item.milestones.length > 0) ?? items[0] ?? null);
+        ?? (goalWasChosen ? null : data.roadmaps.find(item => Array.isArray(item?.milestones) && item.milestones.length > 0) ?? data.roadmaps[0] ?? null);
     }
     if (data.road) {
-      data.goal = data.road.goal;
+      data.goal = data.road.goal || data.goal;
+      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
     }
+    const previousMilestone = data.milestone;
     data.tracking = data.road ? await request(trackingPath()) : null;
     data.reevaluation = null;
-    data.milestone = data.tracking?.milestones[0]?.id ?? null;
+    data.milestone = data.tracking?.milestones?.some(m => m.id === previousMilestone)
+      ? previousMilestone : data.tracking?.milestones?.[0]?.id ?? null;
+    data.milestone = data.tracking?.milestones?.[0]?.id ?? null;
     data.history = [];
   }
 
@@ -398,6 +464,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     await work('road',async () => {
       data.road = await post('/career-roadmaps',{goal:data.goal});
       data.roadmaps = await request('/career-roadmaps');
+      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
       data.tracking = await request(trackingPath());
       data.reevaluation = null;
       data.milestone = data.tracking.milestones[0]?.id ?? null;
@@ -627,6 +694,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     if (!message || runtime.chatPending) return;
     const repo = (context.repoId && data.repos.find(item => String(item.id) === String(context.repoId))) || active();
     const sources = runtime.chosen;
+    const selectedRoadmapId = Number(data.mentorRoad || data.road?.id);
+    const selectedRoadmapIds = Number.isSafeInteger(selectedRoadmapId) && selectedRoadmapId > 0
+      && (sources.has('roadmap') || data.road?.id) ? [selectedRoadmapId] : [];
     const repoSelected = repo && (sources.has('github') || sources.has('report') || sources.has('private'))
       && (!repo.private || sources.has('private'));
     const controller = new AbortController();
@@ -647,7 +717,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             include_cv:false,
             cv_ids:sources.has('cv') && data.mentorCV ? [Number(data.mentorCV)] : [],
             jd_text:sources.has('job') ? (data.mentorJD?.trim() || data.jobText || null) : null,
-            roadmap_ids:(sources.has('roadmap') || data.road?.id) ? [Number(data.mentorRoad || data.road.id)] : [],
+            roadmap_ids:selectedRoadmapIds,
             milestone_id: targetMilestoneId
           }
         }
@@ -683,8 +753,12 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         item.actionDismissed = !approved;
         if (item.actionApplied) {
           notice(copy('Đã áp dụng thành công!', 'Successfully applied!'));
-          if (action.tool === 'create_roadmap' || action.tool === 'update_roadmap') {
-            await loads.road();
+          if (action.tool === 'create_roadmap') {
+            // A new independent roadmap can be selected explicitly by result ID.
+            await road(Number(result.result_id));
+          } else if (action.tool === 'update_roadmap') {
+            // Keep the user's current selection, not the newest roadmap.
+            await road(data.road?.id);
           } else if (action.tool === 'create_cv') {
             await loads.cv();
           }
@@ -703,10 +777,15 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       if (action.proposal.title) {
         detailHtml += '<p><strong>' + escape(action.proposal.title) + '</strong></p>';
       }
-      if (action.proposal.add_milestone) {
-        const m = action.proposal.add_milestone;
-        detailHtml += '<div class="notice" style="margin:0.5rem 0;"><strong>' + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</div>';
-      } else if (action.proposal.steps?.length) {
+      const newMilestones = [
+        ...(action.proposal.add_milestone ? [action.proposal.add_milestone] : []),
+        ...(action.proposal.add_milestones || [])
+      ];
+      if (newMilestones.length) {
+        detailHtml += '<ul>' + newMilestones.map(m => '<li><strong>'
+          + escape(m.title || m.skill) + '</strong>: ' + escape(m.objective || '') + '</li>').join('') + '</ul>';
+      }
+      if (action.proposal.steps?.length) {
         detailHtml += '<ul>' + action.proposal.steps.map(s => '<li>' + escape(s) + '</li>').join('') + '</ul>';
       }
     }
@@ -881,49 +960,56 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       void send(copy(promptVi, promptEn));
     },
     'view-skill-roadmap':async button => {
-      const rawSkill = button.dataset.skill || '';
-      const skillKey = rawSkill.toLowerCase().trim();
+      const skillKey = normalizeRoadmapSkill(button?.dataset?.skill);
+      if (!skillKey) {
+        notice(copy('Không xác định được kỹ năng cần xem lộ trình.', 'Unable to identify the skill for this roadmap.'));
+        return;
+      }
       const formatted = formatSkillName(skillKey);
-      await work('road',async () => {
-        const items = await request('/career-roadmaps');
+      let shouldNavigate = false;
+      // Finish this work before changing routes, so route loading cannot be
+      // silently skipped by the shared 'road' busy guard.
+      await work('road', async () => {
+        const response = await request('/career-roadmaps');
+        const items = Array.isArray(response) ? response : [];
         data.roadmaps = items;
-        let targetRoadmap = items.find(r => r.milestones?.some(m => (m.skill || m.title || '').toLowerCase().includes(skillKey)));
-        if (!targetRoadmap) {
-          const goalMap = {
-            python: 'backend', fastapi: 'backend', postgresql: 'backend', sql: 'backend', redis: 'backend', rest_api: 'backend', django: 'backend',
-            react: 'frontend', typescript: 'frontend', javascript: 'frontend', css: 'frontend', vue: 'frontend', html: 'frontend',
-            docker: 'devops', kubernetes: 'devops', cicd: 'devops', linux: 'devops', aws: 'devops'
-          };
-          const suggestedGoal = goalMap[skillKey];
-          if (suggestedGoal) {
-            targetRoadmap = items.find(r => r.goal?.toLowerCase() === suggestedGoal);
-          }
+        const candidates = items.filter(item => Array.isArray(item?.milestones)
+          && item.milestones.some(m => matchesRoadmapSkill(m, skillKey)));
+        const targetRoadmap = candidates.find(item => String(item?.id) === String(data.road?.id)) ?? candidates[0];
+        if (!targetRoadmap?.id) {
+          notice(copy(
+            'Chưa có mốc "' + formatted + '" trong lộ trình của bạn. Hãy chọn "Hỏi AI Mentor cách học" hoặc chủ động tạo lộ trình.',
+            'No "' + formatted + '" milestone exists in your roadmaps. Ask AI Mentor for a learning plan or create a roadmap yourself.'
+          ));
+          return;
         }
-        if (!targetRoadmap && items.length > 0) {
-          targetRoadmap = data.road || items[0];
+
+        const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
+        const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
+        const targetMilestone = milestones.find(m => m?.id != null && matchesRoadmapSkill(m, skillKey));
+        if (!targetMilestone) {
+          notice(copy(
+            'Lộ trình chưa có mốc "' + formatted + '" để mở. Hãy hỏi AI Mentor hoặc tạo lộ trình phù hợp.',
+            'The roadmap has no "' + formatted + '" milestone to open. Ask AI Mentor or create a suitable roadmap.'
+          ));
+          return;
         }
-        if (targetRoadmap) {
-          data.road = targetRoadmap;
-          data.goal = targetRoadmap.goal;
-          data.tracking = await request(trackingPath());
-          const matchingMilestone = data.tracking?.milestones?.find(m =>
-            (m.external_key || '').toLowerCase().includes(skillKey) ||
-            (m.title || '').toLowerCase().includes(skillKey)
-          );
-          if (matchingMilestone) {
-            data.milestone = matchingMilestone.id;
-            await roadHistory();
-          } else {
-            data.milestone = data.tracking?.milestones[0]?.id ?? null;
-          }
-        }
-        navigate('roadmap','#milestone-detail');
-        data.messages.road = copy(
-          `Đã chuyển đến Lộ trình cho kỹ năng "${formatted}".`,
-          `Navigated to Roadmap for skill "${formatted}".`
-        );
+
+        data.road = targetRoadmap;
+        data.goal = targetRoadmap.goal;
+        data.tracking = tracking;
+        data.milestone = targetMilestone.id;
+        data.reevaluation = null;
+        data.history = [];
+        data.pendingRoadmapFocus = {roadmapId:targetRoadmap.id, milestoneId:targetMilestone.id};
+        shouldNavigate = true;
       });
+      if (shouldNavigate) {
+        navigate('roadmap', '#milestone-detail');
+        notice(copy('Đã mở đúng mốc "' + formatted + '".', 'Opened the "' + formatted + '" milestone.'));
+      }
     },
+
     'cv-check':ats,
     "cv-insert-github": () => {
       const verifiedScores = data.scores.filter(

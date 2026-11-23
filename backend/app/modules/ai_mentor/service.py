@@ -178,9 +178,16 @@ actions for general questions, job inquiries, explanations, or advice.
 Allowed proposal forms:
 {"tool":"create_cv","title":"...","summary":"...","skills":["..."]}
 {"tool":"create_roadmap","title":"...","steps":["..."]}
-{"tool":"update_roadmap","roadmap_id":123,"title":"...","add_milestone":{
-"title":"...","skill":"...","objective":"...","metric":"...",
-"target_score":70,"after_skill":"..."}}
+{"tool":"update_roadmap","roadmap_id":123,"add_milestone":{
+"title":"...","skill":"...","objective":"...","metric":"...","target_score":70}}
+{"tool":"update_roadmap","roadmap_id":123,"add_milestones":[
+{"title":"...","skill":"...","objective":"...","metric":"...","target_score":70}]}
+{"tool":"update_roadmap","roadmap_id":123,"steps":["Architecture","Tracing"]}
+For extending or deepening an existing roadmap, propose update_roadmap and
+append milestones in their intended learning sequence. Do not use after_skill
+to insert between existing milestones; do not rename the existing roadmap.
+For an explicitly separate, standalone roadmap, propose create_roadmap.
+Never use a different roadmap_id as a fallback when the intended ID is absent.
 {"tool":"reanalyze_repository","repository_id":123}
 Use a repository ID only if it occurs in selected_repository_ids.
 Never use a repository ID as a roadmap_id. When proposing update_roadmap,
@@ -239,7 +246,7 @@ def list_source_options(db: Session, user_id: int) -> MentorSourceOptions:
     roadmaps = db.execute(
         select(Roadmap.id, Roadmap.title)
         .where(Roadmap.user_id == user_id)
-        .order_by(Roadmap.created_at.desc(), Roadmap.id.desc())
+        .order_by(Roadmap.created_at.asc(), Roadmap.id.asc())
     )
     return MentorSourceOptions(
         cvs=[MentorCVOption(id=id_, uploaded_at=date) for id_, date in cvs],
@@ -444,28 +451,6 @@ def _collect_context(
                     "Một hoặc nhiều roadmap thiếu dữ liệu hoặc quyền truy cập.",
                 )
             )
-    elif payload.enable_actions or payload.milestone_id:
-        latest_roadmap = db.scalar(
-            select(Roadmap)
-            .where(Roadmap.user_id == user.id)
-            .order_by(Roadmap.id.desc())
-            .limit(1)
-        )
-        if latest_roadmap is not None:
-            chunks.append(
-                Context(
-                    "roadmap",
-                    latest_roadmap.title,
-                    {
-                        "roadmap_id": latest_roadmap.id,
-                        "title": latest_roadmap.title,
-                        "description": latest_roadmap.description,
-                        "data": latest_roadmap.data,
-                    },
-                    record_id=latest_roadmap.id,
-                )
-            )
-
     target_milestone_id = payload.milestone_id or sources.milestone_id
     if target_milestone_id:
         ms = db.scalar(

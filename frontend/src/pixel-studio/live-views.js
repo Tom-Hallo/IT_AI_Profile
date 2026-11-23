@@ -64,11 +64,26 @@ function refs(items = [], data = null) {
   return items.length ? '<ul class="audit-list evidence-list">' + items.slice(0, 20).map(item => formatEvidenceItem(item, data)).join('') + '</ul>' : '';
 }
 
+export function orderedTrackingMilestones(data) {
+  const tracking = Array.isArray(data?.tracking?.milestones) ? data.tracking.milestones : [];
+  const stored = Array.isArray(data?.road?.milestones) ? data.road.milestones : [];
+  const positions = new Map();
+  stored.forEach((item, index) => {
+    const key = String(item?.skill ?? '').trim().toLowerCase();
+    if (key && !positions.has(key)) positions.set(key, index);
+  });
+  return tracking.slice().sort((a, b) => {
+    const indexA = positions.get(String(a?.external_key ?? '').trim().toLowerCase()) ?? stored.length;
+    const indexB = positions.get(String(b?.external_key ?? '').trim().toLowerCase()) ?? stored.length;
+    return indexA - indexB || (Number(a?.id) || 0) - (Number(b?.id) || 0);
+  });
+}
+
 function progressOverview(data) {
-  const milestones = data.tracking?.milestones ?? [];
+  const milestones = orderedTrackingMilestones(data);
   const done = milestones.filter(milestone => milestone.status === 'completed');
   const next = milestones.find(milestone => milestone.status !== 'completed');
-  const goal = next && data.road?.milestones.find(item => item.skill === next.external_key);
+  const goal = next && data.road?.milestones?.find(item => item?.skill === next.external_key);
   return { milestones, done, next, goal };
 }
 

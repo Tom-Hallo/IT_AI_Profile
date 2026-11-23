@@ -90,6 +90,47 @@ jobs:
         env:
           VITE_API_BASE_URL: /api/v1
         run: npm run build
+  mentor-roadmap-db-regression:
+    name: Mentor Roadmap PostgreSQL Regression
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ita
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: it_ai_profile
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ita -d it_ai_profile"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend
+        working-directory: backend
+        run: pip install ".[dev]"
+
+      - name: Run isolated PostgreSQL roadmap regressions
+        working-directory: backend
+        env:
+          APP_ENV: test
+          RUN_INTEGRATION: "1"
+          DATABASE_URL: postgresql+psycopg://ita:test-password@localhost:5432/it_ai_profile
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          export GITHUB_TOKEN_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          pytest -q tests/modules/ai_mentor/test_agent_actions.py -k "mentor_append or mentor_steps_append or mentor_duplicate_skill or mentor_wrong_or_removed or decision_api_requires_owner_origin or mentor_legacy_empty or tracking_persisted_order or mentor_independent_roadmap or tracking_and_roadmap_reads"
+
   gitleaks:
     name: Secret Scan
     runs-on: ubuntu-latest

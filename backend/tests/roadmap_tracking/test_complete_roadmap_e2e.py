@@ -557,7 +557,7 @@ def test_07_ai_mentor_roadmap_integration(db: Session, test_user: User):
     # Verify DB milestone & history created
     db.expire_all()
     rm_check = db.scalar(select(Roadmap).where(Roadmap.id == rm.id))
-    assert rm_check.title == "Roadmap tích hợp Message Queue"
+    assert rm_check.title == "Mentor Integration Roadmap"
     db_rabbitmq = db.scalar(
         select(Milestone).where(
             Milestone.roadmap_id == rm.id, Milestone.external_key == "rabbitmq"
@@ -571,6 +571,7 @@ def test_07_ai_mentor_roadmap_integration(db: Session, test_user: User):
         m for m in rm_check.data["milestones"] if m["skill"] == "rabbitmq"
     )
     assert m_rabbitmq["title"] == "Message Queue với RabbitMQ"
+    assert rm_check.data["milestones"][-1]["skill"] == "rabbitmq"
 
     # 3. Test AI Mentor Action: update_roadmap with modify_milestone
     mod_json = json.dumps(

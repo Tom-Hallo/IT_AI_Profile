@@ -6,6 +6,7 @@ import type { MentorAction, MentorActionDecision, MentorActionResult } from './t
 const labels = {
   create_cv: 'Tạo bản nháp CV',
   create_roadmap: 'Tạo roadmap',
+  update_roadmap: 'Nối thêm mốc vào roadmap',
   reanalyze_repository: 'Phân tích lại repository',
 }
 
@@ -65,11 +66,27 @@ export function MentorActionCard({
       {proposal.tool !== 'reanalyze_repository' && (
         <details>
           <summary>Xem nội dung sẽ lưu</summary>
-          <p><strong>{proposal.title}</strong></p>
+          {proposal.title && <p><strong>{proposal.title}</strong></p>}
           {proposal.tool === 'create_cv' ? (
             <>
               <p>{proposal.summary}</p>
               <p>{proposal.skills.join(', ')}</p>
+            </>
+          ) : proposal.tool === 'update_roadmap' ? (
+            <>
+              <p>Giữ nguyên lộ trình #{proposal.roadmap_id}; thêm mốc mới vào cuối.</p>
+              <ol>
+                {[
+                  ...(proposal.add_milestone ? [proposal.add_milestone] : []),
+                  ...(proposal.add_milestones ?? []),
+                ].map((milestone, index) => (
+                  <li key={index}><strong>{milestone.title}</strong>: {milestone.objective}</li>
+                ))}
+                {(proposal.steps ?? []).map((step, index) => <li key={`step-${index}`}>{step}</li>)}
+              </ol>
+              {proposal.modify_milestone && (
+                <p>Chỉnh sửa mốc: {proposal.modify_milestone.title}</p>
+              )}
             </>
           ) : (
             <ol>{proposal.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
