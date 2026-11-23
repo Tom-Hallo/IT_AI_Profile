@@ -460,7 +460,7 @@ export function liveRepos(state, data, active) {
   const intro = heading(t('repos.heading'), t('repos.intro'));
   if (state.access === 'none') return intro + feedback(data, 'repos')
     + '<div class="panel">' + blank(t('repos.disconnected'), t('repos.disconnectedCopy'), namedButton(t('repos.connect'), 'reconnect', 'primary')) + '</div>';
-  const busy = data.busy.has('repos') || data.busy.has('sync');
+  const busy = data.busy.has('repos') || data.busy.has('sync') || data.busy.has('bulk');
   const toolbar = '<div class="panel analysis-toolbar"><div class="toolbar">' + filterControls(state, busy || Boolean(data.analysis))
     + btn(icon('repo') + escape(t('action.sync')), 'sync', 'secondary', busy ? 'disabled' : '')
     + namedButton(copy('Tải lại', 'Refresh'), 'reload-reports', 'quiet small') + '</div>'
@@ -490,9 +490,56 @@ export function liveRepos(state, data, active) {
     + '<label class="repo-bulk-select-all"><input type="checkbox" data-act="toggle-all-page-repos" ' + (isAllPageSelected ? 'checked' : '') + '> '
     + copy('Chọn tất cả trên trang', 'Select all on page') + '</label>'
     + (selectedRepoCount > 0
-        ? btn(icon('pulse') + ' ' + copy(`Phân tích ${selectedRepoCount} repo đã chọn`, `Analyze ${selectedRepoCount} selected repos`), 'analyze-selected', 'primary small pulse-button')
+        ? btn(icon('pulse') + ' ' + copy(`Phân tích ${selectedRepoCount} repo đã chọn`, `Analyze ${selectedRepoCount} selected repos`), 'analyze-selected', 'primary small pulse-button', busy || data.analysis ? 'disabled' : '')
         : '')
     + '</div>';
+
+  const batch = data.bulkAnalysis;
+
+  const bulkStatus = batch
+    ? '<section class="notice" role="status" aria-live="polite">' +
+      "<strong>" +
+      escape(
+        copy(
+          `Phân tích hàng loạt: ${batch.done}/${batch.total} đã xử lý`,
+          `Bulk analysis: ${batch.done}/${batch.total} processed`,
+        ),
+      ) +
+      "</strong>" +
+      '<progress max="' +
+      batch.total +
+      '" value="' +
+      batch.done +
+      '" aria-label="Bulk analysis progress"></progress>' +
+      '<ul class="audit-list">' +
+      batch.results
+        .map((item) => {
+          const labels = {
+            preparing: copy("Đang chuẩn bị", "Preparing"),
+            queued: copy("Đang chờ", "Queued"),
+            running: copy("Đang phân tích", "Running"),
+            cancel_requested: copy("Đang yêu cầu hủy", "Cancelling"),
+            succeeded: copy("Thành công", "Succeeded"),
+            failed: copy("Thất bại", "Failed"),
+            cancelled: copy("Đã hủy", "Cancelled"),
+            request_error: copy("Lỗi gửi yêu cầu", "Request error"),
+            unknown: copy("Cần kiểm tra trạng thái", "Check job status"),
+            not_started: copy('Chưa bắt đầu', 'Not started'),
+          };
+
+          return (
+            "<li><strong>" +
+            escape(item.name || `Repository #${item.repo_id}`) +
+            "</strong> — " +
+            escape(labels[item.status] || item.status) +
+            (item.progress != null ? " (" + escape(item.progress) + "%)" : "") +
+            (item.error ? "<small>" + escape(item.error) + "</small>" : "") +
+            "</li>"
+          );
+        })
+        .join("") +
+      "</ul></section>"
+    : "";
 
   const list = data.repos.map(repo => {
     const isCur = repo.id === active.id;
@@ -640,7 +687,7 @@ export function liveRepos(state, data, active) {
     + '</div></section>' : '';
 
   return intro + toolbar + commandBar + '<div class="repo-layout"><section class="panel repo-picker">' + panelHead(t('repos.list'))
-    + bulkBar + '<div class="repo-list">' + list + '</div>' + pages + '</section><article class="panel repo-main" aria-labelledby="repo-title">' + picker
+    + bulkBar + bulkStatus + '<div class="repo-list">' + list + '</div>' + pages + '</section><article class="panel repo-main" aria-labelledby="repo-title">' + picker
     + '<header class="repo-head"><div class="panel-head"><div><h2 id="repo-title">' + escape(active.full_name) + '</h2>'
     + muted(active.description ?? '') + '</div>'
     + btn(icon('pulse') + escape(report ? copy('Phân tích lại', 'Re-analyze') : copy('Phân tích repo', 'Analyze repo')), 'analyze', 'primary small', job || busy ? 'disabled' : '')
@@ -840,7 +887,7 @@ export function liveCV(state, runtime, data) {
     + '</small>'
     + '</div>'
     + '<div class="cv-command-actions">'
-    + btn(icon('pulse') + ' ' + escape(copy('Chèn kỹ năng & dự án từ GitHub', 'Insert skills & projects from GitHub')), 'cv-insert-github', 'secondary small pulse-button')
+    + btn(icon('pulse') + ' ' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')), 'cv-insert-github', 'secondary small pulse-button')
     + namedButton(copy('Tạo CV bằng AI', 'Generate with AI'), 'cv-generate', 'secondary small')
     + '<div class="cv-export-group">'
     + namedButton('PDF', 'cv-export', 'secondary small', 'pdf')
