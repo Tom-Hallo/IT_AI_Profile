@@ -326,9 +326,15 @@ def _seed_roadmap_with_progress(pg, owner):
             "order": index,
             "status": "completed" if index == 1 else "todo",
             "evidence": (
-                [{"url": "https://github.com/test/repo/pull/1",
-                  "verified": True, "verification_status": "verified"}]
-                if index == 1 else []
+                [
+                    {
+                        "url": "https://github.com/test/repo/pull/1",
+                        "verified": True,
+                        "verification_status": "verified",
+                    }
+                ]
+                if index == 1
+                else []
             ),
         }
         for index, skill in enumerate(
@@ -403,7 +409,8 @@ def test_mentor_append_two_milestones_preserves_original_progress_and_order(pg):
         assert stored.data["milestones"][:6] == before["milestones"]
         assert stored.data["total"] == 8
         assert [m["skill"] for m in stored.data["milestones"]][6:] == [
-            "system_design", "microservices"
+            "system_design",
+            "microservices",
         ]
         assert [m["order"] for m in stored.data["milestones"]][6:] == [7, 8]
         tracking = get_tracking(roadmap.id, owner, fresh)
@@ -413,8 +420,14 @@ def test_mentor_append_two_milestones_preserves_original_progress_and_order(pg):
             "microservices",
         ]
         assert [m["status"] for m in tracking["milestones"]] == [
-            "completed", "pending", "pending", "pending",
-            "pending", "pending", "pending", "pending",
+            "completed",
+            "pending",
+            "pending",
+            "pending",
+            "pending",
+            "pending",
+            "pending",
+            "pending",
         ]
         assert sum(m["status"] == "completed" for m in tracking["milestones"]) == 1
         after_rows = {
@@ -445,7 +458,8 @@ def test_mentor_steps_append_distinct_rows_and_do_not_renumber_existing(pg):
     data = pg.get(Roadmap, roadmap.id).data
     assert [item["order"] for item in data["milestones"]] == list(range(1, 9))
     assert [item["objective"] for item in data["milestones"][-2:]] == [
-        "Advanced architecture", "Distributed tracing"
+        "Advanced architecture",
+        "Distributed tracing",
     ]
     assert data["milestones"][0]["status"] == "completed"
 
@@ -477,9 +491,7 @@ def test_mentor_duplicate_skill_denies_without_modifying_evidence(pg):
     assert pg.get(Roadmap, roadmap.id).data == snapshot
     assert [
         (m.id, m.status, m.version, m.title)
-        for m in pg.scalars(
-            select(Milestone).where(Milestone.roadmap_id == roadmap.id)
-        )
+        for m in pg.scalars(select(Milestone).where(Milestone.roadmap_id == roadmap.id))
     ] == versions
 
 
@@ -506,6 +518,4 @@ def test_mentor_wrong_or_removed_roadmap_never_uses_latest(pg):
     pg.commit()
     assert actions.decide_action(pg, owner, action.id, CONFIRM).status == "denied"
     pg.expire_all()
-    assert pg.get(Roadmap, newer_roadmap.id).data == {
-        "milestones": [], "total": 0
-    }
+    assert pg.get(Roadmap, newer_roadmap.id).data == {"milestones": [], "total": 0}
