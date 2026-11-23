@@ -4,6 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
+import {numericScore, verifiedSkillScore} from './score-presentation.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
@@ -87,6 +88,19 @@ function progressOverview(data) {
   return { milestones, done, next, goal };
 }
 
+function scorePill(value) {
+  return value === null
+    ? '<strong class="evidence-score-pill is-unavailable" title="' + escape(copy('Chưa đủ bằng chứng để chấm điểm', 'Insufficient evidence to score')) + '">—<span>' + escape(copy('Chưa chấm', 'Not scored')) + '</span></strong>'
+    : '<strong class="evidence-score-pill">' + number(value) + '<span>/100</span></strong>';
+}
+
+function scoreStatusLabel(status) {
+  if (status === 'Scored') return copy('Đã chấm điểm', 'Scored');
+  if (status === 'Insufficient' || status === 'INSUFFICIENT') return copy('Chưa đủ bằng chứng', 'Insufficient evidence');
+  if (status === 'Unknown' || status === 'UNKNOWN') return copy('Chưa xác định', 'Unknown');
+  return status || '—';
+}
+
 function scoreRow(title, value, action, id, active) {
   return '<button type="button" class="score-row" data-act="' + action + '"' + attr('id', id)
     + ' aria-pressed="' + active + '"><span>' + escape(title) + '</span><b>' + number(value)
@@ -121,20 +135,23 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     const selected = data.scores.find(item => key(item) === data.scoreKey) ?? data.scores[0];
     scores = data.scores.map(item => {
       const isSelected = selected === item;
-      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), item.score, 'score', key(item), isSelected);
+      return scoreRow(item.technology + ' · ' + (item.repo.full_name || item.repo.name), verifiedSkillScore(item.score, item.status), 'score', key(item), isSelected);
     }).join('');
 
     if (selected) {
+      const selectedValue = verifiedSkillScore(selected.score, selected.status);
       const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
       const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : '—';
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
-        + '<span class="tag-badge green">' + copy('Đủ bằng chứng xác minh', 'Verified evidence') + '</span></div>'
-        + '<strong class="evidence-score-pill">' + (selected.score ?? 0) + '<span>/100</span></strong></div>'
+        + '<span class="tag-badge ' + (selectedValue === null ? 'amber' : 'green') + '">' + (selectedValue === null
+          ? copy('Chưa đủ bằng chứng xác minh', 'Insufficient verified evidence')
+          : copy('Đủ bằng chứng xác minh', 'Verified evidence')) + '</span></div>'
+        + scorePill(selectedValue) + '</div>'
         + paragraph(selected.explanation)
         + details([
           [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
           [copy('Độ tin cậy', 'Confidence'), confPct + (confPct === '—' ? '' : '/100')],
-          [copy('Trạng thái xác minh', 'Verification Status'), escape(selected.status)]
+          [copy('Trạng thái xác minh', 'Verification Status'), escape(scoreStatusLabel(selected.status))]
         ])
         + '<div class="evidence-action-row" style="margin-top:14px">'
         + btn(icon('file') + ' ' + copy('Xem mã nguồn & bằng chứng tại repo ', 'Inspect code & evidence in ') + escape(selected.repo.full_name || selected.repo.name) + ' ↗',
@@ -144,15 +161,18 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
   } else if (runtime.scoreTab === 'roles') {
     const selection = data.roles.find(item => item.key === data.roleKey) ?? data.roles[0];
     const selected = selection?.score;
-    scores = data.roles.map(item => scoreRow(item.name, item.score?.role_score, 'role-score', item.key, selection === item)).join('');
+    scores = data.roles.map(item => scoreRow(item.name, numericScore(item.score?.role_score), 'role-score', item.key, selection === item)).join('');
     if (selected) {
+      const selectedValue = numericScore(selected.role_score);
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name) + '</h3>'
-        + '<span class="tag-badge green">' + copy('Đánh giá vai trò', 'Role evaluation') + '</span></div>'
-        + '<strong class="evidence-score-pill">' + (selected.role_score ?? 0) + '<span>/100</span></strong></div>'
+        + '<span class="tag-badge ' + (selectedValue === null ? 'amber' : 'green') + '">' + (selectedValue === null
+          ? copy('Chưa đủ bằng chứng', 'Insufficient evidence')
+          : copy('Đánh giá vai trò', 'Role evaluation')) + '</span></div>'
+        + scorePill(selectedValue) + '</div>'
         + paragraph(selected.rationale)
         + details([
           [copy('Độ tin cậy', 'Confidence'), number(selected.confidence)],
-          [copy('Trạng thái', 'Status'), escape(selected.status)]
+          [copy('Trạng thái', 'Status'), escape(scoreStatusLabel(selected.status))]
         ])
         + (selected.limitations ?? []).map(item => muted(item.message ?? item.label ?? item.code)).join('')
         + refs(selected.evidence_refs)
