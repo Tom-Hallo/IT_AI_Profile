@@ -19,6 +19,13 @@ class IncomparableSnapshot(ValueError):
     pass
 
 
+def normalize_rubric(r: str | None) -> str:
+    if not r:
+        return ""
+    r = str(r).strip()
+    return r[1:] if r.startswith(("v", "V")) else r
+
+
 def evaluate(
     milestones: list[dict[str, Any]],
     snapshot: Snapshot,
@@ -27,9 +34,11 @@ def evaluate(
     expected_rubric: str,
     expected_period: str,
 ) -> list[dict[str, Any]]:
-    if not snapshot.valid or (snapshot.scope, snapshot.rubric, snapshot.period) != (
+    snap_rubric = normalize_rubric(snapshot.rubric)
+    exp_rubric = normalize_rubric(expected_rubric)
+    if not snapshot.valid or (snapshot.scope, snap_rubric, snapshot.period) != (
         expected_scope,
-        expected_rubric,
+        exp_rubric,
         expected_period,
     ):
         raise IncomparableSnapshot(

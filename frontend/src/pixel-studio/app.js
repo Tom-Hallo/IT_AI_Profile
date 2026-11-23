@@ -1180,7 +1180,7 @@ document.addEventListener('submit',event => {
   const values = new FormData(form);
   if (form.classList.contains('chat-form')) sendChat(String(values.get('question') ?? ''));
   if (live) {
-    void live.forms[form.id]?.(values);
+    void live.forms[form.id]?.(values, form);
     return;
   }
   if (form.id === 'skill-form') {

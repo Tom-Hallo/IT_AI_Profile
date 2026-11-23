@@ -41,7 +41,7 @@ function scoreRow(title, value, action, id, active) {
     + (value == null ? '' : '<span class="score-track" aria-hidden="true">' + progress(value, title) + '</span>') + '</button>';
 }
 
-function dashboardScores(state, runtime, data, analyzedCount=1) {
+function dashboardScores(state, runtime, data, analyzedCount = 1) {
   const tabs = [['tech', t('profile.tech')], ['roles', t('profile.roles')], ['sources', t('profile.sources')]];
   const tabButtons = '<div class="tabs" role="group"' + labelAttr(t('profile.scoreType')) + '>'
     + tabs.map(([key, label]) => btn(escape(label), 'score-tab', '', 'id="' + key + '" ' + attr('id', key) + ' aria-pressed="' + (runtime.scoreTab === key) + '"')).join('') + '</div>';
@@ -52,9 +52,9 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
     + '<div class="empty-pixel-icon">' + icon('search') + '</div>'
     + '<h3>' + copy('Chưa có điểm kỹ năng nào được tính toán', 'No skill scores calculated yet') + '</h3>'
     + '<p class="empty-reason">' + copy(
-        'Lý do: Hồ sơ của bạn chưa có repository nào được phân tích trong phạm vi <strong>' + scopeLabel(state.scope) + '</strong> và kỳ <strong>' + rangeLabel(state.range) + '</strong>.',
-        'Reason: No analyzed GitHub repository found in scope <strong>' + scopeLabel(state.scope) + '</strong> and window <strong>' + rangeLabel(state.range) + '</strong>.'
-      ) + '</p>'
+      'Lý do: Hồ sơ của bạn chưa có repository nào được phân tích trong phạm vi <strong>' + scopeLabel(state.scope) + '</strong> và kỳ <strong>' + rangeLabel(state.range) + '</strong>.',
+      'Reason: No analyzed GitHub repository found in scope <strong>' + scopeLabel(state.scope) + '</strong> and window <strong>' + rangeLabel(state.range) + '</strong>.'
+    ) + '</p>'
     + '<div class="empty-steps-guide">'
     + '<div class="guide-step"><span class="step-num">1</span><span>' + copy('Chuyển sang trang Phân tích GitHub', 'Go to GitHub Analysis') + '</span></div>'
     + '<div class="guide-step"><span class="step-num">2</span><span>' + copy('Chọn repository của bạn và bấm Phân tích', 'Select your repository and click Analyze') + '</span></div>'
@@ -79,13 +79,13 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
         + '<strong class="evidence-score-pill">' + (selected.score ?? 0) + '<span>/100</span></strong></div>'
         + paragraph(selected.explanation)
         + details([
-            [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
-            [copy('Độ tin cậy', 'Confidence'), confPct + (confPct === '—' ? '' : '/100')],
-            [copy('Trạng thái xác minh', 'Verification Status'), escape(selected.status)]
-          ])
+          [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
+          [copy('Độ tin cậy', 'Confidence'), confPct + (confPct === '—' ? '' : '/100')],
+          [copy('Trạng thái xác minh', 'Verification Status'), escape(selected.status)]
+        ])
         + '<div class="evidence-action-row" style="margin-top:14px">'
         + btn(icon('file') + ' ' + copy('Xem mã nguồn & bằng chứng tại repo ', 'Inspect code & evidence in ') + escape(selected.repo.full_name || selected.repo.name) + ' ↗',
-              'evidence', 'primary small', attr('id', selected.repo.id))
+          'evidence', 'primary small', attr('id', selected.repo.id))
         + '</div>';
     }
   } else if (runtime.scoreTab === 'roles') {
@@ -98,9 +98,9 @@ function dashboardScores(state, runtime, data, analyzedCount=1) {
         + '<strong class="evidence-score-pill">' + (selected.role_score ?? 0) + '<span>/100</span></strong></div>'
         + paragraph(selected.rationale)
         + details([
-            [copy('Độ tin cậy', 'Confidence'), number(selected.confidence)],
-            [copy('Trạng thái', 'Status'), escape(selected.status)]
-          ])
+          [copy('Độ tin cậy', 'Confidence'), number(selected.confidence)],
+          [copy('Trạng thái', 'Status'), escape(selected.status)]
+        ])
         + (selected.limitations ?? []).map(item => muted(item.message ?? item.label ?? item.code)).join('')
         + refs(selected.evidence_refs)
         + '<div class="evidence-action-row" style="margin-top:12px">'
@@ -182,8 +182,10 @@ function getLiveRadar(state, data) {
   // Never invent a proficiency score from repo count or detected technologies.
   // Unknown criteria must remain "insufficient", not be displayed as 0-100.
   if (standardKeys.some(key => baseScores[key] === null)) {
-    return {metrics:[],comparison:{},metricDetails:'',count:analyzedCount,
-      analyzedRepos,activeRepo,activeRepoAnalyzed};
+    return {
+      metrics: [], comparison: {}, metricDetails: '', count: analyzedCount,
+      analyzedRepos, activeRepo, activeRepoAnalyzed
+    };
   }
 
   const metrics = standardKeys.map(key => ({
@@ -197,7 +199,7 @@ function getLiveRadar(state, data) {
 
   const metricDetails = standardKeys.map(key => {
     const trendCopy = '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>';
-    
+
     const evidenceRepo = activeRepoAnalyzed ? activeRepo : (analyzedRepos[0] ?? activeRepo);
     let evidence = '';
     if (evidenceRepo) {
@@ -249,23 +251,23 @@ export function liveDashboard(state, runtime, data) {
 
   const updatingIndicator = isUpdating
     ? '<div class="dashboard-updating-banner" role="status"><span class="spinner" aria-hidden="true"></span> '
-      + copy('Đang cập nhật và tính toán lại điểm kỹ năng tổng hợp...', 'Updating and recalculating aggregated skill scores...')
-      + '</div>'
+    + copy('Đang cập nhật và tính toán lại điểm kỹ năng tổng hợp...', 'Updating and recalculating aggregated skill scores...')
+    + '</div>'
     : '';
 
   const repoStatusHtml = activeRepo
     ? (isAnalyzed
-        ? '<div class="repo-selection-badge status-analyzed"><span class="badge-dot"></span><span>'
-          + copy('Repo đang chọn: ', 'Selected repo: ') + '<strong>' + escape(activeRepo.full_name || activeRepo.name) + '</strong>'
-          + ' · <span class="tag-badge green">' + copy('Đã có báo cáo phân tích', 'Analysis completed') + '</span></span>'
-          + btn(icon('arrow') + copy('Xem chi tiết repo', 'View repo detail'), 'evidence', 'secondary small', attr('id', activeRepo.id))
-          + '</div>'
-        : '<div class="repo-selection-badge status-pending"><span class="badge-dot yellow"></span><span>'
-          + copy('Repo đang chọn: ', 'Selected repo: ') + '<strong>' + escape(activeRepo.full_name || activeRepo.name) + '</strong>'
-          + ' · <span class="tag-badge yellow">' + copy('Repo này chưa được phân tích', 'This repo is not analyzed yet') + '</span></span>'
-          + btn(icon('pulse') + copy('Chạy phân tích ngay', 'Analyze this repo now'), 'evidence', 'primary small', attr('id', activeRepo.id))
-          + '</div>'
-      )
+      ? '<div class="repo-selection-badge status-analyzed"><span class="badge-dot"></span><span>'
+      + copy('Repo đang chọn: ', 'Selected repo: ') + '<strong>' + escape(activeRepo.full_name || activeRepo.name) + '</strong>'
+      + ' · <span class="tag-badge green">' + copy('Đã có báo cáo phân tích', 'Analysis completed') + '</span></span>'
+      + btn(icon('arrow') + copy('Xem chi tiết repo', 'View repo detail'), 'evidence', 'secondary small', attr('id', activeRepo.id))
+      + '</div>'
+      : '<div class="repo-selection-badge status-pending"><span class="badge-dot yellow"></span><span>'
+      + copy('Repo đang chọn: ', 'Selected repo: ') + '<strong>' + escape(activeRepo.full_name || activeRepo.name) + '</strong>'
+      + ' · <span class="tag-badge yellow">' + copy('Repo này chưa được phân tích', 'This repo is not analyzed yet') + '</span></span>'
+      + btn(icon('pulse') + copy('Chạy phân tích ngay', 'Analyze this repo now'), 'evidence', 'primary small', attr('id', activeRepo.id))
+      + '</div>'
+    )
     : '';
 
   const scopeBanner = '<section class="panel dashboard-scope-banner" aria-label="' + copy('Ngữ cảnh điểm kỹ năng tổng hợp', 'Aggregated skill context') + '">'
@@ -284,9 +286,9 @@ export function liveDashboard(state, runtime, data) {
     + '<div class="dashboard-scope-notice">'
     + '<span class="notice-icon">' + icon('info') + '</span>'
     + '<p>' + copy(
-        'Lưu ý người dùng: Điểm Radar và Điểm vai trò trên màn hình này là <strong>Điểm kỹ năng tổng hợp toàn hồ sơ</strong> trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Thao tác chuyển đổi giữa Repo A và Repo B là để xem hoặc chạy phân tích mã nguồn chi tiết ở trang <em>Phân tích GitHub</em>; điểm tổng hợp tại Dashboard chỉ thay đổi khi bạn đổi phạm vi (Công khai / Riêng tư) hoặc hoàn tất phân tích thêm repository mới.',
-        'User Note: Radar and Role scores on this dashboard are <strong>Aggregated Profile Skill Scores</strong> for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Selecting Repo A or Repo B focuses the deep code analysis view on the <em>GitHub Analysis</em> page; aggregated scores here only recalculate when changing scope/window or completing analysis for new repositories.'
-      ) + '</p>'
+      'Lưu ý người dùng: Điểm Radar và Điểm vai trò trên màn hình này là <strong>Điểm kỹ năng tổng hợp toàn hồ sơ</strong> trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Thao tác chuyển đổi giữa Repo A và Repo B là để xem hoặc chạy phân tích mã nguồn chi tiết ở trang <em>Phân tích GitHub</em>; điểm tổng hợp tại Dashboard chỉ thay đổi khi bạn đổi phạm vi (Công khai / Riêng tư) hoặc hoàn tất phân tích thêm repository mới.',
+      'User Note: Radar and Role scores on this dashboard are <strong>Aggregated Profile Skill Scores</strong> for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Selecting Repo A or Repo B focuses the deep code analysis view on the <em>GitHub Analysis</em> page; aggregated scores here only recalculate when changing scope/window or completing analysis for new repositories.'
+    ) + '</p>'
     + '</div>'
     + '</section>';
 
@@ -298,13 +300,13 @@ export function liveDashboard(state, runtime, data) {
     + scopeBanner
     + '<div class="dashboard-summary"><section class="panel dashboard-focus"><div class="focus-heading"><span class="feature-icon">' + icon('branch')
     + '</span><div><p class="eyebrow">' + escape(t('profile.next')) + '</p><h2>'
-    + escape(next?.title ?? (milestones.length ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2></div></div>'
-    + (goal ? paragraph(goal.objective) : '') + link(escape(t('action.openRoadmap')) + icon('arrow'), 'roadmap', 'secondary small') + '</section>'
+    + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (milestones.length ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2></div></div>'
+    + (goal ? paragraph(displayObjective(goal.objective, next?.external_key)) : '') + link(escape(t('action.openRoadmap')) + icon('arrow'), 'roadmap', 'secondary small') + '</section>'
     + '<section class="panel dashboard-progress"><p class="eyebrow">' + escape(t('road.progress')) + '</p>'
     + '<div class="focus-progress"><strong>' + done.length + '<span> / ' + milestones.length + '</span></strong><small>'
     + escape(t('profile.milestonesDone')) + '</small>' + progress(milestones.length ? done.length / milestones.length * 100 : 0, t('road.progress')) + '</div>'
     + '<div class="dash-award"><span class="award-icon">' + icon('award') + '</span><div><p class="eyebrow">'
-    + escape(t('profile.latestAchievement')) + '</p>' + paragraph(done.at(-1)?.title ?? t('profile.achievementsEmpty')) + '</div></div></section></div>'
+    + escape(t('profile.latestAchievement')) + '</p>' + paragraph(done.at(-1) ? displayMilestoneTitle(done.at(-1).title, done.at(-1).external_key) : t('profile.achievementsEmpty')) + '</div></div></section></div>'
     + radarView(radar.metrics, radar.count, scopeLabel(state.scope), rangeLabel(state.range), radar.comparison, radar.metricDetails)
     + dashboardScores(state, runtime, data, radar.count);
 }
@@ -447,55 +449,55 @@ export function liveRepos(state, data, active) {
     + '<label class="repo-bulk-select-all"><input type="checkbox" data-act="toggle-all-page-repos" ' + (isAllPageSelected ? 'checked' : '') + '> '
     + copy('Chọn tất cả trên trang', 'Select all on page') + '</label>'
     + (selectedRepoCount > 0
-        ? btn(icon('pulse') + ' ' + copy(`Phân tích ${selectedRepoCount} repo đã chọn`, `Analyze ${selectedRepoCount} selected repos`), 'analyze-selected', 'primary small pulse-button', busy || data.analysis ? 'disabled' : '')
-        : '')
+      ? btn(icon('pulse') + ' ' + copy(`Phân tích ${selectedRepoCount} repo đã chọn`, `Analyze ${selectedRepoCount} selected repos`), 'analyze-selected', 'primary small pulse-button', busy || data.analysis ? 'disabled' : '')
+      : '')
     + '</div>';
 
   const batch = data.bulkAnalysis;
 
   const bulkStatus = batch
     ? '<section class="notice" role="status" aria-live="polite">' +
-      "<strong>" +
-      escape(
-        copy(
-          `Phân tích hàng loạt: ${batch.done}/${batch.total} đã xử lý`,
-          `Bulk analysis: ${batch.done}/${batch.total} processed`,
-        ),
-      ) +
-      "</strong>" +
-      '<progress max="' +
-      batch.total +
-      '" value="' +
-      batch.done +
-      '" aria-label="Bulk analysis progress"></progress>' +
-      '<ul class="audit-list">' +
-      batch.results
-        .map((item) => {
-          const labels = {
-            preparing: copy("Đang chuẩn bị", "Preparing"),
-            queued: copy("Đang chờ", "Queued"),
-            running: copy("Đang phân tích", "Running"),
-            cancel_requested: copy("Đang yêu cầu hủy", "Cancelling"),
-            succeeded: copy("Thành công", "Succeeded"),
-            failed: copy("Thất bại", "Failed"),
-            cancelled: copy("Đã hủy", "Cancelled"),
-            request_error: copy("Lỗi gửi yêu cầu", "Request error"),
-            unknown: copy("Cần kiểm tra trạng thái", "Check job status"),
-            not_started: copy('Chưa bắt đầu', 'Not started'),
-          };
+    "<strong>" +
+    escape(
+      copy(
+        `Phân tích hàng loạt: ${batch.done}/${batch.total} đã xử lý`,
+        `Bulk analysis: ${batch.done}/${batch.total} processed`,
+      ),
+    ) +
+    "</strong>" +
+    '<progress max="' +
+    batch.total +
+    '" value="' +
+    batch.done +
+    '" aria-label="Bulk analysis progress"></progress>' +
+    '<ul class="audit-list">' +
+    batch.results
+      .map((item) => {
+        const labels = {
+          preparing: copy("Đang chuẩn bị", "Preparing"),
+          queued: copy("Đang chờ", "Queued"),
+          running: copy("Đang phân tích", "Running"),
+          cancel_requested: copy("Đang yêu cầu hủy", "Cancelling"),
+          succeeded: copy("Thành công", "Succeeded"),
+          failed: copy("Thất bại", "Failed"),
+          cancelled: copy("Đã hủy", "Cancelled"),
+          request_error: copy("Lỗi gửi yêu cầu", "Request error"),
+          unknown: copy("Cần kiểm tra trạng thái", "Check job status"),
+          not_started: copy('Chưa bắt đầu', 'Not started'),
+        };
 
-          return (
-            "<li><strong>" +
-            escape(item.name || `Repository #${item.repo_id}`) +
-            "</strong> — " +
-            escape(labels[item.status] || item.status) +
-            (item.progress != null ? " (" + escape(item.progress) + "%)" : "") +
-            (item.error ? "<small>" + escape(item.error) + "</small>" : "") +
-            "</li>"
-          );
-        })
-        .join("") +
-      "</ul></section>"
+        return (
+          "<li><strong>" +
+          escape(item.name || `Repository #${item.repo_id}`) +
+          "</strong> — " +
+          escape(labels[item.status] || item.status) +
+          (item.progress != null ? " (" + escape(item.progress) + "%)" : "") +
+          (item.error ? "<small>" + escape(item.error) + "</small>" : "") +
+          "</li>"
+        );
+      })
+      .join("") +
+    "</ul></section>"
     : "";
 
   const list = data.repos.map(repo => {
@@ -557,9 +559,9 @@ export function liveRepos(state, data, active) {
     + (currentPage < totalPages ? namedButton(copy('Cuối »', 'Last »'), 'repo-page', 'quiet small', totalPages) : '')
     + '</div>'
     + (totalPages > 1 ? '<div class="repo-page-jump">'
-        + '<label><small>' + copy('Chuyển trang:', 'Jump to:') + '</small> '
-        + '<select class="repo-page-select" data-act="repo-page-select">' + pageOptions + '</select></label>'
-        + '</div>' : '')
+      + '<label><small>' + copy('Chuyển trang:', 'Jump to:') + '</small> '
+      + '<select class="repo-page-select" data-act="repo-page-select">' + pageOptions + '</select></label>'
+      + '</div>' : '')
     + '</div>';
 
   // Sticky/Prominent Repo Command Bar (Tôi đang xem repo và khoảng thời gian nào? Bấm nút nào bắt đầu phân tích?)
@@ -579,11 +581,11 @@ export function liveRepos(state, data, active) {
     + '</div>'
     + '<div class="command-cta-area">'
     + (job
-        ? '<div class="command-job-status"><span class="spinner" aria-hidden="true"></span> <span>' + escape(stepText) + ' (' + (job.progress ?? 0) + '%)</span>'
-          + namedButton(copy('Hủy', 'Cancel'), 'cancel-analysis', 'quiet small') + '</div>'
-        : btn(icon('pulse') + ' ' + escape(hasRep ? copy('Phân tích lại commit mới', 'Re-analyze latest commit') : copy('BẮT ĐẦU PHÂN TÍCH REPO NÀY', 'START ANALYZING THIS REPO')),
-              'analyze', hasRep ? 'secondary' : 'primary pulse-button', busy ? 'disabled' : '')
-      )
+      ? '<div class="command-job-status"><span class="spinner" aria-hidden="true"></span> <span>' + escape(stepText) + ' (' + (job.progress ?? 0) + '%)</span>'
+      + namedButton(copy('Hủy', 'Cancel'), 'cancel-analysis', 'quiet small') + '</div>'
+      : btn(icon('pulse') + ' ' + escape(hasRep ? copy('Phân tích lại commit mới', 'Re-analyze latest commit') : copy('BẮT ĐẦU PHÂN TÍCH REPO NÀY', 'START ANALYZING THIS REPO')),
+        'analyze', hasRep ? 'secondary' : 'primary pulse-button', busy ? 'disabled' : '')
+    )
     + '</div>'
     + '</div>'
     + '</section>';
@@ -595,11 +597,11 @@ export function liveRepos(state, data, active) {
     + '<span class="context-pill"><small>' + copy('Phạm vi:', 'Scope:') + '</small> ' + badge(scopeLabel(active.private ? 'private' : 'public'), active.private ? 'amber' : 'green') + '</span>'
     + '<span class="context-pill"><small>' + copy('Kỳ phân tích:', 'Time Window:') + '</small> <strong style="color:var(--accent)">' + escape(rangeLabel(state.range)) + '</strong></span>'
     + (report ? '<span class="context-pill"><small>Commit:</small> <code>' + escape(report.commit_sha?.slice(0, 7) || 'latest') + '</code> · <small>' + copy('Ngày:', 'Date:') + '</small> ' + escape(formattedDate(report.analyzed_at)) + '</span>'
-              : '<span class="context-pill"><small>' + copy('Trạng thái:', 'Status:') + '</small> <span class="badge amber mini">' + copy('Chưa có báo cáo', 'No report yet') + '</span></span>')
+      : '<span class="context-pill"><small>' + copy('Trạng thái:', 'Status:') + '</small> <span class="badge amber mini">' + copy('Chưa có báo cáo', 'No report yet') + '</span></span>')
     + '</div>'
     + '<div class="context-controls">'
     + btn(icon('pulse') + escape(report ? copy('Phân tích lại commit mới', 'Re-analyze latest commit') : copy('Chạy phân tích ngay', 'Run analysis now')),
-          'analyze', report ? 'secondary small' : 'primary small', job || busy ? 'disabled' : '')
+      'analyze', report ? 'secondary small' : 'primary small', job || busy ? 'disabled' : '')
     + '</div></div>';
 
   // Core Highlights (Phát hiện đáng chú ý nhất)
@@ -660,27 +662,100 @@ export function liveRepos(state, data, active) {
     + '</div></article></div>';
 }
 
+const SKILL_NAMES_VI = {
+  docker: 'Docker & Container hóa',
+  fastapi: 'FastAPI Web Framework',
+  postgresql: 'Cơ sở dữ liệu PostgreSQL',
+  testing: 'Kiểm thử phần mềm (Testing)',
+  python: 'Lập trình Python chuyên sâu',
+  react: 'Phát triển giao diện React',
+  typescript: 'Ngôn ngữ TypeScript',
+  javascript: 'Lập trình JavaScript',
+  'ci/cd': 'Quy trình CI/CD tự động',
+  linux: 'Quản trị hệ thống Linux',
+  rabbitmq: 'Hàng đợi tin nhắn RabbitMQ',
+  redis: 'Bộ nhớ đệm Redis (Caching)',
+  redis_cache: 'Bộ nhớ đệm Redis Cache',
+  system_design: 'Thiết kế hệ thống phân tán (System Design)',
+  'system design': 'Thiết kế hệ thống phân tán (System Design)'
+};
+
+function displayMilestoneTitle(rawTitle, skillKey) {
+  if (getLanguage() !== 'vi') return rawTitle;
+  const key = String(skillKey || rawTitle || '').trim().toLowerCase();
+  return SKILL_NAMES_VI[key] || rawTitle;
+}
+
+function displayObjective(objective, skillKey) {
+  if (getLanguage() !== 'vi') return objective;
+  if (!objective) return '';
+  const key = String(skillKey || '').trim().toLowerCase();
+  const skillName = SKILL_NAMES_VI[key] || key || 'kỹ năng này';
+  if (/^Create and document a .* project with reviewable commits and tests$/i.test(objective.trim())) {
+    return `Xây dựng và hoàn thiện dự án thực tế về ${skillName} với mã nguồn, commit rõ ràng và bộ kiểm thử hoàn chỉnh.`;
+  }
+  return objective;
+}
+
+function displayMetric(metric, skillKey) {
+  if (getLanguage() !== 'vi') return metric;
+  if (!metric) return '';
+  const key = String(skillKey || '').trim().toLowerCase();
+  const skillName = SKILL_NAMES_VI[key] || key || 'kỹ năng này';
+  const match = metric.match(/^Reach verified .* assessment >= (\d+)\/100 with at least one accessible evidence reference$/i);
+  if (match) {
+    return `Đạt điểm đánh giá năng lực xác minh ${skillName} >= ${match[1]}/100 kèm ít nhất 1 minh chứng đóng góp mã nguồn hợp lệ trên GitHub.`;
+  }
+  return metric;
+}
+
 const statusLabel = status => ({
   completed: copy('Đã hoàn thành', 'Completed'), in_progress: copy('Đang thực hiện', 'In progress'), pending: copy('Chưa bắt đầu', 'Pending')
 })[status] ?? status;
 
+export function displayRoadmapTitle(title, goal) {
+  if (getLanguage() !== 'vi') return title || (goal ? `${goal.charAt(0).toUpperCase() + goal.slice(1)} Career Roadmap` : '');
+  const roleLabels = {
+    backend: 'Backend',
+    frontend: 'Frontend',
+    fullstack: 'Full-stack',
+    devops: 'DevOps'
+  };
+  if (title && /Career Roadmap/i.test(title)) {
+    const roleMatch = title.match(/(\w+)\s+Career\s+Roadmap/i);
+    const roleKey = roleMatch ? roleMatch[1].toLowerCase() : (goal || '').toLowerCase();
+    const roleName = roleLabels[roleKey] || (roleMatch ? roleMatch[1] : (goal || ''));
+    return `Lộ trình sự nghiệp ${roleName}`;
+  }
+  if (goal && roleLabels[goal.toLowerCase()]) {
+    return `Lộ trình sự nghiệp ${roleLabels[goal.toLowerCase()]}`;
+  }
+  return title || (goal || '');
+}
+
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
   const selected = milestones.find(m => m.id === data.milestone) ?? milestones[0];
-  const item = data.road?.milestones.find(m => m.skill === selected?.external_key);
+  const item = data.road?.milestones?.find(m =>
+    String(m.skill || '').toLowerCase() === String(selected?.external_key || '').toLowerCase()
+  ) ?? (selected ? {
+    objective: selected.title,
+    metric: copy('Hoàn thành mục tiêu của cột mốc này và nộp minh chứng.', 'Complete the objective of this milestone and submit evidence.'),
+    evidence: selected.evidence || []
+  } : null);
   const picker = field(t('road.goal'), '<select id="road-goal">' + [
     ['backend', 'Backend'], ['frontend', 'Frontend'], ['fullstack', 'Full-stack'], ['devops', 'DevOps']
   ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
   const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
     ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select">'
-        + data.roadmaps.map(r => option(r.id, `${r.title || r.goal} (#${r.id})`, data.road?.id)).join('')
-        + '</select>')
+      + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
+      + '</select>')
     : '';
 
   const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
     + attr('state', milestone.status === 'completed' ? 'done' : 'ready') + ' aria-pressed="' + (milestone === selected) + '">'
     + '<span class="map-icon">' + icon(milestone.status === 'completed' ? 'check' : 'branch') + '</span><strong>'
-    + escape(milestone.title) + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></button>').join('');
+    + escape(displayMilestoneTitle(milestone.title, milestone.external_key)) + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></button>').join('');
 
   const sourceLabel = src => ({
     manual: copy('Thủ công', 'Manual'),
@@ -715,31 +790,57 @@ export function liveRoadmap(data) {
         + '</div>' + (note ? '<p class="evidence-subnote">' + escape(note) + '</p>' : '') + '</li>';
     }).join('') + '</ul></div>' : '';
 
+  const isCompleted = selected?.status === 'completed';
   const evidenceFormHtml = selected ? '<form class="stack road-evidence-form" id="milestone-evidence-form" data-milestone="' + selected.id + '">'
-    + '<h4>' + icon('pulse') + ' ' + copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence') + '</h4>'
-    + '<p class="subtle">' + copy('Dán liên kết Commit, Pull Request hoặc Repository trên GitHub để hệ thống đối chiếu xác minh.', 'Paste Commit, PR, or repo URL from GitHub for automated verification.') + '</p>'
+    + '<input type="hidden" name="milestone_id" value="' + selected.id + '">'
+    + '<h4>' + icon('pulse') + ' ' + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Submit additional evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence')) + '</h4>'
+    + '<p class="subtle">' + (isCompleted
+      ? copy('Cột mốc này đã hoàn thành. Bạn có thể nộp thêm liên kết Commit/PR để làm phong phú bằng chứng cho portfolio và CV.', 'This milestone is completed. You can submit more Commit/PR links to enrich your evidence.')
+      : copy('Dán liên kết Commit, Pull Request hoặc Repository trên GitHub để hệ thống đối chiếu xác minh và tự động hoàn thành mốc.', 'Paste Commit, PR, or repo URL from GitHub for automated verification and completion.')) + '</p>'
     + '<div class="field-row">'
     + '<input name="evidence_url" type="url" placeholder="https://github.com/owner/repo/pull/123" required>'
     + '<input name="evidence_note" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
     + '<button type="submit" class="button primary small">' + copy('Nộp minh chứng', 'Submit') + '</button>'
     + '</div></form>' : '';
 
+  let actionButtonsHtml = '';
+  if (selected) {
+    if (selected.status === 'completed') {
+      actionButtonsHtml = btn(icon('arrow') + ' ' + copy('Mở lại mốc này (Chuyển về Đang thực hiện)', 'Reopen milestone (In progress)'),
+        'road-status', 'secondary small', attr('id', selected.id) + attr('status', 'in_progress'));
+    } else if (selected.status === 'in_progress') {
+      actionButtonsHtml = btn(icon('check') + ' ' + copy('Xác nhận đã hoàn thành', 'Mark as completed'),
+        'road-status', 'primary small', attr('id', selected.id) + attr('status', 'completed'))
+        + btn(copy('Quay lại: Chưa bắt đầu', 'Revert to Pending'),
+          'road-status', 'quiet small', attr('id', selected.id) + attr('status', 'pending'));
+    } else {
+      actionButtonsHtml = btn(icon('play') + ' ' + copy('Bắt đầu thực hiện mốc này', 'Start this milestone'),
+        'road-status', 'primary small', attr('id', selected.id) + attr('status', 'in_progress'))
+        + btn(icon('check') + ' ' + copy('Đánh dấu đã hoàn thành', 'Mark as completed'),
+          'road-status', 'secondary small', attr('id', selected.id) + attr('status', 'completed'));
+    }
+  }
+
+  const detailTitle = selected ? displayMilestoneTitle(selected.title, selected.external_key) : '';
+  const detailObjective = item ? displayObjective(item.objective, selected?.external_key) : '';
+  const detailMetric = item ? displayMetric(item.metric, selected?.external_key) : '';
+
   const detail = selected && item ? '<article class="panel road-detail" id="milestone-detail"><div class="detail-top">'
     + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : 'blue') + '</div>'
-    + '<h2>' + escape(selected.title) + '</h2>' + paragraph(item.objective)
+    + '<h2>' + escape(detailTitle) + '</h2>' + paragraph(detailObjective)
     + '<div class="milestone-proof"><span class="feature-icon">' + icon('award') + '</span><div><h3>'
-    + escape(t('road.proof')) + '</h3>' + paragraph(item.metric) + refs(item.evidence) + '</div></div>'
+    + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + refs(item.evidence) + '</div></div>'
     + evidenceListHtml
     + evidenceFormHtml
-    + '<div class="action-row" style="margin-top:14px">' + ['pending', 'in_progress', 'completed'].filter(status => status !== selected.status)
-      .map(status => btn(escape(statusLabel(status)), 'road-status', 'secondary small', attr('id', selected.id) + attr('status', status))).join('')
-    + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', selected.title)) + '</div>'
+    + '<div class="action-row" style="margin-top:14px">'
+    + actionButtonsHtml
+    + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', detailTitle)) + '</div>'
     + pending.map(suggestion => '<div class="notice">' + paragraph(suggestion.explanation)
       + ['apply', 'reject'].map(decision => btn(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')),
         'road-suggestion', 'secondary small', attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
   return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + feedback(data, 'road')
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
-    + escape(next?.title ?? (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
+    + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
     + (goal ? paragraph(goal.objective) : '') + '</div>'
     + btn(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary', data.busy.has('road') ? 'disabled' : '') + '</section>'
     + '<section class="panel road-progress"><div><p class="eyebrow">' + escape(t('road.progress')) + '</p><strong>' + done.length + '<span> / ' + milestones.length
@@ -753,7 +854,9 @@ export function liveRoadmap(data) {
     + '</section>' + detail + (selected ? '<div class="road-records stack">'
       + (done.length ? '<section class="panel achievements">' + panelHead(t('road.trophies')) + '<div class="award-list">'
         + done.map(m => '<button class="award-card" type="button" data-act="milestone"' + attr('id', m.id) + '><span class="award-icon">'
-          + icon('award') + '</span><span><strong>' + escape(m.title) + '</strong></span>' + icon('arrow') + '</button>').join('')
+          + icon('award') + '</span><span><strong>' + escape(displayMilestoneTitle(m.title, m.external_key)) + '</strong><small>'
+          + escape(m.verification_status === 'verified' ? copy('Đã xác minh Git', 'Git Verified') : copy('Đã hoàn thành', 'Completed'))
+          + '</small></span>' + icon('arrow') + '</button>').join('')
         + '</div></section>' : '') + history + '</div>' : '') + '</div>';
 }
 
@@ -840,7 +943,7 @@ export function liveCV(state, runtime, data) {
     + saveStatusBadge
     + '<small class="cv-command-doc-info">'
     + (doc ? copy('Tài liệu CV Studio: ', 'CV Studio Doc: ') + '<strong>' + escape(doc.title) + ' (#' + doc.number + ')</strong>'
-           : (cv ? copy('CV tải lên: #', 'Uploaded CV: #') + cv.id : copy('Bản nháp tự do (Chưa liên kết tài liệu máy chủ)', 'Freeform draft (Not linked to server doc)')))
+      : (cv ? copy('CV tải lên: #', 'Uploaded CV: #') + cv.id : copy('Bản nháp tự do (Chưa liên kết tài liệu máy chủ)', 'Freeform draft (Not linked to server doc)')))
     + '</small>'
     + '</div>'
     + '<div class="cv-command-actions">'

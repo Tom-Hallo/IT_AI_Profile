@@ -481,6 +481,9 @@ def _collect_context(
                     if isinstance(m, dict) and (
                         m.get("id") == target_milestone_id
                         or m.get("external_key") == ms.external_key
+                        or m.get("skill") == ms.external_key
+                        or str(m.get("skill", "")).lower()
+                        == str(ms.external_key or "").lower()
                     ):
                         extra = m
                         break
@@ -500,7 +503,7 @@ def _collect_context(
                         "evidence": extra.get("evidence", []),
                         "roadmap_title": rm.title if rm else "",
                     },
-                    record_id=ms.id,
+                    record_id=ms.roadmap_id,
                 )
             )
         else:
@@ -510,7 +513,11 @@ def _collect_context(
             ).all()
             for rm in user_rms:
                 for m in (rm.data or {}).get("milestones", []):
-                    if isinstance(m, dict) and m.get("id") == target_milestone_id:
+                    if isinstance(m, dict) and (
+                        m.get("id") == target_milestone_id
+                        or str(m.get("skill", "")).lower()
+                        == str(target_milestone_id).lower()
+                    ):
                         chunks.append(
                             Context(
                                 "roadmap",
@@ -528,7 +535,7 @@ def _collect_context(
                                     "evidence": m.get("evidence", []),
                                     "roadmap_title": rm.title,
                                 },
-                                record_id=target_milestone_id,
+                                record_id=rm.id,
                             )
                         )
                         found = True

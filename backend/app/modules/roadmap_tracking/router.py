@@ -17,10 +17,11 @@ from app.modules.analysis.models import VerificationEvidence
 from app.modules.consent.router import csrf
 from app.modules.github.models import Repository, user_repository
 from app.modules.roadmaps.models import Roadmap
+from app.modules.scoring.snapshots import VERSION
 from app.modules.users.models import User
 
 from .adapters import current_snapshot
-from .engine import IncomparableSnapshot, evaluate
+from .engine import IncomparableSnapshot, evaluate, normalize_rubric
 from .models import Milestone, MilestoneHistory, RoadmapSuggestion
 
 router = APIRouter(prefix="/roadmap-tracking", tags=["Roadmap Tracking"])
@@ -137,7 +138,7 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
             ).all()
 
     data_milestones = {
-        item.get("skill"): item
+        str(item.get("skill", "")).lower(): item
         for item in roadmap.data.get("milestones", [])
         if "skill" in item
     }
@@ -148,7 +149,9 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
     ).all()
     return {
         "milestones": [
-            serialize_milestone(m, data_milestones.get(m.external_key))
+            serialize_milestone(
+                m, data_milestones.get(str(m.external_key or "").lower())
+            )
             for m in milestones
         ],
         "suggestions": [serialize_suggestion(s) for s in suggestions],
@@ -187,7 +190,7 @@ def get_history(roadmap_id: int, milestone_id: int, user: CurrentUser, db: DB):
 def update_milestone(
     roadmap_id: int, milestone_id: int, payload: StatusUpdate, user: CurrentUser, db: DB
 ):
-    owned_roadmap(db, user, roadmap_id)
+    roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
     m = db.scalar(
         select(Milestone)
         .where(Milestone.id == milestone_id, Milestone.roadmap_id == roadmap_id)
@@ -197,8 +200,16 @@ def update_milestone(
         raise HTTPException(404, "Milestone not found")
     if m.version != payload.expected_version:
         raise HTTPException(409, "Milestone version conflict")
+
+    data_milestones = {
+        str(item.get("skill", "")).lower(): item
+        for item in (roadmap.data or {}).get("milestones", [])
+        if "skill" in item
+    }
+    cur_data_m = data_milestones.get(str(m.external_key or "").lower())
+
     if m.status == payload.status:
-        return serialize_milestone(m)
+        return serialize_milestone(m, cur_data_m)
     old = m.status
     m.status = payload.status
     m.version += 1
@@ -212,8 +223,22 @@ def update_milestone(
             source="manual",
         )
     )
+    if roadmap.data and isinstance(roadmap.data, dict):
+        data = deepcopy(roadmap.data)
+        for item in data.get("milestones", []):
+            if str(item.get("skill", "")).lower() == str(m.external_key or "").lower():
+                item["status"] = m.status
+                break
+        roadmap.data = data
+        flag_modified(roadmap, "data")
+        cur_data_m = {
+            str(item.get("skill", "")).lower(): item
+            for item in data.get("milestones", [])
+            if "skill" in item
+        }.get(str(m.external_key or "").lower())
+
     db.commit()
-    return serialize_milestone(m)
+    return serialize_milestone(m, cur_data_m)
 
 
 @router.post(
@@ -311,7 +336,7 @@ def submit_milestone_evidence(
     data = deepcopy(roadmap.data)
     milestones = data.get("milestones", [])
     for item in milestones:
-        if item.get("skill") == m.external_key:
+        if str(item.get("skill", "")).lower() == str(m.external_key or "").lower():
             item.setdefault("evidence", [])
             item["evidence"].append(
                 {
@@ -320,6 +345,9 @@ def submit_milestone_evidence(
                     "source": "submission",
                     "verified": is_verified,
                     "verification_status": verification_status,
+                    "repository_id": repo.id
+                    if is_verified and repo is not None
+                    else payload.repository_id,
                     "submitted_at": datetime.now(UTC).isoformat(),
                 }
             )
@@ -366,14 +394,16 @@ def reevaluate(
     roadmap_id: int, user: CurrentUser, db: DB, payload: ReevaluateRequest | None = None
 ):
     roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
-    metadata = roadmap.data.get("analysis_context", {})
-    expected = (metadata.get("scope"), metadata.get("rubric"), metadata.get("period"))
-    if not all(expected):
-        raise HTTPException(422, "Roadmap analysis context missing")
-    if payload and expected != (
-        payload.expected_scope,
-        payload.expected_rubric,
-        payload.expected_period,
+    metadata = roadmap.data.get("analysis_context", {}) if roadmap.data else {}
+    expected_scope = metadata.get("scope") or "public"
+    expected_rubric = metadata.get("rubric") or VERSION
+    expected_period = metadata.get("period") or "all_time"
+    expected = (expected_scope, expected_rubric, expected_period)
+    if payload and (
+        expected_scope != payload.expected_scope
+        or normalize_rubric(expected_rubric)
+        != normalize_rubric(payload.expected_rubric)
+        or expected_period != payload.expected_period
     ):
         raise HTTPException(422, "Roadmap analysis context mismatched")
 
@@ -439,7 +469,7 @@ def resolve(
     user: User,
     db: Session,
 ):
-    owned_roadmap(db, user, roadmap_id)
+    roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
     s = db.scalar(
         select(RoadmapSuggestion)
         .where(
@@ -476,6 +506,17 @@ def resolve(
                     source="suggestion",
                 )
             )
+            if roadmap.data and isinstance(roadmap.data, dict):
+                data = deepcopy(roadmap.data)
+                for item in data.get("milestones", []):
+                    if (
+                        str(item.get("skill", "")).lower()
+                        == str(m.external_key or "").lower()
+                    ):
+                        item["status"] = "completed"
+                        break
+                roadmap.data = data
+                flag_modified(roadmap, "data")
     s.state = decision
     s.resolved_at = datetime.now(UTC)
     db.commit()
