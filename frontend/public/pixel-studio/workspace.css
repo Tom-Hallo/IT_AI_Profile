@@ -577,18 +577,37 @@
 .road-detail .action-row{margin-top:14px}
 .road-detail .link-button{overflow-wrap:anywhere}
 .milestone-proof .link-button{background:#3f372e;border-color:#958062;color:#f0d5a7}
-.award-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:7px}
+/* Keep achievements in the left roadmap column; only the list scrolls. */
+.achievements{min-width:0}
+.achievements .award-list{
+  display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0;min-height:0;
+  max-height:clamp(260px,45vh,420px);overflow-y:auto;overflow-x:hidden;
+  padding:2px 7px 4px 2px;overscroll-behavior-y:contain;
+  scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent;
+}
+.achievements .award-list::-webkit-scrollbar{width:6px}
+.achievements .award-list::-webkit-scrollbar-track{background:transparent}
+.achievements .award-list::-webkit-scrollbar-thumb{
+  background:var(--line-strong);border-radius:999px
+}
+.achievements .award-list::-webkit-scrollbar-thumb:hover{background:var(--accent-border)}
 .award-card{
-  color:#f6eee1;
-  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;text-align:left;
-  padding:8px;border:1px solid #6b5b49;border-radius:10px;background:#353332;transition:background 180ms,border-color 180ms
+  color:#f6eee1;display:grid;grid-template-columns:36px minmax(0,1fr) 14px;
+  align-items:start;gap:12px;width:100%;min-width:0;padding:12px;
+  text-align:left;border:1px solid #6b5b49;border-radius:11px;background:#353332;
+  transition:background 180ms,border-color 180ms
 }
 .award-card:hover{background:#453c32;border-color:#a18862}
-.award-card>span:nth-child(2)>*{display:block}
-.award-card strong{font-size:13px}
-.award-card .award-summary{font-size:11px;color:#d0c7b8;line-height:1.4;margin:3px 0 4px}
-.award-card small{font-size:10px;color:#ccb68d}
-.award-card>.icon{color:var(--gold);width:10px;height:10px}
+.award-card:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.award-card>.award-icon{width:36px;height:36px}
+.award-card>span:nth-child(2){display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.award-card>span:nth-child(2)>*{
+  display:block;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere
+}
+.award-card strong{font-size:13px;line-height:1.45}
+.award-card .award-summary{font-size:11px;color:#d0c7b8;line-height:1.5;margin:0}
+.award-card small{font-size:11px;color:#ccb68d;line-height:1.45}
+.award-card>.icon{color:var(--gold);width:14px;height:14px;margin-top:11px}
 .milestone-proof small{display:block;color:#d0c7b8}
 .award-earned{animation:earned 650ms var(--ease) both}
 .award-earned .feature-icon{animation:award-rise 580ms var(--ease) both}
