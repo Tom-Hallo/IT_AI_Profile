@@ -29,7 +29,7 @@ class GenerateRequest(BaseModel):
 
 def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
-    data = dict(item.data)
+    data = dict(item.data) if isinstance(item.data, dict) else {}
     permitted = public_repo_ids(db, user_id)
     if not data.get("milestones") and data.get("steps"):
         data.setdefault("goal", "backend")
@@ -122,7 +122,7 @@ def list_roadmaps(
     items = db.scalars(
         select(Roadmap)
         .where(Roadmap.user_id == user.id)
-        .order_by(Roadmap.created_at.desc(), Roadmap.id.desc())
+        .order_by(Roadmap.created_at.asc(), Roadmap.id.asc())
     ).all()
     return [_serialize(item, db, user.id) for item in items]
 
