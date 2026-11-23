@@ -137,13 +137,19 @@ export function paintMap(map,state,trace,liveMilestones) {
   const activeLine = styles.getPropertyValue('--accent').trim();
   const quietLine = styles.getPropertyValue('--line-strong').trim();
   const traceColor = trace && styles.getPropertyValue('--accent-strong').trim();
-
+  // Match tracking rows by node ID; a stale/out-of-order response must not
+  // make canvas connectors refer to another milestone's status.
+  const nodes = [...map.querySelectorAll('.node')];
+  const orderedLive = liveMilestones && nodes.map(node =>
+    liveMilestones.find(item => String(item.id) === node.dataset.id)
+  );
+  const alignedLive = orderedLive?.every(Boolean) ? orderedLive : liveMilestones;
   // The SVG is decorative only. Keep the canvas for the existing unlock trace
   // and as a fallback, using the exact same node centers and elbow coordinates.
   const svg = map.querySelector('.road-map-lines');
   const existing = svg ? new Map([...svg.querySelectorAll('g[data-connector]')].map(group => [group.dataset.connector,group])) : null;
   if (svg) svg.setAttribute('viewBox','0 0 ' + width + ' ' + height);
-  const milestones = liveMilestones ? liveMilestones.map((item,index) => ({
+  const milestones = alignedLive ? alignedLive.map((item,index) => ({
     ...item,needs:index ? [index - 1] : []
   })) : milestonesFor(state);
   for (const [i,item] of milestones.entries()) {
@@ -151,7 +157,7 @@ export function paintMap(map,state,trace,liveMilestones) {
       const from = points[dep];
       const to = points[i];
       if (!from || !to) continue;
-      const done = liveMilestones ? liveMilestones[dep].status === 'completed' : stateOf(state,dep) === 'done';
+      const done = alignedLive ? alignedLive[dep]?.status === 'completed' : stateOf(state,dep) === 'done';
       const route = connectorPoints(from,to,vertical);
 
       if (svg) {

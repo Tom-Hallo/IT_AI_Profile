@@ -41,7 +41,9 @@ class RoadmapProposal(BaseModel):
 class MilestonePatch(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: Title
-    skill: str
+    skill: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
+    ]
     objective: DraftText
     metric: str
     target_score: int = 70
@@ -52,11 +54,13 @@ class UpdateRoadmapProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tool: Literal["update_roadmap"]
-    roadmap_id: int
+    roadmap_id: RepositoryId
+    # Legacy proposal metadata; never renames an existing roadmap.
     title: Title | None = None
     add_milestone: MilestonePatch | None = None
+    add_milestones: list[MilestonePatch] = Field(default_factory=list, max_length=12)
     modify_milestone: MilestonePatch | None = None
-    steps: list[DraftText] = Field(default_factory=list)
+    steps: list[DraftText] = Field(default_factory=list, max_length=12)
 
 
 class ReanalysisProposal(BaseModel):

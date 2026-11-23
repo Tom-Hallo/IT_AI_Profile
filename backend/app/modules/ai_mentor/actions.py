@@ -131,16 +131,8 @@ def propose_action(
             )
         )
         if valid_roadmap is None:
-            latest_id = db.scalar(
-                select(Roadmap.id)
-                .where(Roadmap.user_id == user.id)
-                .order_by(Roadmap.id.desc())
-                .limit(1)
-            )
-            if latest_id is not None:
-                proposal.roadmap_id = latest_id
-            else:
-                return None
+            # Never silently redirect an action to a different roadmap.
+            return None
     elif uses_private_github:
         # Persisted CVs and roadmaps are reusable after GitHub consent is revoked.
         return None
@@ -292,103 +284,143 @@ def decide_action(
                     .with_for_update()
                 )
                 if roadmap is None:
-                    roadmap = db.scalar(
-                        select(Roadmap)
-                        .where(Roadmap.user_id == user.id)
-                        .order_by(Roadmap.id.desc())
-                        .limit(1)
-                        .with_for_update()
-                    )
-                if roadmap is None:
                     raise HTTPException(404, "Roadmap not found")
-                data = deepcopy(roadmap.data) if isinstance(roadmap.data, dict) else {}
-                milestones_data = list(data.get("milestones", []))
+                if not isinstance(roadmap.data, dict):
+                    raise HTTPException(409, "Roadmap data is not a valid object")
+                data = deepcopy(roadmap.data)
+                # Do not overwrite an unmigrated legacy steps-only roadmap.
+                if data.get("steps") and not data.get("milestones"):
+                    raise HTTPException(
+                        409, "Load roadmap tracking before extending legacy steps"
+                    )
+                milestones_data = data.get("milestones", [])
+                if not isinstance(milestones_data, list) or any(
+                    not isinstance(item, dict) for item in milestones_data
+                ):
+                    raise HTTPException(409, "Roadmap milestones are not a valid list")
+                milestones_data = list(milestones_data)
 
-                # Handle add_milestone
-                if proposal.add_milestone:
-                    patch = proposal.add_milestone
-                    skill_key = patch.skill.lower().strip()
-                    existing_idx = next(
+                # JSONB array position is the canonical display order. Preserve
+                # every existing milestone object (IDs, status, evidence, order).
+                used_keys = {
+                    str(item.get("skill", "")).strip().lower()
+                    for item in milestones_data
+                }
+                used_keys.update(
+                    str(key).strip().lower()
+                    for key in db.scalars(
+                        select(Milestone.external_key).where(
+                            Milestone.roadmap_id == roadmap.id
+                        )
+                    ).all()
+                )
+                used_descriptions = {
+                    str(item.get(field, "")).strip().casefold()
+                    for item in milestones_data
+                    for field in ("title", "objective")
+                    if item.get(field)
+                }
+                next_order = max(
+                    [len(milestones_data)]
+                    + [
+                        int(item["order"])
+                        for item in milestones_data
+                        if isinstance(item.get("order"), int)
+                        and not isinstance(item["order"], bool)
+                        and item["order"] >= 0
+                    ]
+                )
+
+                def append_new(
+                    skill: str, title: str, objective: str, metric: str, target: int
+                ) -> None:
+                    nonlocal next_order
+                    skill_key = skill.strip().lower()
+                    if not skill_key or len(skill_key) > 128 or skill_key in used_keys:
+                        raise HTTPException(
+                            409, "Milestone already exists or has an invalid skill"
+                        )
+                    used_keys.add(skill_key)
+                    next_order += 1
+                    milestones_data.append(
+                        {
+                            "skill": skill_key,
+                            "title": title,
+                            "target_score": target,
+                            "current_score": None,
+                            "gap": None,
+                            "gap_type": "missing_evidence",
+                            "priority": 2,
+                            "objective": objective,
+                            "metric": metric,
+                            "evidence": [],
+                            "confidence": "unknown",
+                            "status": "todo",
+                            "order": next_order,
+                        }
+                    )
+                    db_m = Milestone(
+                        roadmap_id=roadmap.id,
+                        external_key=skill_key,
+                        title=title,
+                        required_skills=[skill_key],
+                        status="pending",
+                        version=1,
+                    )
+                    db.add(db_m)
+                    db.flush()
+                    db.add(
+                        MilestoneHistory(
+                            milestone_id=db_m.id,
+                            actor_user_id=user.id,
+                            old_status=None,
+                            new_status="pending",
+                            note=f"Added by AI Mentor: {title}",
+                            source="mentor",
+                        )
+                    )
+
+                for patch in (
+                    [proposal.add_milestone] if proposal.add_milestone else []
+                ) + proposal.add_milestones:
+                    append_new(
+                        patch.skill,
+                        patch.title,
+                        patch.objective,
+                        patch.metric,
+                        patch.target_score,
+                    )
+                    used_descriptions.update(
                         (
-                            i
-                            for i, m in enumerate(milestones_data)
-                            if str(m.get("skill", "")).lower() == skill_key
-                        ),
-                        -1,
+                            patch.title.strip().casefold(),
+                            patch.objective.strip().casefold(),
+                        )
                     )
-                    new_item = {
-                        "skill": skill_key,
-                        "title": patch.title,
-                        "target_score": patch.target_score,
-                        "current_score": None,
-                        "gap": None,
-                        "gap_type": "missing_evidence",
-                        "priority": 2,
-                        "objective": patch.objective,
-                        "metric": patch.metric,
-                        "evidence": [],
-                        "confidence": "unknown",
-                        "status": "todo",
-                    }
-                    if existing_idx >= 0:
-                        milestones_data[existing_idx] = new_item
-                    else:
-                        insert_idx = len(milestones_data)
-                        if patch.after_skill:
-                            after_key = patch.after_skill.lower().strip()
-                            for idx, m in enumerate(milestones_data):
-                                if after_key in str(m.get("skill", "")).lower():
-                                    insert_idx = idx + 1
-                                    break
-                        milestones_data.insert(insert_idx, new_item)
 
-                    db_m = db.scalar(
-                        select(Milestone).where(
-                            Milestone.roadmap_id == roadmap.id,
-                            Milestone.external_key == skill_key,
-                        )
+                # Plain-text steps are appended as distinct milestones with
+                # action-scoped keys. Never change existing skills to fit them.
+                for idx, step in enumerate(proposal.steps, 1):
+                    objective = step.strip()
+                    if (
+                        objective.casefold() in used_descriptions
+                        or objective.lower() in used_keys
+                    ):
+                        raise HTTPException(409, "Milestone step already exists")
+                    used_descriptions.add(objective.casefold())
+                    append_new(
+                        f"mentor_{action.id.hex[:16]}_step_{idx}",
+                        objective[:120],
+                        objective,
+                        f"Complete: {objective}"[:800],
+                        75,
                     )
-                    if db_m is None:
-                        db_m = Milestone(
-                            roadmap_id=roadmap.id,
-                            external_key=skill_key,
-                            title=patch.title,
-                            required_skills=[skill_key],
-                            status="pending",
-                            version=1,
-                        )
-                        db.add(db_m)
-                        db.flush()
-                        db.add(
-                            MilestoneHistory(
-                                milestone_id=db_m.id,
-                                actor_user_id=user.id,
-                                old_status=None,
-                                new_status="pending",
-                                note=f"Added by AI Mentor: {patch.title}",
-                                source="mentor",
-                            )
-                        )
-                    else:
-                        db_m.title = patch.title
-                        db_m.version += 1
-                        db.add(
-                            MilestoneHistory(
-                                milestone_id=db_m.id,
-                                actor_user_id=user.id,
-                                old_status=db_m.status,
-                                new_status=db_m.status,
-                                note=f"Updated by AI Mentor: {patch.objective}",
-                                source="mentor",
-                            )
-                        )
 
                 # Handle modify_milestone
                 if proposal.modify_milestone:
                     patch = proposal.modify_milestone
                     skill_key = patch.skill.lower().strip()
                     for m in milestones_data:
-                        if skill_key in str(m.get("skill", "")).lower():
+                        if skill_key == str(m.get("skill", "")).strip().lower():
                             if patch.title:
                                 m["title"] = patch.title
                             if patch.objective:
@@ -418,14 +450,10 @@ def decide_action(
                             )
                         )
 
-                for i, m in enumerate(milestones_data, 1):
-                    m["order"] = i
                 data["milestones"] = milestones_data
                 data["total"] = len(milestones_data)
                 roadmap.data = data
                 flag_modified(roadmap, "data")
-                if proposal.title:
-                    roadmap.title = proposal.title
                 result_id = str(roadmap.id)
             else:
                 assert isinstance(proposal, RoadmapProposal)

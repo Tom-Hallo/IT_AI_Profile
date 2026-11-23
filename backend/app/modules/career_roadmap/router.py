@@ -29,9 +29,13 @@ class GenerateRequest(BaseModel):
 
 def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
-    data = dict(item.data)
+    data = dict(item.data) if isinstance(item.data, dict) else {}
     permitted = public_repo_ids(db, user_id)
-    if not data.get("milestones") and data.get("steps"):
+    if (
+        not data.get("milestones")
+        and isinstance(data.get("steps"), list)
+        and data["steps"]
+    ):
         data.setdefault("goal", "backend")
         data["milestones"] = [
             {
@@ -51,17 +55,28 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
             for idx, step in enumerate(data["steps"], 1)
         ]
     milestones = []
-    for original in data.get("milestones", []):
+    saved_milestones = data.get("milestones", [])
+    if not isinstance(saved_milestones, list):
+        saved_milestones = []
+    for original in saved_milestones:
         m = dict(original) if isinstance(original, dict) else {}
         m.setdefault("gap_type", "missing_evidence")
+        evidence = m.get("evidence")
+        if not isinstance(evidence, list):
+            evidence = []
         links = [
             e
-            for e in m.get("evidence", [])
-            if "repository_id" not in e
-            or e.get("repository_id") is None
-            or e.get("repository_id") in permitted
+            for e in evidence
+            if isinstance(e, str)
+            or (
+                isinstance(e, dict)
+                and (
+                    e.get("repository_id") is None
+                    or e.get("repository_id") in permitted
+                )
+            )
         ]
-        if len(links) != len(m.get("evidence", [])) or (
+        if len(links) != len(evidence) or (
             m.get("gap_type") == "skill_gap" and not links
         ):
             m["evidence"] = links
@@ -69,6 +84,7 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
             m["confidence"] = "unknown"
             m["gap_type"] = "missing_evidence"
             m["gap"] = None
+        m["evidence"] = links
         milestones.append(m)
     data["milestones"] = milestones
     data["evidence_gaps"] = [
@@ -122,7 +138,7 @@ def list_roadmaps(
     items = db.scalars(
         select(Roadmap)
         .where(Roadmap.user_id == user.id)
-        .order_by(Roadmap.created_at.desc(), Roadmap.id.desc())
+        .order_by(Roadmap.created_at.asc(), Roadmap.id.asc())
     ).all()
     return [_serialize(item, db, user.id) for item in items]
 

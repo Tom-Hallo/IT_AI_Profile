@@ -69,7 +69,9 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
         "version": m.version,
     }
     if data_milestone:
-        submitted = data_milestone.get("evidence", [])
+        submitted = data_milestone.get("evidence")
+        if not isinstance(submitted, list):
+            submitted = []
         verified_submission = any(
             isinstance(item, dict)
             and item.get("verified") is True
@@ -112,7 +114,13 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
     ).all()
     if not milestones and roadmap.data and isinstance(roadmap.data, dict):
         ms_list = roadmap.data.get("milestones", [])
-        if not ms_list and roadmap.data.get("steps"):
+        if not isinstance(ms_list, list):
+            ms_list = []
+        if (
+            not ms_list
+            and isinstance(roadmap.data.get("steps"), list)
+            and roadmap.data["steps"]
+        ):
             ms_list = [
                 {
                     "skill": f"step_{idx}",
@@ -151,11 +159,28 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
                 .order_by(Milestone.id)
             ).all()
 
-    data_milestones = {
-        str(item.get("skill", "")).lower(): item
-        for item in roadmap.data.get("milestones", [])
-        if "skill" in item
-    }
+    # Match the persisted JSONB array order, independent of row insert IDs.
+    # Orphaned legacy tracking rows follow in their original ID order.
+    data_items = (
+        roadmap.data.get("milestones", []) if isinstance(roadmap.data, dict) else []
+    )
+    if not isinstance(data_items, list):
+        data_items = []
+    data_milestones = {}
+    position = {}
+    for index, item in enumerate(data_items):
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("skill", "")).strip().lower()
+        if key:
+            data_milestones.setdefault(key, item)
+            position.setdefault(key, index)
+    milestones.sort(
+        key=lambda m: (
+            position.get(str(m.external_key or "").strip().lower(), len(data_items)),
+            m.id,
+        )
+    )
     suggestions = db.scalars(
         select(RoadmapSuggestion)
         .where(RoadmapSuggestion.roadmap_id == roadmap_id)
