@@ -320,6 +320,13 @@ class DatabaseSkillSnapshotSource:
                         evidence_id=f"verification-commit:{sha}"
                         if sha
                         else f"verification:{row.id}",
+                        pr_number=(
+                            int(row.target_identifier)
+                            if row.evidence_type == "pull_request"
+                            and str(row.target_identifier).isdigit()
+                            and int(row.target_identifier) > 0
+                            else None
+                        ),
                         repository_id=row.repository_id,
                         commit_sha=sha,
                         finding_type=row.evidence_type,
