@@ -321,3 +321,9 @@
   background: var(--color-danger-soft);
   color: var(--color-danger);
 }
+
+/* Pulse only while GitHub sync status is running; no polling changes. */
+.github-notice--running{position:relative;overflow:hidden}
+.github-notice--running::after{position:absolute;inset:0;border-radius:inherit;content:"";pointer-events:none;box-shadow:inset 0 0 0 1px rgba(155,212,189,.5);animation:ita-github-pulse 2.5s ease-in-out infinite}
+@keyframes ita-github-pulse{0%,100%{opacity:.18}50%{opacity:.68}}
+@media(prefers-reduced-motion:reduce){.github-notice--running::after{animation:none!important;opacity:.45}}

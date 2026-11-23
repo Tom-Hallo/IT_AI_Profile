@@ -47,7 +47,7 @@ function renderFormattedContent(content: string) {
 export function MentorPage() {
   const { user, isLoading: authLoading } = useAuth()
   if (authLoading) {
-    return <p className="mentor-page" role="status">Đang kiểm tra đăng nhập…</p>
+    return <div className="mentor-page" role="status"><div className="mentor-loading-card" aria-hidden="true"><span className="mentor-skeleton-line" /><span className="mentor-skeleton-line mentor-skeleton-line--short" /></div><span className="mentor-sr-only">Đang kiểm tra đăng nhập…</span></div>
   }
 
   if (!user) {
@@ -179,7 +179,7 @@ function MentorWorkspace() {
 
           <fieldset>
             <legend>GitHub repositories</legend>
-            {repoData === undefined && <p role="status">Đang tải repository…</p>}
+            {repoData === undefined && <div className="mentor-repo-loading" role="status"><span className="mentor-sr-only">Đang tải repository…</span>{[0, 1, 2].map((n) => <span key={n} className="mentor-skeleton-line" aria-hidden="true" />)}</div>}
             {repoData === null && <p role="alert">Không tải được danh sách repository.</p>}
             <p className="muted">Đã chọn {sources.github_repo_ids.length}/10. Repo riêng tư cần hai lần đồng ý đúng phạm vi tệp.</p>
             {repoData && repos.length === 0 && (
@@ -331,6 +331,7 @@ function MentorWorkspace() {
                 </article>
               );
             })}
+            {sending && <article className="chat-bubble chat-bubble--assistant mentor-thinking" role="status"><span className="mentor-thinking-dots" aria-hidden="true"><i /><i /><i /></span><span>AI Mentor đang suy nghĩ…</span></article>}
           </Card>
 
           {error && <p role="alert" className="mentor-error">{error}</p>}
@@ -347,7 +348,7 @@ function MentorWorkspace() {
             />
             <div className="mentor-action-buttons">
               <Button type="submit" variant="primary" disabled={sending || !message.trim()}>
-                {sending ? 'Đang hỏi…' : 'Gửi'}
+                {sending ? <span className="mentor-button-loading"><span className="mentor-mini-spinner" aria-hidden="true" />Đang hỏi…</span> : 'Gửi'}
               </Button>
               <Button type="submit" value="propose-action" disabled={sending || !message.trim()}>
                 Đề xuất hành động

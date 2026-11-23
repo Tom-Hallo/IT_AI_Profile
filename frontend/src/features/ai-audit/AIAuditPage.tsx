@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { Link } from 'react-router'
 import { useAuth } from '@/features/auth/useAuth'
 import { ApiError, apiFetch } from '@/shared/api/client'
@@ -49,7 +50,7 @@ const dateFormat = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeSt
 
 export function AIAuditPage() {
   const { user, isLoading, error } = useAuth()
-  if (isLoading) return <p role="status">Đang kiểm tra đăng nhập…</p>
+  if (isLoading) return <LoadingState message="Đang kiểm tra đăng nhập…" variant="inline" />
   if (error) return <p role="alert">{error} <Link to="/dashboard">Về Dashboard</Link></p>
   if (!user) return <p>Bạn cần đăng nhập để xem lịch sử AI. <Link to="/dashboard">Về Dashboard</Link></p>
   return <AuditHistory key={user.id} />
@@ -89,7 +90,7 @@ function AuditHistory() {
       <Link to="/mentor">AI Mentor</Link>
     </nav>
     <h1>Lịch sử sử dụng AI</h1>
-    {!page && !message && <p role="status">Đang tải sự kiện…</p>}
+    {!page && !message && <LoadingState message="Đang tải sự kiện…" variant="rows" />}
     {message && <>
       <p role="alert">{message}</p>
       <Button onClick={() => setRequest({ before: request.before })}>Thử lại</Button>
