@@ -82,3 +82,38 @@ def test_pr_number_is_not_assumed_from_database_row_id():
     ref = EvidenceRef(evidence_id="verification:998", finding_type="pull_request")
     assert ref.pr_number is None
     assert EvidenceRefOut.from_ref(ref).pr_number is None
+
+
+def test_unlinked_scored_row_never_creates_a_fake_evidence_reference(db, world):
+    user = world.user("unlinked-role@example.test")
+    repo = world.repo(user)
+    report = world.report(repo, [])
+    rubric = RubricVersion(
+        kind="language", version="1.0.0", criteria={"weights": {}}
+    )
+    db.add(rubric)
+    db.flush()
+    db.add(
+        SkillScore(
+            user_id=user.id,
+            repository_id=repo.id,
+            report_id=report.id,
+            rubric_id=rubric.id,
+            commit_sha=report.commit_sha,
+            kind="language",
+            technology="Python",
+            status="Scored",
+            score=100,
+            breakdown=[],
+            explanation="Historical score without a verified event",
+        )
+    )
+    db.commit()
+    for ids in (None, frozenset({repo.id})):
+        raw = DatabaseSkillSnapshotSource(db, repo_id_filter=ids).fetch(user.id)
+        assert raw is not None
+        item = raw.payload.items[0]
+        assert item.status.value == "INSUFFICIENT"
+        assert item.score is None
+        assert item.confidence is None
+        assert item.evidence_refs == []
