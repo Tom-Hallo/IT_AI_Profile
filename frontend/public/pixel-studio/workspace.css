@@ -1286,3 +1286,92 @@
   color: var(--muted);
   margin-top: 2px;
 }
+
+
+/* Roadmap experience — scoped to the live roadmap so other Studio pages keep their layout. */
+.road-pickers-row{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;width:min(100%,600px)}
+.road-pickers-row .road-filter-field{min-width:min(100%,190px);flex:1 1 190px}
+.road-pickers-row .road-plan-field{flex:1.5 1 240px;min-width:0}
+.road-dropdown .filter-trigger{min-height:46px;border-radius:12px;background:var(--surface);font-size:13px}
+.road-dropdown .filter-menu{width:max(100%,235px);max-width:min(420px,90vw);padding:7px}
+.road-dropdown .filter-option{min-height:44px;font-size:13px;cursor:pointer}
+.road-dropdown .filter-option small{color:var(--muted);margin-left:4px}
+.road-dropdown .filter-option:disabled{opacity:.65;cursor:wait}
+.road-blank-state{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:270px;gap:12px;text-align:center;padding:30px 22px;background:radial-gradient(ellipse at 50% 0,var(--accent-glow),transparent 70%),var(--surface)}
+.road-empty-icon{display:grid;place-items:center;width:58px;height:58px;border:1px solid var(--accent-border);border-radius:18px;background:var(--accent-panel);color:var(--accent)}
+.road-empty-icon .icon{width:24px;height:24px}
+.road-blank-state h2{font-size:clamp(19px,3vw,25px);letter-spacing:-.03em}
+.road-blank-state>p:not(.eyebrow){max-width:50ch;color:var(--muted);line-height:1.6}
+.road-blank-state .button{margin-top:6px}
+.road-progress-meter{height:8px;overflow:hidden;border-radius:100px;background:var(--line-strong)}
+.road-progress-meter>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-strong));transition:width .55s var(--ease)}
+.road-layout:has(.road-live-map){grid-template-columns:minmax(0,1.18fr) minmax(300px,1fr);align-items:start}
+.road-layout .map-panel:has(.road-live-map){min-width:0}
+.road-live-map.road-map{
+  display:flex;flex-direction:column;align-items:stretch;justify-items:unset;
+  gap:0;min-height:0;padding:20px clamp(12px,2vw,22px);overflow:visible;
+  background:radial-gradient(ellipse at 40% 5%,var(--accent-glow),transparent 65%),var(--inset)
+}
+.road-live-map.road-map::before{background-size:20px 20px;opacity:.45}
+.road-live-map .node,.road-live-map .node:nth-of-type(n){
+  grid-area:auto;display:grid;grid-template-columns:38px 36px minmax(0,1fr) 18px;
+  align-items:center;justify-items:stretch;align-content:center;gap:12px;
+  width:100%;min-height:86px;padding:14px;text-align:left;
+  border-radius:15px;box-shadow:0 4px 15px #00000010;
+  animation:road-step-in .42s both;animation-delay:calc(var(--road-order) * 55ms)
+}
+.road-live-map .node+.node{margin-top:26px}
+.road-live-map .node+.node::before{
+  content:"";position:absolute;left:calc(14px + 19px);bottom:100%;height:27px;
+  border-left:2px dashed var(--accent-border);pointer-events:none
+}
+.road-live-map .node[data-state=done]+.node::before{border-left-style:solid;border-color:var(--gold)}
+.road-live-map .node:hover{transform:translateY(-3px);box-shadow:0 10px 25px #00000020;border-color:var(--accent)}
+.road-live-map .node[aria-pressed=true]{border-color:var(--accent);background:var(--accent-wash);box-shadow:0 0 0 2px var(--accent-glow),0 7px 22px #00000018}
+.road-live-map .road-node-index{
+  display:grid;place-items:center;align-self:center;width:38px;height:38px;
+  border:1px solid var(--accent-border);border-radius:12px;
+  background:var(--accent-panel);color:var(--accent-strong);font:700 12px/1 var(--mono)
+}
+.road-live-map .node[data-state=done] .road-node-index{background:#5e5039;border-color:#9b8059;color:var(--gold)}
+.road-live-map .map-icon{width:34px;height:34px;border-radius:10px}
+.road-live-map .map-icon .icon{width:16px;height:16px}
+.road-live-map .road-node-text{display:grid;gap:6px;min-width:0}
+.road-live-map .node strong{font-size:clamp(12px,1.4vw,14px);line-height:1.45;overflow-wrap:anywhere}
+.road-live-map .node small{font-size:11px;line-height:1.4}
+.road-live-map .road-node-arrow{color:var(--muted);opacity:.7}
+.road-live-map .node[aria-pressed=true] .road-node-arrow{color:var(--accent);opacity:1}
+.road-detail{min-width:0}
+.road-detail-step{color:var(--muted);font-size:12px;font-weight:600}
+.road-evidence-form{
+  padding:16px;border:1px solid var(--line-strong);border-radius:14px;
+  background:linear-gradient(145deg,var(--surface-2),var(--inset))
+}
+.road-evidence-heading{display:flex;align-items:flex-start;gap:12px}
+.road-evidence-icon{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:var(--accent-wash);color:var(--accent);border:1px solid var(--accent-border)}
+.road-evidence-heading h4{font-size:14px;line-height:1.45}
+.road-evidence-heading p{font-size:12px;line-height:1.55}
+.road-evidence-fields{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:10px;margin:13px 0}
+.road-evidence-fields .field{min-width:0}
+.road-evidence-fields .field span{font-size:11px;font-weight:600;color:var(--muted)}
+.road-evidence-fields input{display:block;width:100%;min-width:0;min-height:42px;border-radius:9px}
+.road-submit-button{min-height:40px;justify-content:center}
+.road-history summary{min-height:36px;display:flex;align-items:center}
+@keyframes road-step-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@container studio-content (max-width:880px){
+  .road-layout:has(.road-live-map){grid-template-columns:1fr;grid-template-areas:'map' 'detail' 'records'}
+}
+@media(max-width:680px){
+  .road-pickers-row{width:100%}
+  .road-pickers-row .road-filter-field,.road-pickers-row .road-plan-field{flex:1 1 100%}
+  .road-banner{grid-template-columns:1fr}
+  .road-evidence-fields{grid-template-columns:minmax(0,1fr)}
+  .road-live-map .node,.road-live-map .node:nth-of-type(n){grid-template-columns:30px 30px minmax(0,1fr) 12px;gap:8px;padding:11px;min-height:76px}
+  .road-live-map .road-node-index{width:30px;height:30px;font-size:10px}
+  .road-live-map .map-icon{width:30px;height:30px}
+  .road-live-map .node+.node::before{left:26px}
+}
+@media(prefers-reduced-motion:reduce){
+  .road-live-map .node,.road-live-map .node:nth-of-type(n){animation:none;transition:none}
+  .road-progress-meter>span{transition:none}
+}
