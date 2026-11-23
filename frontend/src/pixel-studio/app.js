@@ -289,9 +289,13 @@ function prepareView() {
     stopRoadAnimation = null;
     const map = $('.road-map');
     if (map) {
-      paintMap(map,state,null,live?.data.tracking?.milestones);
-      mapObserver = new ResizeObserver(() => paintMap(map,state,null,live?.data.tracking?.milestones));
+      const repaint = () => paintMap(map,state,null,live?.data.tracking?.milestones);
+      repaint();
+      mapObserver = new ResizeObserver(repaint);
       mapObserver.observe(map);
+      // Some node positions can move without changing the map's outer size.
+      // Track their dimensions too, including when the Mentor panel is resized.
+      map.querySelectorAll('.node').forEach(node => mapObserver.observe(node));
     }
   }
   if (isStudio('dashboard')) {

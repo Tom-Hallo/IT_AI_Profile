@@ -1,5 +1,6 @@
 import {dateLabel, roleLabel, t} from './i18n.js';
 import {scoredRepos} from './model.js';
+import {connectorPath,connectorPoints} from './roadmap-connectors.js';
 import {recommendationFor} from './roadmap-recommendation.js';
 import {
   achievementOrder, checklist, evidenceURL, milestonesFor, milestoneText, nextStep,
@@ -107,7 +108,7 @@ export function roadmap(state,runtime) {
       + btn(escape(t(snapshot ? 'road.reviewUpdate' : 'road.propose')),'road-draft',snapshot ? 'primary small' : 'secondary small') + '</section>' : '')
     + '<div class="road-layout"><section class="panel map-panel">' + panelHead(t('road.map'),t('road.mapCaption'))
     + '<div class="map-legend" aria-label="' + escape(t('road.progress')) + '">' + ['done','ready','locked'].map(mode => '<span data-state="' + mode + '"><i></i>' + escape(t('road.' + mode)) + '</span>').join('') + '</div>'
-    + '<div class="road-map"><canvas aria-hidden="true"></canvas>'
+    + '<div class="road-map"><svg class="road-map-lines" aria-hidden="true" focusable="false"></svg><canvas aria-hidden="true"></canvas>'
     + milestones.map((item,i) => mapNode(state,item,i,selected,unlocked.includes(i),i === next)).join('') + '</div></section>'
     + selectedMilestone(state,selected,recent?.completed === selected ? unlocked : []) + (count || history ? '<div class="road-records stack">'
       + (count ? '<section class="panel achievements">' + panelHead(t('road.trophies'),t('road.trophiesCopy')) + '<div class="award-list">'
@@ -136,6 +137,12 @@ export function paintMap(map,state,trace,liveMilestones) {
   const activeLine = styles.getPropertyValue('--accent').trim();
   const quietLine = styles.getPropertyValue('--line-strong').trim();
   const traceColor = trace && styles.getPropertyValue('--accent-strong').trim();
+
+  // The SVG is decorative only. Keep the canvas for the existing unlock trace
+  // and as a fallback, using the exact same node centers and elbow coordinates.
+  const svg = map.querySelector('.road-map-lines');
+  const existing = svg ? new Map([...svg.querySelectorAll('g[data-connector]')].map(group => [group.dataset.connector,group])) : null;
+  if (svg) svg.setAttribute('viewBox','0 0 ' + width + ' ' + height);
   const milestones = liveMilestones ? liveMilestones.map((item,index) => ({
     ...item,needs:index ? [index - 1] : []
   })) : milestonesFor(state);
@@ -145,22 +152,37 @@ export function paintMap(map,state,trace,liveMilestones) {
       const to = points[i];
       if (!from || !to) continue;
       const done = liveMilestones ? liveMilestones[dep].status === 'completed' : stateOf(state,dep) === 'done';
+      const route = connectorPoints(from,to,vertical);
+
+      if (svg) {
+        const key = dep + ':' + i;
+        let group = existing.get(key);
+        if (!group) {
+          group = document.createElementNS('http://www.w3.org/2000/svg','g');
+          group.dataset.connector = key;
+          for (const name of ['road-connector-stroke','road-connector-flow']) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+            path.setAttribute('class',name);
+            path.setAttribute('vector-effect','non-scaling-stroke');
+            if (name === 'road-connector-flow') path.setAttribute('pathLength','100');
+            group.append(path);
+          }
+          svg.append(group);
+        }
+        group.classList.toggle('is-solid',done);
+        group.classList.toggle('is-dashed',!done);
+        const d = connectorPath(route);
+        for (const path of group.children) path.setAttribute('d',d);
+        existing.delete(key);
+      }
+
       ctx.strokeStyle = done ? activeLine : quietLine;
       ctx.lineWidth = done ? 2 : 1.5;
       ctx.setLineDash(done ? [] : [4,6]);
       ctx.beginPath();
-      ctx.moveTo(from.x,from.y);
-      if (vertical) {
-        const y = (from.y + to.y) / 2;
-        ctx.lineTo(from.x,y);
-        ctx.lineTo(to.x,y);
-      } else {
-        const x = (from.x + to.x) / 2;
-        ctx.lineTo(x,from.y);
-        ctx.lineTo(x,to.y);
-      }
-      ctx.lineTo(to.x,to.y);
-      ctx.stroke();
+      ctx.moveTo(route[0].x,route[0].y);
+      for (const point of route.slice(1)) ctx.lineTo(point.x,point.y);
+      if (!svg) ctx.stroke();
       if (trace?.from === dep && trace.targets.includes(i)) {
         const length = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
         ctx.setLineDash([length * trace.progress,length + 1]);
@@ -172,6 +194,7 @@ export function paintMap(map,state,trace,liveMilestones) {
       }
     }
   }
+  if (existing) for (const group of existing.values()) group.remove();
 }
 
 export function animateUnlock(map,state,from,targets,reduced) {
