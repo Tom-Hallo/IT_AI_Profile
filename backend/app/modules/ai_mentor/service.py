@@ -182,7 +182,7 @@ Allowed proposal forms:
 "title":"...","skill":"...","objective":"...","metric":"...","target_score":70}}
 {"tool":"update_roadmap","roadmap_id":123,"add_milestones":[
 {"title":"...","skill":"...","objective":"...","metric":"...","target_score":70}]}
-{"tool":"update_roadmap","roadmap_id":123,"steps":["Advanced topic 1","Advanced topic 2"]}
+{"tool":"update_roadmap","roadmap_id":123,"steps":["Architecture","Tracing"]}
 For extending or deepening an existing roadmap, propose update_roadmap and
 append milestones in their intended learning sequence. Do not use after_skill
 to insert between existing milestones; do not rename the existing roadmap.
