@@ -796,12 +796,12 @@ export function liveRoadmap(data) {
     + '<h4>' + icon('pulse') + ' ' + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Submit additional evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence')) + '</h4>'
     + '<p class="subtle">' + (isCompleted
       ? copy('Cột mốc này đã hoàn thành. Bạn có thể nộp thêm liên kết Commit/PR để làm phong phú bằng chứng cho portfolio và CV.', 'This milestone is completed. You can submit more Commit/PR links to enrich your evidence.')
-      : copy('Dán liên kết Commit, Pull Request hoặc Repository trên GitHub để hệ thống đối chiếu xác minh và tự động hoàn thành mốc.', 'Paste Commit, PR, or repo URL from GitHub for automated verification and completion.')) + '</p>'
+      : copy('Chỉ nộp URL HTTPS trực tiếp đến Commit hoặc Pull Request trên github.com. Link Issue hoặc trang repository sẽ bị từ chối.', 'Submit only direct HTTPS GitHub Commit or Pull Request URLs. Issue and repository page links are rejected.')) + '</p>'
     + '<div class="field-row">'
-    + '<input name="evidence_url" type="url" placeholder="https://github.com/owner/repo/pull/123" required>'
+    + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" required>'
     + '<input name="evidence_note" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
     + '<button type="submit" class="button primary small">' + copy('Nộp minh chứng', 'Submit') + '</button>'
-    + '</div></form>' : '';
+    + '</div><p id="road-evidence-validation" class="road-evidence-validation" role="alert" hidden></p></form>' : '';
 
   let actionButtonsHtml = '';
   if (selected) {
