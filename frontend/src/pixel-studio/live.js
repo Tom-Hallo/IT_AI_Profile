@@ -827,12 +827,31 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }),
     'use-live-job':button => {
       const item = data.jobResults?.jobs.find(job => job.id === button.dataset.id);
-      if (item?.description_preview) {
-        data.jobText = item.description_preview;
-        data.jobURL = '';
+      if (item) {
+        const isVi = getLanguage() === 'vi';
+        const tagsList = (item.tags || []).slice(0, 10).join(', ');
+        const rawPreview = (item.description_preview || item.description_text || '').replace(/\.\.\.$/, '').trim();
+        const shortSummary = rawPreview.length > 280 ? rawPreview.slice(0, 280) + '...' : rawPreview;
+
+        if (isVi) {
+          data.jobText = `Vị trí: ${item.title} - ${item.company} (${item.location || 'Từ xa'})\n`
+            + (tagsList ? `Kỹ năng yêu cầu: ${tagsList}\n` : '')
+            + `Mô tả tóm tắt: ${shortSummary}`;
+        } else {
+          data.jobText = `Position: ${item.title} - ${item.company} (${item.location || 'Remote'})\n`
+            + (tagsList ? `Required skills: ${tagsList}\n` : '')
+            + `Summary: ${shortSummary}`;
+        }
+        data.jobURL = item.url || '';
         data.jobMatch = null;
         render();
-        document.querySelector('#jd-form textarea')?.focus();
+        const textarea = document.querySelector('#jd-form textarea');
+        if (textarea) {
+          textarea.focus();
+          textarea.style.height = 'auto';
+          const targetHeight = Math.min(Math.max(textarea.scrollHeight + 4, 85), 200);
+          textarea.style.height = targetHeight + 'px';
+        }
       }
     },
     'road-create':roadCreate,
@@ -853,6 +872,55 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       await roadHistory();
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
+    'ask-gap-skill':button => {
+      const skill = button.dataset.skill || '';
+      openMentor();
+      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skill}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và một dự án thực tế để rèn luyện kỹ năng này.`;
+      const promptEn = `I need to learn the missing skill: "${skill}" to meet job requirements. Please guide me with an effective learning path, best resources, and a hands-on project to practice this skill.`;
+      void send(copy(promptVi, promptEn));
+    },
+    'view-skill-roadmap':async button => {
+      const skillKey = (button.dataset.skill || '').toLowerCase().trim();
+      await work('road',async () => {
+        const items = await request('/career-roadmaps');
+        data.roadmaps = items;
+        let targetRoadmap = items.find(r => r.milestones?.some(m => (m.skill || m.title || '').toLowerCase().includes(skillKey)));
+        if (!targetRoadmap) {
+          const goalMap = {
+            python: 'backend', fastapi: 'backend', postgresql: 'backend', sql: 'backend', redis: 'backend', rest_api: 'backend', django: 'backend',
+            react: 'frontend', typescript: 'frontend', javascript: 'frontend', css: 'frontend', vue: 'frontend', html: 'frontend',
+            docker: 'devops', kubernetes: 'devops', cicd: 'devops', linux: 'devops', aws: 'devops'
+          };
+          const suggestedGoal = goalMap[skillKey];
+          if (suggestedGoal) {
+            targetRoadmap = items.find(r => r.goal?.toLowerCase() === suggestedGoal);
+          }
+        }
+        if (!targetRoadmap && items.length > 0) {
+          targetRoadmap = data.road || items[0];
+        }
+        if (targetRoadmap) {
+          data.road = targetRoadmap;
+          data.goal = targetRoadmap.goal;
+          data.tracking = await request(trackingPath());
+          const matchingMilestone = data.tracking?.milestones?.find(m =>
+            (m.external_key || '').toLowerCase().includes(skillKey) ||
+            (m.title || '').toLowerCase().includes(skillKey)
+          );
+          if (matchingMilestone) {
+            data.milestone = matchingMilestone.id;
+            await roadHistory();
+          } else {
+            data.milestone = data.tracking?.milestones[0]?.id ?? null;
+          }
+        }
+        navigate('roadmap','#milestone-detail');
+        data.messages.road = copy(
+          `Đã chuyển đến Lộ trình cho kỹ năng "${skillKey}".`,
+          `Navigated to Roadmap for skill "${skillKey}".`
+        );
+      });
+    },
     'cv-check':ats,
     "cv-insert-github": () => {
       const verifiedScores = data.scores.filter(

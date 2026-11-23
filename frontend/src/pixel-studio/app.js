@@ -1155,7 +1155,11 @@ document.addEventListener('input',event => {
   if (control.name === 'question') runtime.chatDraft = control.value;
   if (live) {
     if (control.name === 'query') live.data.jobQuery = control.value;
-    if (control.name === 'jd' && control.closest('#jd-form')) live.data.jobText = control.value;
+    if (control.name === 'jd' && control.closest('#jd-form')) {
+      live.data.jobText = control.value;
+      control.style.height = 'auto';
+      control.style.height = Math.min(Math.max(control.scrollHeight + 4, 85), 200) + 'px';
+    }
     if (control.name === 'jd-url') live.data.jobURL = control.value;
     if (control.name === 'ats-jd') live.data.atsJD = control.value;
     if (control.name === 'mentor-jd') live.data.mentorJD = control.value;

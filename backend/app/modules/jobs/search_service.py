@@ -145,7 +145,12 @@ class JobSearchService:
             )
 
         fetched_at = datetime.now(UTC).isoformat()
-        items: list[JobItem] = []
+        query_raw = req.query.strip().lower()
+        query_tokens = [
+            t.strip() for t in re.split(r"[\s,;+/|]+", query_raw) if len(t.strip()) >= 2
+        ]
+
+        scored_items: list[tuple[float, JobItem]] = []
 
         for raw in jobs_raw:
             if not isinstance(raw, dict):
@@ -184,37 +189,78 @@ class JobSearchService:
 
             description = raw.get("description") or ""
             preview = None
+            clean_text = None
             if description:
-                # Bỏ HTML thô đơn giản
-                text = (
-                    description.replace("<br>", " ")
-                    .replace("<br/>", " ")
-                    .replace("<p>", " ")
-                    .replace("</p>", " ")
+                # Chuyển HTML thành text có ngắt dòng tự nhiên
+                formatted = (
+                    description.replace("<br>", "\n")
+                    .replace("<br/>", "\n")
+                    .replace("<br />", "\n")
+                    .replace("</p>", "\n\n")
+                    .replace("</li>", "\n")
+                    .replace("</h1>", "\n\n")
+                    .replace("</h2>", "\n\n")
+                    .replace("</h3>", "\n\n")
                 )
-                text = re.sub(r"<[^>]+>", " ", text)
-                text = " ".join(text.split())
-                preview = text[:280] + ("..." if len(text) > 280 else "")
+                formatted = re.sub(r"<[^>]+>", " ", formatted)
+                lines = [
+                    re.sub(r"[ \t]+", " ", line).strip()
+                    for line in formatted.splitlines()
+                ]
+                clean_text = "\n".join(line for line in lines if line)
+                if len(clean_text) > 10000:
+                    clean_text = clean_text[:10000]
 
-            items.append(
-                JobItem(
-                    id=job_id,
-                    title=title,
-                    company=company,
-                    source=AllowedJobSource.REMOTIVE,
-                    url=url,
-                    fetched_at=fetched_at,
-                    location=location or "Remote",
-                    tags=tags[:12],
-                    expired=expired,
-                    description_preview=preview,
-                )
+                one_line = " ".join(clean_text.split())
+                preview = one_line[:280] + ("..." if len(one_line) > 280 else "")
+
+            # Tính điểm độ phù hợp (relevance score) theo query
+            title_lower = title.lower()
+            company_lower = company.lower()
+            tags_lower = [t.lower() for t in tags]
+            desc_lower = (clean_text or "").lower()
+
+            score = 0.0
+            if query_tokens:
+                for token in query_tokens:
+                    if token in title_lower:
+                        score += 15.0
+                    if any(token in tag for tag in tags_lower):
+                        score += 10.0
+                    if token in company_lower:
+                        score += 5.0
+                    if token in desc_lower:
+                        score += 2.0
+                # Bỏ qua nếu job không khớp bất kỳ token nào
+                if score <= 0.0:
+                    continue
+            else:
+                score = 1.0
+
+            item = JobItem(
+                id=job_id,
+                title=title,
+                company=company,
+                source=AllowedJobSource.REMOTIVE,
+                url=url,
+                fetched_at=fetched_at,
+                location=location or "Remote",
+                tags=tags[:12],
+                expired=expired,
+                description_preview=preview,
+                description_text=clean_text,
             )
+            scored_items.append((score, item))
 
+        # Sắp xếp theo độ phù hợp cao nhất trước
+        scored_items.sort(key=lambda x: x[0], reverse=True)
+        items = [item for _, item in scored_items]
+
+        empty_msg = "Không tìm thấy tin tuyển dụng phù hợp với từ khóa."
         status = SourceStatus(
             source=AllowedJobSource.REMOTIVE,
             status="ok" if items else "empty",
-            message=None if items else "Nguồn Remotive không trả về tin phù hợp.",
+            message=None if items else empty_msg,
             jobs_found=len(items),
         )
         return items, status

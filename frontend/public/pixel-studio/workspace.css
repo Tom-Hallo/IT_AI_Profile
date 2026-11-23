@@ -1131,6 +1131,101 @@
   color: #e3b341;
 }
 
+#jd-form textarea, .auto-scale-textarea {
+  min-height: 85px;
+  max-height: 200px;
+  resize: vertical;
+  line-height: 1.5;
+  font-size: 13px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.audit-list .evidence-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 6px 9px !important;
+  border-bottom: 1px solid var(--line) !important;
+  font-size: 12px !important;
+  flex-wrap: wrap !important;
+}
+.evidence-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  color: var(--muted, #9ba8a6);
+}
+.evidence-repo {
+  color: var(--accent, #a5dec3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.evidence-file {
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.evidence-general {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted, #9ba8a6);
+}
+.evidence-action {
+  flex-shrink: 0;
+}
+.evidence-commit-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--surface-2, #293135);
+  border: 1px solid #455054;
+  color: var(--accent, #a5dec3) !important;
+  text-decoration: none !important;
+  font-size: 11px;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.15s ease-in-out;
+}
+.evidence-commit-link:hover {
+  background: #2a4036;
+  border-color: #466355;
+  color: #c5f1db !important;
+}
+.evidence-commit-link code {
+  font: 11px/1.2 var(--mono);
+  color: #fff;
+  background: transparent;
+  padding: 0;
+  border: 0;
+}
+.evidence-commit-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+}
+.gap-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Responsive tweaks */
 @media (max-width: 760px) {
   .command-bar-inner, .cv-command-inner {
