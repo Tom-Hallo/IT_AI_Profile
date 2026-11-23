@@ -290,7 +290,9 @@ def decide_action(
                 data = deepcopy(roadmap.data)
                 # Do not overwrite an unmigrated legacy steps-only roadmap.
                 if data.get("steps") and "milestones" not in data:
-                    raise HTTPException(409, "Load roadmap tracking before extending legacy steps")
+                    raise HTTPException(
+                        409, "Load roadmap tracking before extending legacy steps"
+                    )
                 milestones_data = data.get("milestones", [])
                 if not isinstance(milestones_data, list) or any(
                     not isinstance(item, dict) for item in milestones_data
@@ -335,7 +337,9 @@ def decide_action(
                     nonlocal next_order
                     skill_key = skill.strip().lower()
                     if not skill_key or len(skill_key) > 128 or skill_key in used_keys:
-                        raise HTTPException(409, "Milestone already exists or has an invalid skill")
+                        raise HTTPException(
+                            409, "Milestone already exists or has an invalid skill"
+                        )
                     used_keys.add(skill_key)
                     next_order += 1
                     milestones_data.append(
@@ -388,7 +392,10 @@ def decide_action(
                         patch.target_score,
                     )
                     used_descriptions.update(
-                        (patch.title.strip().casefold(), patch.objective.strip().casefold())
+                        (
+                            patch.title.strip().casefold(),
+                            patch.objective.strip().casefold(),
+                        )
                     )
 
                 # Plain-text steps are appended as distinct milestones with
