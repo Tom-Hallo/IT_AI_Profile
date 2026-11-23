@@ -57,7 +57,7 @@ def parse_github_evidence_url(value: str) -> GitHubEvidenceLink:
     if kind == "pull" and not _PULL_NUMBER.fullmatch(identifier):
         raise ValueError(_ERROR)
     return GitHubEvidenceLink(
-        repo_name=f'{match["owner"]}/{match["repo"]}',
+        repo_name=f"{match['owner']}/{match['repo']}",
         evidence_type="commit" if kind == "commit" else "pull_request",
         identifier=identifier.lower() if kind == "commit" else identifier,
     )
