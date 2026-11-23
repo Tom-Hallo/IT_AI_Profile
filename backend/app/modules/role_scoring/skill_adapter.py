@@ -159,9 +159,26 @@ class DatabaseSkillSnapshotSource:
                     .scalar_subquery()
                 )
                 query = query.where(SkillScore.report_id == latest_report_id)
-            scores = self._db.scalars(query).all()
-            if not scores:
+            all_scores = self._db.scalars(query).all()
+            if not all_scores:
                 return None
+
+            # A report can contain legacy and newly versioned rubric snapshots.
+            # Prefer its newest score per technology instead of comparing the
+            # same report against itself as conflicting proficiency evidence.
+            seen_scores: set[tuple[int, int, str, str]] = set()
+            scores: list[SkillScore] = []
+            for candidate in all_scores:
+                identity = (
+                    candidate.repository_id,
+                    candidate.report_id,
+                    candidate.kind,
+                    normalize_key(candidate.technology),
+                )
+                if identity in seen_scores:
+                    continue
+                seen_scores.add(identity)
+                scores.append(candidate)
 
             score_ids = [s.id for s in scores]
             evidence_by_score: dict[int, list[EvidenceRef]] = {}
