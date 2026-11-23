@@ -3,7 +3,6 @@
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -22,6 +21,7 @@ from app.modules.users.models import User
 
 from .adapters import current_snapshot
 from .engine import IncomparableSnapshot, evaluate, normalize_rubric
+from .evidence_urls import parse_github_evidence_url
 from .models import Milestone, MilestoneHistory, RoadmapSuggestion
 
 router = APIRouter(prefix="/roadmap-tracking", tags=["Roadmap Tracking"])
@@ -69,9 +69,23 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
         "version": m.version,
     }
     if data_milestone:
-        res["evidence"] = data_milestone.get("evidence", [])
-        res["verification_status"] = data_milestone.get(
-            "verification_status", "verified" if m.status == "completed" else "pending"
+        submitted = data_milestone.get("evidence", [])
+        verified_submission = any(
+            isinstance(item, dict)
+            and item.get("verified") is True
+            and item.get("verification_status") == "verified"
+            for item in submitted
+        )
+        verified_evaluation = data_milestone.get(
+            "verification_status"
+        ) == "verified" and bool(data_milestone.get("evaluation_evidence"))
+        res["evidence"] = submitted
+        res["verification_status"] = (
+            "verified"
+            if verified_submission or verified_evaluation
+            else "self_reported"
+            if submitted
+            else "pending"
         )
     return res
 
@@ -251,6 +265,12 @@ def submit_milestone_evidence(
     user: CurrentUser,
     db: DB,
 ):
+    url = payload.evidence_url.strip()
+    try:
+        link = parse_github_evidence_url(url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     roadmap = owned_roadmap(db, user, roadmap_id, lock=True)
     m = db.scalar(
         select(Milestone)
@@ -259,11 +279,6 @@ def submit_milestone_evidence(
     )
     if m is None:
         raise HTTPException(404, "Milestone not found")
-    url = payload.evidence_url.strip()
-    if not url or not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(
-            422, "URL minh chứng không hợp lệ (cần bắt đầu bằng http:// hoặc https://)"
-        )
 
     is_verified = False
     verification_status = "self_reported"
@@ -272,65 +287,40 @@ def submit_milestone_evidence(
         "Cần bằng chứng quét từ repository để xác minh."
     )
 
-    # Accept an official GitHub URL only; do not trust lookalike hosts or paths.
-    parsed = urlsplit(url)
-    path_parts = [part for part in parsed.path.split("/") if part]
-    if (
-        parsed.scheme == "https"
-        and parsed.hostname == "github.com"
-        and parsed.username is None
-        and parsed.password is None
-        and len(path_parts) == 4
-    ):
-        owner, repo_slug, kind, identifier = path_parts
-        repo_name = f"{owner}/{repo_slug}"
-        evidence_type = (
-            "commit"
-            if kind == "commit"
-            and len(identifier) == 40
-            and all(ch in "0123456789abcdefABCDEF" for ch in identifier)
-            else "pull_request"
-            if kind == "pull"
-            and identifier.isascii()
-            and identifier.isdecimal()
-            and int(identifier) > 0
-            else None
+    repo = db.scalar(
+        select(Repository)
+        .join(user_repository, Repository.id == user_repository.c.repository_id)
+        .where(
+            user_repository.c.user_id == user.id,
+            Repository.full_name == link.repo_name,
         )
-        if evidence_type:
-            repo = db.scalar(
-                select(Repository)
-                .join(user_repository, Repository.id == user_repository.c.repository_id)
-                .where(
-                    user_repository.c.user_id == user.id,
-                    Repository.full_name == repo_name,
-                )
+    )
+    if repo is not None:
+        evidence = db.scalar(
+            select(VerificationEvidence.id)
+            .where(
+                VerificationEvidence.repository_id == repo.id,
+                VerificationEvidence.user_id == user.id,
+                VerificationEvidence.evidence_type == link.evidence_type,
+                VerificationEvidence.target_identifier == link.identifier,
+                VerificationEvidence.verification_status == "verified",
+                VerificationEvidence.is_bot.is_(False),
+                VerificationEvidence.is_fork_inherited.is_(False),
             )
-            if repo is not None:
-                evidence = db.scalar(
-                    select(VerificationEvidence.id)
-                    .where(
-                        VerificationEvidence.repository_id == repo.id,
-                        VerificationEvidence.user_id == user.id,
-                        VerificationEvidence.evidence_type == evidence_type,
-                        VerificationEvidence.target_identifier == identifier,
-                        VerificationEvidence.verification_status == "verified",
-                        VerificationEvidence.is_bot.is_(False),
-                        VerificationEvidence.is_fork_inherited.is_(False),
-                    )
-                    .limit(1)
-                )
-                if evidence is not None:
-                    is_verified = True
-                    verification_status = "verified"
-                    explanation = (
-                        "Đã đối chiếu minh chứng với đóng góp GitHub "
-                        f"được hệ thống xác minh trong {repo_name}."
-                    )
-                else:
-                    explanation = (
-                        f"Đã ghi nhận liên kết từ {repo_name}. "
-                        "Chưa tìm thấy bản ghi xác minh đóng góp tương ứng."
-                    )
+            .limit(1)
+        )
+        if evidence is not None:
+            is_verified = True
+            verification_status = "verified"
+            explanation = (
+                "Đã đối chiếu minh chứng với đóng góp GitHub "
+                f"được hệ thống xác minh trong {link.repo_name}."
+            )
+        else:
+            explanation = (
+                f"Đã ghi nhận liên kết từ {link.repo_name}. "
+                "Chưa tìm thấy bản ghi xác minh đóng góp tương ứng."
+            )
 
     # Deep-copy JSONB to guarantee SQLAlchemy detects and persists the update.
     data = deepcopy(roadmap.data)
@@ -459,6 +449,17 @@ def reevaluate(
     return {
         "snapshot_id": snapshot.key,
         "suggestions": [serialize_suggestion(s) for s in suggestions],
+        "evaluation": {
+            "source": "stored_public_analysis",
+            "checked_milestones": sum(m.status != "completed" for m in milestones),
+            "verified_skill_count": sum(
+                any(
+                    evidence.get("verified") is True and evidence.get("ref")
+                    for evidence in items
+                )
+                for items in snapshot.skills.values()
+            ),
+        },
     }
 
 
@@ -514,6 +515,8 @@ def resolve(
                         == str(m.external_key or "").lower()
                     ):
                         item["status"] = "completed"
+                        item["verification_status"] = "verified"
+                        item["evaluation_evidence"] = s.evidence
                         break
                 roadmap.data = data
                 flag_modified(roadmap, "data")

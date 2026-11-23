@@ -44,6 +44,13 @@ def evaluate(
         raise IncomparableSnapshot(
             "Snapshot is invalid or scope/rubric/period mismatch"
         )
+    # GitHub skills and roadmap milestones can differ in capitalization
+    # (e.g. "Python" vs "python"); compare keys without weakening verification.
+    normalized_skills: dict[str, list[dict[str, Any]]] = {}
+    for skill_key, items in snapshot.skills.items():
+        normalized_key = str(skill_key).strip().casefold()
+        normalized_skills.setdefault(normalized_key, []).extend(items)
+
     result = []
     for m in milestones:
         if m["status"] == "completed":
@@ -53,7 +60,7 @@ def evaluate(
             continue
         evidence = []
         for skill in required:
-            items = snapshot.skills.get(skill, [])
+            items = normalized_skills.get(str(skill).strip().casefold(), [])
             target = m.get("target_score")
             verified = [
                 e

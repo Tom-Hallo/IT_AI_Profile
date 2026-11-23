@@ -64,3 +64,41 @@ def test_incomparable_snapshot_rejected(overrides):
 
 def test_repeat_evaluation_is_deterministic():
     assert run(snapshot()) == run(snapshot())
+
+
+def test_github_skill_keys_are_case_insensitive():
+    result = run(
+        snapshot(
+            skills={
+                "python": [{"verified": True, "ref": "evidence:python"}],
+                "FASTAPI": [{"verified": True, "ref": "evidence:fastapi"}],
+            }
+        )
+    )
+    assert len(result) == 1
+    assert result[0]["milestone_id"] == 10
+    assert len(result[0]["evidence"]) == 2
+
+
+def test_case_insensitive_match_still_requires_verified_evidence():
+    result = run(
+        snapshot(
+            skills={
+                "python": [{"verified": True, "ref": "evidence:python"}],
+                "fastapi": [{"verified": False, "ref": "evidence:fastapi"}],
+            }
+        )
+    )
+    assert result == []
+
+
+def test_case_insensitive_match_does_not_accept_missing_evidence_reference():
+    result = run(
+        snapshot(
+            skills={
+                "python": [{"verified": True, "ref": "evidence:python"}],
+                "fastapi": [{"verified": True, "ref": ""}],
+            }
+        )
+    )
+    assert result == []
