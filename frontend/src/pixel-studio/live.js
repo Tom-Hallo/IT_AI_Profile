@@ -130,11 +130,21 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }
     if (!analysisJob) {
       try {
-        const savedJob = JSON.parse(sessionStorage.getItem('ita-active-job') || 'null');
-        if (savedJob && savedJob.id) {
-          analysisJob = savedJob;
-          const targetRepo = data.repos.find(r => r.id === savedJob.repo_id) || active();
-          if (targetRepo) watchAnalysis(targetRepo, ++analysisEpoch);
+        const savedJob = JSON.parse(
+          sessionStorage.getItem("ita-active-job") || "null",
+        );
+        const repoId = Number(savedJob?.repo_id);
+
+        if (savedJob?.id && Number.isSafeInteger(repoId) && repoId > 0) {
+          const targetRepo = data.repos.find(
+            (r) => Number(r.id) === repoId,
+          ) ?? {
+            id: repoId,
+            full_name: "Repository #" + repoId,
+          };
+
+          analysisJob = { ...savedJob, repo_id: repoId };
+          watchAnalysis(targetRepo, ++analysisEpoch);
         }
       } catch {}
     }
@@ -229,47 +239,77 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }
   }
 
-  function watchAnalysis(repo,epoch) {
+  function watchAnalysis(repo, epoch) {
     data.analysis = { ...analysisJob, repo_id: repo.id };
     render();
     analysisPolling = setTimeout(async () => {
       try {
-        const job = await request('/analysis/jobs/' + encodeURIComponent(analysisJob.id));
+        const job = await request(
+          "/analysis/jobs/" + encodeURIComponent(analysisJob.id),
+        );
         if (epoch !== analysisEpoch) return;
         analysisJob = { ...job, repo_id: repo.id };
-        if (['queued','running','cancel_requested'].includes(job.status)) {
-          watchAnalysis(repo,epoch);
+        delete data.errors.repos;
+        if (["queued", "running", "cancel_requested"].includes(job.status)) {
+          watchAnalysis(repo, epoch);
           return;
         }
         data.analysis = null;
         analysisJob = null;
-        try { sessionStorage.removeItem('ita-active-job'); } catch {}
-        if (job.status === 'succeeded') {
-          data.messages.repos = copy('Đã phân tích ' + repo.full_name + '.', 'Analyzed ' + repo.full_name + '.');
-          if (active()?.id === repo.id) await repoDetail({reportId:job.report_id});
+        try {
+          sessionStorage.removeItem("ita-active-job");
+        } catch {}
+        if (job.status === "succeeded") {
+          data.messages.repos = copy(
+            "Đã phân tích " + repo.full_name + ".",
+            "Analyzed " + repo.full_name + ".",
+          );
+          if (active()?.id === repo.id)
+            await repoDetail({ reportId: job.report_id });
           data.scores = [];
         } else {
-          data.messages.repos = job.status === 'cancelled' ? copy('Đã hủy phân tích.', 'Analysis cancelled.')
-            : copy('Phân tích thất bại', 'Analysis failed') + (job.error_code ? ' · ' + job.error_code : '') + '.';
+          data.messages.repos =
+            job.status === "cancelled"
+              ? copy("Đã hủy phân tích.", "Analysis cancelled.")
+              : copy("Phân tích thất bại", "Analysis failed") +
+                (job.error_code ? " · " + job.error_code : "") +
+                ".";
         }
       } catch (error) {
         if (epoch !== analysisEpoch) return;
+
         data.errors.repos = errorText(error);
-        data.analysis = null;
-        analysisJob = null;
-        try { sessionStorage.removeItem('ita-active-job'); } catch {}
+        if ([401, 403, 404, 422].includes(error.status)) {
+          data.analysis = null;
+          analysisJob = null;
+          if (error.status !== 401) {
+            try { sessionStorage.removeItem('ita-active-job'); } catch {}
+          }
+          render();
+          return;
+        }
+
+        // Backend may still be processing this job.
+        // Preserve the job ID and retry polling.
+        if (analysisJob) {
+          data.analysis = { ...analysisJob, repo_id: repo.id };
+
+          analysisPolling = setTimeout(() => {
+            if (epoch === analysisEpoch && analysisJob) {
+              watchAnalysis(repo, epoch);
+            }
+          }, 5000);
+        }
       }
       render();
-    },1200);
+    }, 1200);
   }
 
   async function cancelAnalysis() {
-    if (!analysisJob) return;
-    const repo = active();
-    if (analysisJob.repo_id && repo && analysisJob.repo_id !== repo.id) return;
+    const jobId = analysisJob?.id;
+    if (!jobId) return;
     await work('cancel',async () => {
-      await post('/analysis/jobs/' + encodeURIComponent(analysisJob.id) + '/cancel');
-      try { sessionStorage.removeItem('ita-active-job'); } catch {}
+      await post('/analysis/jobs/' + encodeURIComponent(jobId) + '/cancel');
     });
   }
 
