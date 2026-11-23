@@ -324,6 +324,20 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:2px}
 }
 .road-map::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(circle,var(--accent-glow) 1px,transparent 1px) 0 0/18px 18px;mask-image:radial-gradient(ellipse,#000 20%,transparent 85%)}
 .road-map canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.road-map-lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+.road-map-lines :is(.road-connector-stroke,.road-connector-flow){fill:none;stroke-linecap:butt;stroke-linejoin:miter}
+.road-map-lines .is-solid .road-connector-stroke{stroke:var(--accent);stroke-width:2}
+.road-map-lines .is-dashed .road-connector-stroke{stroke:var(--line-strong);stroke-width:1.5;stroke-dasharray:4 6}
+.road-map-lines .road-connector-flow{display:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:12 88;opacity:.92}
+@media (prefers-reduced-motion:no-preference){
+  .road-map-lines .is-solid .road-connector-flow{
+    display:block;animation:road-map-flow 3.6s linear infinite;
+    filter:drop-shadow(0 0 2px var(--accent));
+  }
+  .road-map-lines .is-dashed .road-connector-stroke{animation:road-map-dashes 2.8s linear infinite}
+}
+@keyframes road-map-flow{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}
+@keyframes road-map-dashes{from{stroke-dashoffset:0}to{stroke-dashoffset:-10}}
 .node{position:relative;display:grid;justify-items:center;align-content:center;gap:4px;width:min(109px,96%);min-height:75px;padding:5px;border:1px solid var(--accent-border);border-radius:7px;background:var(--accent-panel);color:var(--ink);text-align:center;line-height:1.2}
 .node:hover{border-color:var(--accent)}
 .node[aria-pressed=true]{border-color:var(--accent);background:var(--accent-wash);box-shadow:0 0 0 2px var(--accent-glow)}
