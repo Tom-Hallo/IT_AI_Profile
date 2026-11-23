@@ -12,13 +12,15 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
   }
 
   const indicators = scores.map(({key,label,score},index) => {
-    const trend = comparison?.[key];
+    const valid = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 100;
+    const trend = valid ? comparison?.[key] : null;
     const change = trend?.delta ? (trend.delta > 0 ? '+' + trend.delta : '−' + Math.abs(trend.delta)) : null;
-    return '<li><button type="button" class="radar-indicator" data-radar-axis="' + index + '" data-score="' + score + '"'
+    return '<li><button type="button" class="radar-indicator' + (valid ? '' : ' is-unscored')
+      + '" data-radar-axis="' + index + '" data-score="' + (valid ? score : '') + '"'
       + (trend ? ' data-previous="' + trend.before + '"' : '')
       + ' aria-controls="radar-detail-' + key + '" aria-expanded="false">'
       + '<span class="radar-dot" aria-hidden="true"></span><span class="radar-label">' + escape(label) + '</span>'
-      + '<span class="radar-number"><strong>' + score + '<small>/100</small></strong>'
+      + '<span class="radar-number"><strong>' + (valid ? score + '<small>/100</small>' : '—') + '</strong>'
       + (change ? '<span class="radar-change" data-change="' + Math.sign(trend.delta) + '" title="' + escape(t('radar.delta',{change})) + '">'
         + '<span class="sr-only">' + escape(t('radar.delta',{change})) + '</span><span aria-hidden="true">' + change + '</span></span>' : '')
       + '</span></button></li>';
@@ -28,7 +30,8 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
   return '<section class="panel radar-panel" aria-labelledby="radar-title">' + header
     + '<div class="radar-body"><div class="radar-chart"><div class="radar-plot"><canvas aria-hidden="true"></canvas></div>' + legend + '</div>'
     + '<div class="radar-values"><p>' + escape(t('radar.caption',{count:reportCount})) + '</p>'
-    + '<ul class="radar-indicators"' + labelAttr(t('radar.axes')) + '>' + indicators + '</ul></div></div>' + insights + '</section>';
+    + '<ul class="radar-indicators"' + labelAttr(t('radar.axes')) + '>' + indicators + '</ul>'
+    + '<p class="subtle">' + escape(t('radar.missingAxes')) + '</p></div></div>' + insights + '</section>';
 }
 
 export function mountRadar(panel, selectedAxis, selectAxis) {
@@ -39,8 +42,12 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
 
   const axes = [...panel.querySelectorAll('[data-radar-axis]')];
   const insights = axes.map(axis => document.getElementById(axis.getAttribute('aria-controls')));
-  const values = axes.map(axis => Number(axis.dataset.score) / 100);
-  const previous = axes.map(axis => Number(axis.dataset.previous) / 100);
+  const values = axes.map(axis =>
+    axis.dataset.score === '' ? null : Number(axis.dataset.score) / 100
+  );
+  const previous = axes.map(axis =>
+    axis.dataset.previous === undefined ? null : Number(axis.dataset.previous) / 100
+  );
   const labels = axes.map(axis => axis.querySelector('.radar-label').textContent);
   const angles = axes.map((_, i) => (i / axes.length) * Math.PI * 2 - Math.PI / 2);
   const ringValues = [.25,.5,.75,1].map(level => axes.map(() => level));
@@ -97,17 +104,32 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
       ctx.stroke();
     });
 
-    polygon(values);
-    const fill = ctx.createLinearGradient(0,centerY - radius,0,centerY + radius);
-    fill.addColorStop(0,accent + '52');
-    fill.addColorStop(1,accent + '13');
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1.8;
-    ctx.stroke();
+    const complete = values.every(value => typeof value === 'number' && Number.isFinite(value));
+    if (complete) {
+      polygon(values);
+      const fill = ctx.createLinearGradient(0,centerY - radius,0,centerY + radius);
+      fill.addColorStop(0,accent + '52');
+      fill.addColorStop(1,accent + '13');
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    } else {
+      // Missing evidence is not zero: only connect adjacent measured axes.
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.8;
+      values.forEach((value, i) => {
+        const next = (i + 1) % values.length;
+        if (value === null || values[next] === null) return;
+        ctx.beginPath();
+        ctx.moveTo(...point(angles[i], radius * value));
+        ctx.lineTo(...point(angles[next], radius * values[next]));
+        ctx.stroke();
+      });
+    }
 
-    if (previous.every(Number.isFinite)) {
+    if (previous.every(value => typeof value === 'number' && Number.isFinite(value))) {
       polygon(previous);
       ctx.strokeStyle = color('--muted');
       ctx.lineWidth = 1.3;
@@ -124,6 +146,7 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
     }
 
     angles.forEach((angle, i) => {
+      if (values[i] === null) return;
       const [x,y] = point(angle,radius * values[i]);
       if (i === active) {
         ctx.beginPath();
