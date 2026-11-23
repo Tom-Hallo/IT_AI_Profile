@@ -283,9 +283,10 @@ function renderMessage(msg,animate) {
       const declinedBadge = isEn ? '✕ Proposal declined' : '✕ Đã từ chối đề xuất';
       const reconsiderBtn = isEn ? 'Reconsider' : 'Mở lại (Suy nghĩ thêm)';
       actionHtml = '<div class="chat-action-card dismissed">'
+        + '<div class="chat-action-toolbar">'
         + '<span class="badge">' + escape(declinedBadge) + '</span>'
-        + '<button class="button quiet small" type="button" data-act="agent-reconsider" data-id="' + msg.id + '">' + escape(reconsiderBtn) + '</button>'
-        + '</div>';
+        + '<button class="button secondary small chat-action-reopen" type="button" data-act="agent-reconsider" data-id="' + msg.id + '">' + escape(reconsiderBtn) + '</button>'
+        + '</div></div>';
     } else {
       const isEn = getLanguage() === 'en';
       const act = msg.action;
@@ -302,11 +303,13 @@ function renderMessage(msg,animate) {
         ? '👉 Click to apply to Roadmap, or decline if not needed'
         : '👉 Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần';
       actionHtml = '<div class="chat-action-card">'
+        + '<div class="chat-action-toolbar">'
         + '<div class="chat-action-header">' + escape(headerTitle) + '</div>'
+        + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small chat-action-trigger',attr('id',msg.id))
+        + '</div>'
         + '<p class="chat-action-impact">' + escape(act.impact) + '</p>'
         + (targetTitle ? '<p class="chat-action-impact">' + escape(milestoneLabel) + ' <strong>' + escape(targetTitle) + '</strong></p>' : '')
-        + '<div class="action-row">'
-        + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small',attr('id',msg.id))
+        + '<div class="action-row chat-action-secondary">'
         + btn(escape(declineLabel),'agent-decline','secondary small',attr('id',msg.id))
         + '</div>'
         + '<p class="chat-action-hint">' + escape(hintText) + '</p>'
