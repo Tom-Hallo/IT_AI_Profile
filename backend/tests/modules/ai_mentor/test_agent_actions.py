@@ -441,6 +441,106 @@ def test_mentor_append_two_milestones_preserves_original_progress_and_order(pg):
         )
 
 
+def test_tracking_persisted_order_not_database_row_id(pg):
+    owner = World(pg).user("reverse-tracking-order@example.test")
+    original_order = ["python", "fastapi", "postgresql"]
+    roadmap = Roadmap(
+        user_id=owner.id,
+        title="Reverse row insertion",
+        data={
+            "milestones": [
+                {"skill": key, "order": idx, "evidence": []}
+                for idx, key in enumerate(original_order, 1)
+            ],
+            "total": 3,
+        },
+    )
+    pg.add(roadmap)
+    pg.flush()
+    # Simulate existing tracking rows inserted in an order different from JSONB.
+    for key in reversed(original_order):
+        pg.add(
+            Milestone(
+                roadmap_id=roadmap.id,
+                external_key=key,
+                title=key,
+                required_skills=[key],
+                status="completed" if key == "python" else "pending",
+            )
+        )
+    pg.commit()
+
+    with Session(pg.bind, expire_on_commit=False) as fresh:
+        tracking = get_tracking(roadmap.id, owner, fresh)["milestones"]
+        assert [m["external_key"] for m in tracking] == original_order
+        assert tracking[0]["status"] == "completed"
+        assert tracking[0]["id"] > tracking[-1]["id"]
+
+
+def test_mentor_append_batch_duplicate_rolls_back_all_insertions(pg):
+    owner = World(pg).user("batch-duplicate@example.test")
+    roadmap = _seed_roadmap_with_progress(pg, owner)
+    before = deepcopy(roadmap.data)
+    action = propose(
+        pg,
+        owner,
+        {
+            "tool": "update_roadmap",
+            "roadmap_id": roadmap.id,
+            "add_milestones": [
+                {
+                    "skill": "advanced_backend",
+                    "title": "Advanced Backend",
+                    "objective": "Build backends",
+                    "metric": "Service shipped",
+                },
+                {
+                    "skill": "python",
+                    "title": "Existing Python",
+                    "objective": "Would overwrite original",
+                    "metric": "Not allowed",
+                },
+            ],
+        },
+    )
+    assert action is not None
+    assert actions.decide_action(pg, owner, action.id, CONFIRM).status == "denied"
+    pg.expire_all()
+    assert pg.get(Roadmap, roadmap.id).data == before
+    assert (
+        pg.scalar(
+            select(func.count())
+            .select_from(Milestone)
+            .where(Milestone.roadmap_id == roadmap.id)
+        )
+        == 6
+    )
+
+
+def test_mentor_append_uses_max_existing_order_without_renumbering(pg):
+    owner = World(pg).user("max-position@example.test")
+    roadmap = _seed_roadmap_with_progress(pg, owner)
+    before = deepcopy(roadmap.data)
+    before["milestones"][1]["order"] = 20
+    roadmap.data = before
+    pg.commit()
+    proposal = propose(
+        pg,
+        owner,
+        {
+            "tool": "update_roadmap",
+            "roadmap_id": roadmap.id,
+            "steps": ["Tracing", "Performance"],
+        },
+    )
+    assert proposal is not None
+    assert actions.decide_action(pg, owner, proposal.id, CONFIRM).status == "succeeded"
+    pg.expire_all()
+    result = pg.get(Roadmap, roadmap.id).data
+    assert result["milestones"][:6] == before["milestones"]
+    assert [item["order"] for item in result["milestones"][-2:]] == [21, 22]
+
+
 def test_mentor_steps_append_distinct_rows_and_do_not_renumber_existing(pg):
     owner = World(pg).user("steps-owner@example.test")
     roadmap = _seed_roadmap_with_progress(pg, owner)
