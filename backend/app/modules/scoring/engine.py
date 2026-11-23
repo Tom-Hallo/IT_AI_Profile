@@ -109,8 +109,7 @@ def calculate_framework(
     if (
         set(active_weights) != set(FRAMEWORK_WEIGHTS)
         or any(
-            type(weight) is not int or weight < 0
-            for weight in active_weights.values()
+            type(weight) is not int or weight < 0 for weight in active_weights.values()
         )
         or sum(active_weights.values()) != 100
     ):
@@ -157,7 +156,6 @@ def calculate_framework(
         "breakdown": breakdown,
         "missing_metrics": [],
         "explanation": (
-            "Đánh giá dựa trên đóng góp GitHub đã xác minh "
-            "tại tệp sử dụng framework."
+            "Đánh giá dựa trên đóng góp GitHub đã xác minh tại tệp sử dụng framework."
         ),
     }
