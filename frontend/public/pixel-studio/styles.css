@@ -418,12 +418,27 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:2px}
 .chat-link{color:var(--accent,#818cf8);text-decoration:underline;text-underline-offset:2px;font-weight:600}
 .chat-link:hover{color:var(--accent-strong,#6366f1);text-decoration:none}
 .chat-limitation-tray{margin-top:6px;padding:4px 8px;border-radius:6px;background:rgba(234,179,8,0.08);border-left:3px solid #eab308;font-size:12px;color:var(--ink-muted)}
-.chat-action-card{margin-top:10px;padding:10px 12px;border:1px solid rgba(99,102,241,0.35);border-radius:10px;background:rgba(99,102,241,0.08);display:grid;gap:6px}
+.chat-action-card{min-width:0;margin-top:10px;padding:10px 12px;border:1px solid rgba(99,102,241,0.35);border-radius:10px;background:rgba(99,102,241,0.08);display:grid;gap:6px}
 .chat-action-card.applied{border-color:rgba(34,197,94,0.4);background:rgba(34,197,94,0.1)}
-.chat-action-card.dismissed{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06);display:flex;align-items:center;justify-content:space-between;gap:8px}
-.chat-action-header{font-weight:700;font-size:12.5px;color:var(--ink-strong);display:flex;align-items:center;gap:6px}
+.chat-action-card.dismissed{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06)}
+/* Keep proposal controls visible at the card's top-right, without viewport-fixed overlays. */
+.chat-action-toolbar{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;min-width:0}
+.chat-action-card.dismissed .chat-action-toolbar{align-items:center}
+.chat-action-header{flex:1 1 130px;min-width:0;font-weight:700;font-size:12.5px;color:var(--ink-strong);display:flex;align-items:center;gap:6px}
+.chat-action-toolbar .badge{min-width:0}
+.chat-action-toolbar .button{min-width:0;max-width:100%;margin-left:auto}
+.chat-action-trigger,.chat-action-reopen{
+  white-space:normal;overflow-wrap:anywhere;transform-origin:top right;
+  animation:chat-action-control-in 340ms var(--ease) both;
+  transition:background 180ms,border-color 180ms,color 180ms,transform 180ms var(--ease),box-shadow 180ms var(--ease)
+}
+.chat-action-trigger:hover:not(:disabled),.chat-action-reopen:hover:not(:disabled){transform:translateY(-2px) scale(1.02);box-shadow:0 7px 16px rgba(9,9,11,0.16)}
+.chat-action-trigger:active:not(:disabled),.chat-action-reopen:active:not(:disabled){transform:translateY(1px) scale(0.98);box-shadow:none}
+.chat-action-trigger:focus-visible,.chat-action-reopen:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chat-action-secondary{justify-content:flex-end}
 .chat-action-impact{font-size:12px;color:var(--ink);margin:0;line-height:1.4}
 .chat-action-hint{font-size:11px;color:var(--muted);margin:0}
+@keyframes chat-action-control-in{from{opacity:0;transform:translateY(7px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .chat-bubble.entering,.chat-row.pending{animation:message-in 280ms var(--ease) both}
 @keyframes message-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 .chat-compose{flex:none;padding:9px 12px 12px;border-top:1px solid var(--line)}
