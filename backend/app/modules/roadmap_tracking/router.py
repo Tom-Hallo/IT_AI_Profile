@@ -154,9 +154,7 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
     # Match the persisted JSONB array order, independent of row insert IDs.
     # Orphaned legacy tracking rows follow in their original ID order.
     data_items = (
-        roadmap.data.get("milestones", [])
-        if isinstance(roadmap.data, dict)
-        else []
+        roadmap.data.get("milestones", []) if isinstance(roadmap.data, dict) else []
     )
     if not isinstance(data_items, list):
         data_items = []
