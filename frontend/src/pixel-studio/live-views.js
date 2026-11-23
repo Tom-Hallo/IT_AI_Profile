@@ -3,6 +3,7 @@ import { attr, badge, blank, brand, btn, details, escape, field, filterControls,
 import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
+import {submittedEvidenceLinks} from './roadmap-evidence.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
@@ -860,20 +861,51 @@ export function liveRoadmap(data) {
     + '</section>' : '';
 
 
-  const evidenceItems = (selected?.evidence || item?.evidence || []);
+  // Proof checkmarks represent submitted links, never scoring references.
+  const evidenceItems = submittedEvidenceLinks(selected?.evidence);
+  const verifiedLinkCount = evidenceItems.filter(ev => ev.verified).length;
+  const proofLinksHtml = '<div class="milestone-proof-evidence">'
+    + '<div class="milestone-proof-summary"><strong>'
+    + escape(copy('Đã nộp ' + evidenceItems.length + ' liên kết', evidenceItems.length + ' submitted links'))
+    + '</strong><span>'
+    + escape(copy(verifiedLinkCount + ' đã xác minh', verifiedLinkCount + ' verified'))
+    + '</span></div>'
+    + (evidenceItems.length ? '<ul class="milestone-proof-link-list">'
+      + evidenceItems.map(ev => {
+        const parsed = new URL(ev.url);
+        const label = parsed.hostname + parsed.pathname + parsed.search;
+        return '<li class="milestone-proof-link ' + (ev.verified ? 'is-verified' : 'is-self-reported') + '">'
+          + '<span class="milestone-proof-tick" aria-hidden="true">' + icon('check') + '</span>'
+          + '<a href="' + escape(ev.url) + '" title="' + escape(ev.url)
+          + '" target="_blank" rel="noopener noreferrer">' + escape(label) + '</a>'
+          + '<small>' + escape(ev.verified
+            ? copy('Đã xác minh', 'Verified')
+            : copy('Tự khai báo', 'Self-reported')) + '</small></li>';
+      }).join('') + '</ul>'
+      : '<p class="milestone-proof-empty">'
+        + escape(copy('Chưa có liên kết bằng chứng được nộp.', 'No evidence links submitted yet.'))
+        + '</p>')
+    + '<small class="milestone-proof-help">'
+    + escape(copy('✓ = liên kết đã nộp; chỉ liên kết xác minh mới có trạng thái Đã xác minh.',
+      '✓ = submitted link; only verified links are marked Verified.'))
+    + '</small></div>';
   const evidenceListHtml = evidenceItems.length ? '<div class="milestone-evidence-block"><h4>'
     + icon('award') + ' ' + copy('Bằng chứng đã nộp & xác minh', 'Submitted & Verified Evidence') + '</h4>'
     + '<ul class="milestone-evidence-list">' + evidenceItems.map(ev => {
-      const url = typeof ev === 'string' ? ev : ev.url || ev.evidence_url || '';
-      const note = typeof ev === 'object' ? ev.note : '';
-      const vStatus = typeof ev === 'object' ? ev.verification_status : selected?.verification_status || 'self_reported';
-      const isVerified = vStatus === 'verified';
       return '<li><div class="evidence-link-row">'
-        + '<a href="' + escape(url) + '" target="_blank" rel="noopener noreferrer" class="evidence-anchor">'
-        + icon('branch') + ' ' + escape(url) + '</a>'
-        + badge(isVerified ? copy('Đã xác minh (Verified)', 'Verified') : copy('Tự khai báo', 'Self-reported'), isVerified ? 'green' : 'amber')
-        + '</div>' + (note ? '<p class="evidence-subnote">' + escape(note) + '</p>' : '') + '</li>';
+        + '<a href="' + escape(ev.url) + '" target="_blank" rel="noopener noreferrer" class="evidence-anchor">'
+        + icon('branch') + ' ' + escape(ev.url) + '</a>'
+        + badge(ev.verified ? copy('Đã xác minh (Verified)', 'Verified') : copy('Tự khai báo', 'Self-reported'), ev.verified ? 'green' : 'amber')
+        + '</div>' + (ev.note ? '<p class="evidence-subnote">' + escape(ev.note) + '</p>' : '') + '</li>';
     }).join('') + '</ul></div>' : '';
+  // Existing skill-assessment references remain accessible but are not
+  // counted as user-submitted URLs or interpreted as verified submissions.
+  const assessmentRefsHtml = Array.isArray(item?.evidence) && item.evidence.length
+    ? '<details class="milestone-analysis-refs"><summary>'
+      + escape(copy('Tham chiếu phân tích năng lực (không tính là link đã nộp)',
+        'Assessment references (not submitted links)'))
+      + '</summary>' + refs(item.evidence) + '</details>'
+    : '';
 
   const isCompleted = selected?.status === 'completed';
   const evidenceFormHtml = selected ? '<form class="stack road-evidence-form" id="milestone-evidence-form" data-milestone="' + selected.id + '">'
@@ -914,8 +946,9 @@ export function liveRoadmap(data) {
     + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : 'blue') + '</div>'
     + '<h2>' + escape(detailTitle) + '</h2>' + paragraph(detailObjective)
     + '<div class="milestone-proof"><span class="feature-icon">' + icon('award') + '</span><div><h3>'
-    + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + refs(item.evidence) + '</div></div>'
+    + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + proofLinksHtml + '</div></div>'
     + evidenceListHtml
+    + assessmentRefsHtml
     + evidenceFormHtml
     + '<div class="action-row" style="margin-top:14px">'
     + actionButtonsHtml
