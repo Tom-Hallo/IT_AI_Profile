@@ -201,7 +201,7 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
         ])
         + blockersList
         + (selected.limitations ?? []).map(item => muted(item.message ?? item.label ?? item.code)).join('')
-        + '<h4>' + copy('Bằng chứng đã sử dụng', 'Evidence used') + ': ' + refsUsed.length + '</h4>'
+        + '<h4>' + copy('Bằng chứng được xem xét', 'Evidence considered') + ': ' + refsUsed.length + '</h4>'
         + (refs(refsUsed, data) || muted(copy('Không có bằng chứng được dùng để chấm vai trò.', 'No evidence was used to score this role.')))
         + (refsUsed.length > 20 ? muted(copy('Chỉ hiển thị 20 bằng chứng đầu tiên.', 'Showing the first 20 evidence references.')) : '')
         + '<div class="evidence-action-row" style="margin-top:12px">'
