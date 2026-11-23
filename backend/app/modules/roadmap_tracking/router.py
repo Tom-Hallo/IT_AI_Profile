@@ -69,7 +69,9 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
         "version": m.version,
     }
     if data_milestone:
-        submitted = data_milestone.get("evidence", [])
+        submitted = data_milestone.get("evidence")
+        if not isinstance(submitted, list):
+            submitted = []
         verified_submission = any(
             isinstance(item, dict)
             and item.get("verified") is True
@@ -112,7 +114,9 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
     ).all()
     if not milestones and roadmap.data and isinstance(roadmap.data, dict):
         ms_list = roadmap.data.get("milestones", [])
-        if not ms_list and roadmap.data.get("steps"):
+        if not isinstance(ms_list, list):
+            ms_list = []
+        if not ms_list and isinstance(roadmap.data.get("steps"), list):
             ms_list = [
                 {
                     "skill": f"step_{idx}",
