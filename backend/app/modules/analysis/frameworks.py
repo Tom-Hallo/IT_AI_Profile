@@ -192,7 +192,6 @@ FRAMEWORK_CATALOG: list[dict[str, Any]] = [
 ]
 
 
-
 # A dependency/configuration proves a repository uses a framework, not that the
 # owner implemented it. Source imports are captured separately for attribution.
 SOURCE_IMPORT_PACKAGES = {
@@ -212,7 +211,7 @@ SOURCE_IMPORT_PACKAGES = {
     "Vite": "vite",
 }
 _JS_IMPORT_RE = re.compile(
-    r"""^\\s*import\\s+(?:(?:type\\s+)?[^'"]{1,120}?\\bfrom\\s+)?['"]([^'"]+)['"]"""
+    r"""^\s*import\s+(?:(?:type\s+)?[^'"]{1,120}?\bfrom\s+)?['"]([^'"]+)['"]"""
 )
 
 
