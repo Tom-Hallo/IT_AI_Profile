@@ -15,6 +15,8 @@ Orchestrates:
 from __future__ import annotations
 
 import logging
+import time
+from pathlib import PurePosixPath
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime
@@ -226,6 +228,52 @@ class RepositoryInspector:
             all_tree_paths=valid_tree_paths,
             collector=self.collector,
         )
+
+        # Capture bounded source-level imports for later overlap with verified
+        # non-merge commits/PRs. Manifest evidence alone must not earn points.
+        # Only scan safe first-party source, without recording source snippets.
+        if frameworks:
+            source_extensions = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue"}
+            entry_names = {"main.py", "app.py", "app.tsx", "main.ts", "main.tsx", "index.tsx"}
+            source_paths = [
+                path
+                for path in valid_tree_paths
+                if PurePosixPath(path).suffix.lower() in source_extensions
+                and not is_manifest_file(path)
+                and not any(
+                    part in {"tests", "test", "__tests__", "fixtures"}
+                    for part in path.lower().split("/")[:-1]
+                )
+                and not PurePosixPath(path).name.lower().startswith("test_")
+            ]
+            source_paths.sort(
+                key=lambda path: (
+                    0 if PurePosixPath(path).name.lower() in entry_names else 1,
+                    path.count("/"),
+                    path,
+                )
+            )
+            source_max_bytes = min(64 * 1024, self.limits.max_file_size_bytes)
+            for path in source_paths[:32]:
+                size = file_sizes.get(path, 0)
+                if size <= 0 or size > source_max_bytes:
+                    continue
+                # Optional import scanning cannot exhaust the analysis budget.
+                if (
+                    self.budget.inspected_files_count >= self.limits.max_inspected_files
+                    or self.budget.inspected_bytes_total + size
+                    > self.limits.max_total_analysis_bytes
+                    or time.monotonic() - self.budget.start_time
+                    > self.limits.analysis_timeout_seconds * 0.75
+                ):
+                    break
+                content = await source.get_file_content(path, max_bytes=source_max_bytes)
+                if content is None:
+                    continue
+                self.budget.record_file_inspected(len(content.encode("utf-8")))
+                framework_detector.record_source_imports(
+                    path, content, frameworks, self.collector
+                )
 
         # 6. Phân tích đặc trưng kiến trúc phần mềm
         if on_progress:
