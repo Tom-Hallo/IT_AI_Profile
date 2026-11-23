@@ -236,7 +236,7 @@ def framework_v22_metrics(
 
     # Prefer PR refs on a tie since their file scope is aggregated per PR.
     source = max(
-        (commit, pr),
+        (pr, commit),
         key=lambda item: len(item.evidence_ids) if item is not None else -1,
     )
     if source is None or not source.evidence_ids:
@@ -284,7 +284,9 @@ def save_skill_snapshots(
     version_order = {LEGACY_VERSION: 0, VERSION: 1, FRAMEWORK_VERSION: 2}
     for item in sorted(
         rubric_rows,
-        key=lambda rubric: version_order.get(rubric.version, -1),
+        key=lambda rubric: version_order.get(
+            getattr(rubric, "version", LEGACY_VERSION), -1
+        ),
         reverse=True,
     ):
         rubrics.setdefault(item.kind, item)
