@@ -451,28 +451,6 @@ def _collect_context(
                     "Một hoặc nhiều roadmap thiếu dữ liệu hoặc quyền truy cập.",
                 )
             )
-    elif payload.enable_actions or payload.milestone_id:
-        latest_roadmap = db.scalar(
-            select(Roadmap)
-            .where(Roadmap.user_id == user.id)
-            .order_by(Roadmap.id.desc())
-            .limit(1)
-        )
-        if latest_roadmap is not None:
-            chunks.append(
-                Context(
-                    "roadmap",
-                    latest_roadmap.title,
-                    {
-                        "roadmap_id": latest_roadmap.id,
-                        "title": latest_roadmap.title,
-                        "description": latest_roadmap.description,
-                        "data": latest_roadmap.data,
-                    },
-                    record_id=latest_roadmap.id,
-                )
-            )
-
     target_milestone_id = payload.milestone_id or sources.milestone_id
     if target_milestone_id:
         ms = db.scalar(
