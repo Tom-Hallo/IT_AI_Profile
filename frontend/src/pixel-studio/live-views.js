@@ -805,7 +805,7 @@ export function liveRoadmap(data) {
       + '</select>')
     : '';
 
-  if (data.busy.has('road') && !data.road && !data.tracking) {
+  if (data.busy.has('road') && data.roadmaps === undefined) {
     return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + roadmapLoadingSkeleton();
   }
 
