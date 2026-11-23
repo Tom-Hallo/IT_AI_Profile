@@ -743,19 +743,59 @@ export function liveRoadmap(data) {
     metric: copy('Hoàn thành mục tiêu của cột mốc này và nộp minh chứng.', 'Complete the objective of this milestone and submit evidence.'),
     evidence: selected.evidence || []
   } : null);
-  const picker = field(t('road.goal'), '<select id="road-goal">' + [
+  const roleOptions = [
     ['backend', 'Backend'], ['frontend', 'Frontend'], ['fullstack', 'Full-stack'], ['devops', 'DevOps']
-  ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
-  const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
-    ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select">'
-      + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
-      + '</select>')
+  ];
+  const selectedRole = roleOptions.find(([key]) => key === data.goal)?.[1] ?? data.goal;
+  const roleRoadmaps = (data.roadmaps ?? []).filter(item => item.goal === data.goal);
+  const roadBusy = data.busy.has('road');
+  const picker = '<div class="filter-field road-filter-field"><span class="filter-label" id="road-role-label">'
+    + escape(copy('Vai trò mục tiêu', 'Target role')) + '</span>'
+    + '<details class="filter-dropdown road-dropdown"><summary class="filter-trigger" id="road-role-trigger" aria-labelledby="road-role-label">'
+    + '<span class="filter-glyph">' + icon('branch') + '</span><span class="filter-value">' + escape(selectedRole)
+    + '</span><span class="filter-chevron" aria-hidden="true"></span></summary>'
+    + '<div class="filter-menu road-picker-menu" role="group" aria-label="' + escape(copy('Chọn vai trò', 'Select a role')) + '">'
+    + roleOptions.map(([key, label]) => '<button type="button" class="filter-option" data-act="road-goal-option"'
+      + attr('id', key) + ' aria-pressed="' + (key === data.goal) + '"' + (roadBusy ? ' disabled' : '') + '><span>'
+      + escape(label) + '</span>' + (key === data.goal ? icon('check') : '') + '</button>').join('')
+    + '</div></details></div>';
+  const roadPicker = roleRoadmaps.length
+    ? '<div class="filter-field road-filter-field road-plan-field"><span class="filter-label" id="road-plan-label">'
+      + escape(copy('Lộ trình của vai trò', 'Roadmap for this role')) + '</span>'
+      + '<details class="filter-dropdown road-dropdown"><summary class="filter-trigger" id="road-plan-trigger" aria-labelledby="road-plan-label">'
+      + '<span class="filter-glyph">' + icon('file') + '</span><span class="filter-value">'
+      + escape(data.road ? displayRoadmapTitle(data.road.title, data.goal) : copy('Chọn lộ trình', 'Choose a roadmap'))
+      + '</span><span class="filter-chevron" aria-hidden="true"></span></summary>'
+      + '<div class="filter-menu road-picker-menu" role="group" aria-label="' + escape(copy('Chọn lộ trình', 'Choose a roadmap')) + '">'
+      + roleRoadmaps.map(item => '<button type="button" class="filter-option" data-act="road-plan-option"'
+        + attr('id', item.id) + ' aria-pressed="' + (item.id === data.road?.id) + '"' + (roadBusy ? ' disabled' : '') + '>'
+        + '<span>' + escape(displayRoadmapTitle(item.title, item.goal)) + ' <small>#' + escape(item.id) + '</small></span>'
+        + (item.id === data.road?.id ? icon('check') : '') + '</button>').join('')
+      + '</div></details></div>'
     : '';
+  const roadHeading = () => heading(t('road.heading'), t('road.intro'),
+    '<div class="road-pickers-row">' + picker + roadPicker + '</div>');
+  if (!data.road) {
+    return roadHeading() + feedback(data, 'road') + (roadBusy
+      ? '<section class="panel road-blank-state" role="status"><span class="road-empty-icon">' + icon('pulse')
+        + '</span><h2>' + escape(copy('Đang tải lộ trình…', 'Loading roadmap…')) + '</h2></section>'
+      : '<section class="panel road-blank-state"><span class="road-empty-icon">' + icon('branch')
+        + '</span><p class="eyebrow">' + escape(selectedRole) + '</p><h2>'
+        + escape(copy('Chưa có lộ trình cho vai trò này', 'No roadmap for this role yet')) + '</h2><p>'
+        + escape(copy('Tạo lộ trình ' + selectedRole + ' để xem các cột mốc học tập phù hợp. Lộ trình của vai trò khác sẽ không hiển thị tại đây.',
+          'Create a ' + selectedRole + ' roadmap to see relevant milestones. Other roles are kept separate.'))
+        + '</p>' + btn(icon('branch') + ' ' + escape(copy('Tạo lộ trình ' + selectedRole, 'Create ' + selectedRole + ' roadmap')),
+          'road-create', 'primary') + '</section>');
+  }
 
-  const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
-    + attr('state', milestone.status === 'completed' ? 'done' : 'ready') + ' aria-pressed="' + (milestone === selected) + '">'
-    + '<span class="map-icon">' + icon(milestone.status === 'completed' ? 'check' : 'branch') + '</span><strong>'
-    + escape(displayMilestoneTitle(milestone.title, milestone.external_key)) + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></button>').join('');
+  const map = milestones.map((milestone, index) => '<button type="button" class="node road-timeline-step" data-act="milestone"'
+    + attr('id', milestone.id) + attr('state', milestone.status === 'completed' ? 'done' : 'ready')
+    + ' style="--road-order:' + Math.min(index, 12) + '" aria-pressed="' + (milestone === selected) + '">'
+    + '<span class="road-node-index" aria-hidden="true">' + String(index + 1).padStart(2, '0') + '</span>'
+    + '<span class="map-icon">' + icon(milestone.status === 'completed' ? 'check' : 'branch') + '</span>'
+    + '<span class="road-node-text"><strong>' + escape(displayMilestoneTitle(milestone.title, milestone.external_key))
+    + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></span>'
+    + '<span class="road-node-arrow" aria-hidden="true">' + icon('arrow') + '</span></button>').join('');
 
   const sourceLabel = src => ({
     manual: copy('Thủ công', 'Manual'),
@@ -793,15 +833,19 @@ export function liveRoadmap(data) {
   const isCompleted = selected?.status === 'completed';
   const evidenceFormHtml = selected ? '<form class="stack road-evidence-form" id="milestone-evidence-form" data-milestone="' + selected.id + '">'
     + '<input type="hidden" name="milestone_id" value="' + selected.id + '">'
-    + '<h4>' + icon('pulse') + ' ' + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Submit additional evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence')) + '</h4>'
-    + '<p class="subtle">' + (isCompleted
-      ? copy('Cột mốc này đã hoàn thành. Bạn có thể nộp thêm liên kết Commit/PR để làm phong phú bằng chứng cho portfolio và CV.', 'This milestone is completed. You can submit more Commit/PR links to enrich your evidence.')
-      : copy('Dán liên kết Commit, Pull Request hoặc Repository trên GitHub để hệ thống đối chiếu xác minh và tự động hoàn thành mốc.', 'Paste Commit, PR, or repo URL from GitHub for automated verification and completion.')) + '</p>'
-    + '<div class="field-row">'
-    + '<input name="evidence_url" type="url" placeholder="https://github.com/owner/repo/pull/123" required>'
-    + '<input name="evidence_note" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
-    + '<button type="submit" class="button primary small">' + copy('Nộp minh chứng', 'Submit') + '</button>'
-    + '</div></form>' : '';
+    + '<div class="road-evidence-heading"><span class="road-evidence-icon">' + icon('branch') + '</span><div><h4>'
+    + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Add more evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence'))
+    + '</h4><p class="subtle">' + (isCompleted
+      ? copy('Bạn có thể bổ sung Commit hoặc Pull Request để củng cố hồ sơ.', 'Add a commit or PR to strengthen your profile.')
+      : copy('Liên kết GitHub sẽ được đối chiếu để xác minh cột mốc.', 'The GitHub link will be checked to verify the milestone.'))
+    + '</p></div></div>'
+    + '<div class="road-evidence-fields"><label class="field road-evidence-link"><span>'
+    + escape(copy('Liên kết minh chứng GitHub', 'GitHub evidence link')) + '</span>'
+    + '<input name="evidence_url" type="url" inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repo/pull/123" required></label>'
+    + '<label class="field road-evidence-note"><span>' + escape(copy('Ghi chú (tùy chọn)', 'Note (optional)')) + '</span>'
+    + '<input name="evidence_note" maxlength="240" placeholder="' + escape(copy('Bạn đã làm gì ở mốc này?', 'What did you build?')) + '"></label></div>'
+    + '<button type="submit" class="button primary road-submit-button">' + icon('check') + ' '
+    + copy('Nộp minh chứng', 'Submit evidence') + '</button></form>' : '';
 
   let actionButtonsHtml = '';
   if (selected) {
@@ -826,7 +870,8 @@ export function liveRoadmap(data) {
   const detailMetric = item ? displayMetric(item.metric, selected?.external_key) : '';
 
   const detail = selected && item ? '<article class="panel road-detail" id="milestone-detail"><div class="detail-top">'
-    + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : 'blue') + '</div>'
+    + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : 'blue') + '<span class="road-detail-step">'
+    + escape(copy('Mốc', 'Step')) + ' ' + (milestones.indexOf(selected) + 1) + '/' + milestones.length + '</span></div>'
     + '<h2>' + escape(detailTitle) + '</h2>' + paragraph(detailObjective)
     + '<div class="milestone-proof"><span class="feature-icon">' + icon('award') + '</span><div><h3>'
     + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + refs(item.evidence) + '</div></div>'
@@ -838,19 +883,22 @@ export function liveRoadmap(data) {
     + pending.map(suggestion => '<div class="notice">' + paragraph(suggestion.explanation)
       + ['apply', 'reject'].map(decision => btn(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')),
         'road-suggestion', 'secondary small', attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
-  return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + feedback(data, 'road')
+  return roadHeading() + feedback(data, 'road')
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
     + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
     + (goal ? paragraph(goal.objective) : '') + '</div>'
-    + btn(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary', data.busy.has('road') ? 'disabled' : '') + '</section>'
+    + btn(escape(copy('Tạo lộ trình mới', 'Create another roadmap')), 'road-create', 'secondary small', roadBusy ? 'disabled' : '') + '</section>'
     + '<section class="panel road-progress"><div><p class="eyebrow">' + escape(t('road.progress')) + '</p><strong>' + done.length + '<span> / ' + milestones.length
     + '</span></strong><p>' + escape(t('road.progressCount', { done: done.length, total: milestones.length })) + '</p></div>'
+    + '<div class="road-progress-meter" role="progressbar" aria-label="' + escape(t('road.progress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'
+    + (milestones.length ? Math.round(done.length * 100 / milestones.length) : 0) + '"><span style="width:'
+    + (milestones.length ? Math.round(done.length * 100 / milestones.length) : 0) + '%"></span></div>'
     + '<div class="milestone-pips" aria-hidden="true">' + milestones.map(m => '<i' + attr('state', m.status === 'completed' ? 'done' : 'ready') + '></i>').join('') + '</div></section></div>'
     + (data.road ? '<section class="road-update"><div>' + icon('pulse') + escape(copy('Cập nhật từ kết quả phân tích GitHub', 'Recheck GitHub evidence')) + '</div>'
       + btn(escape(copy('Đánh giá lại', 'Re-evaluate')), 'road-draft', 'secondary small', data.busy.has('road') ? 'disabled' : '') + '</section>' : '')
     + '<div class="road-layout"><section class="panel map-panel">' + panelHead(t('road.map'), copy('Chọn mốc để xem mục tiêu và bằng chứng.', 'Select a milestone to see its goal and evidence.'))
     + '<div class="map-legend">' + ['done', 'ready'].map(mode => '<span data-state="' + mode + '"><i></i>' + escape(t('road.' + mode)) + '</span>').join('') + '</div>'
-    + (map ? '<div class="road-map"><canvas aria-hidden="true"></canvas>' + map + '</div>' : muted(copy('Chưa có cột mốc để hiển thị.', 'No milestones to display.')))
+    + (map ? '<div class="road-map road-live-map" role="group" aria-label="' + escape(t('road.map')) + '">' + map + '</div>' : muted(copy('Chưa có cột mốc để hiển thị.', 'No milestones to display.')))
     + '</section>' + detail + (selected ? '<div class="road-records stack">'
       + (done.length ? '<section class="panel achievements">' + panelHead(t('road.trophies')) + '<div class="award-list">'
         + done.map(m => '<button class="award-card" type="button" data-act="milestone"' + attr('id', m.id) + '><span class="award-icon">'
