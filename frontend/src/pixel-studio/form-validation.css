@@ -1,0 +1,41 @@
+/* Inline native-validation messages, using the current Studio theme tokens. */
+.ita-field-validation {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  color: var(--red, #efa5a0);
+  font: 500 12px/1.5 var(--font, Inter, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+  animation: ita-validation-enter 160ms ease-out;
+}
+
+.ita-invalid-field:is(input, textarea, select):not([type="checkbox"]):not([type="radio"]) {
+  border-color: var(--red, #efa5a0);
+}
+
+.ita-invalid-field:is(input, textarea, select):focus-visible {
+  outline-color: var(--red, #efa5a0);
+}
+
+.option-row:has(> .ita-field-validation) {
+  flex-wrap: wrap;
+}
+.option-row > .ita-field-validation {
+  flex: 0 0 100%;
+  padding-left: 22px;
+  margin-top: -3px;
+}
+.field-row > .ita-field-validation {
+  flex: 0 0 100%;
+}
+.field > .ita-field-validation {
+  margin-top: 0;
+}
+
+@keyframes ita-validation-enter {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ita-field-validation { animation: none; }
+}
