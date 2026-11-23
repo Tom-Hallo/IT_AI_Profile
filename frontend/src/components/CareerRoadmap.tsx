@@ -46,7 +46,10 @@ function RoadmapWorkspace() {
     void (async () => {
       try {
         const items = await apiFetch<Roadmap[]>('/career-roadmaps', { signal })
-        const latest = items.find(item => Array.isArray(item.milestones) && item.goal)
+        let savedId = 0
+        try { savedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || 0 } catch {}
+        const latest = items.find(item => item.id === savedId && Array.isArray(item.milestones))
+          ?? items.slice().reverse().find(item => Array.isArray(item.milestones) && item.goal)
         if (!latest || signal.aborted) return
         setRoadmap(latest)
         if (latest.goal) setGoal(latest.goal)
@@ -78,11 +81,21 @@ function RoadmapWorkspace() {
   async function create(signal: AbortSignal) {
     const item = await apiFetch<Roadmap>('/career-roadmaps', { method: 'POST', body: { goal }, signal })
     setRoadmap(item)
+    try { sessionStorage.setItem('ita-studio-selected-roadmap', String(item.id)) } catch {}
     setHistory(undefined)
     setTracking(undefined)
     setTracking(await apiFetch<Tracking>(`/roadmap-tracking/${item.id}`, { signal }))
   }
 
+  // Keep JSONB array order as the canonical timeline order; match tracking
+  // by stable skill key, not by the row's index in a separate API response.
+  const milestones = Array.isArray(roadmap?.milestones) ? roadmap.milestones : []
+  const progressBySkill = new Map(
+    (tracking?.milestones ?? []).map(item => [item.external_key.toLowerCase(), item]),
+  )
+  const nextMilestone = milestones.find(m =>
+    progressBySkill.get(m.skill?.toLowerCase())?.status !== 'completed',
+  )
   const base = roadmap ? `/roadmap-tracking/${roadmap.id}` : ''
 
   async function saveStatus(progress: Progress, status: Status, signal: AbortSignal) {
@@ -119,16 +132,17 @@ function RoadmapWorkspace() {
     {busy && <p role="status">Đang cập nhật lộ trình…</p>}
     {error && <p role="alert" className="career-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {roadmap?.milestones && <ol className="career-timeline">{roadmap.milestones.map(m => {
-      const progress = tracking?.milestones.find(item => item.external_key === m.skill)
+    {roadmap && milestones.length > 0 && <p className="muted">Mốc tiếp theo: {nextMilestone?.skill || 'Đã hoàn thành tất cả'}</p>}
+    {roadmap && <ol className="career-timeline">{milestones.map((m, index) => {
+      const progress = progressBySkill.get(m.skill?.toLowerCase())
       return <li key={m.skill} className="career-milestone">
-        <div className="career-step">{m.order}</div>
+        <div className="career-step">{m.order ?? index + 1}</div>
         <article className="career-card">
           <div className="career-card-top"><h2>{m.skill}</h2><span className={`career-priority priority-${m.priority}`}>P{m.priority}</span></div>
           <p>{m.objective}</p><p className="career-metric">{m.metric}</p>
           <p className="career-score">Hiện tại {m.current_score ?? 'chưa đủ bằng chứng'} · Mục tiêu {m.target_score}/100</p>
-          {!!m.evidence.length && <details><summary>Bằng chứng ({m.evidence.length})</summary><ul>
-            {m.evidence.map(e => <li key={e.id}><code>{e.file_path || e.id}</code>{e.commit_sha && <> · commit <code>{e.commit_sha.slice(0, 8)}</code></>}</li>)}
+          {Array.isArray(m.evidence) && m.evidence.length > 0 && <details><summary>Bằng chứng ({m.evidence.length})</summary><ul>
+            {m.evidence.map((e, i) => <li key={e.id ?? i}><code>{e.file_path || e.id || 'Minh chứng'}</code>{e.commit_sha && <> · commit <code>{e.commit_sha.slice(0, 8)}</code></>}</li>)}
           </ul></details>}
           {progress && <div>
             <label htmlFor={`progress-${progress.id}`}>Tiến độ</label>{' '}
