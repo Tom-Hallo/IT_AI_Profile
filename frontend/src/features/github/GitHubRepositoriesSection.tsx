@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { Link } from 'react-router'
 import { env } from '@/shared/config/env'
 import { Button } from '@/shared/ui/Button'
@@ -305,7 +306,7 @@ export function GitHubRepositoriesSection({ isAuthenticated }: Props) {
             </div>
           ) : reposLoading ? (
             <div className="github-empty">
-              <p>Đang tải danh sách repositories...</p>
+              <LoadingState message="Đang tải danh sách repositories…" variant="rows" />
             </div>
           ) : repositories.length === 0 ? (
             <div className="github-empty">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LoadingState } from '@/shared/ui/LoadingState'
 import "./RepositorySelector.css";
 
 type Scope = "public" | "private" | "combined";
@@ -93,7 +94,7 @@ export default function RepositorySelector() {
         {scopes.map((item) => <button type="button" key={item} aria-pressed={scope === item} className={scope === item ? "active" : ""} onClick={() => setScope(item)}>{item === "combined" ? "Combined" : item === "private" ? "Private" : "Public"}</button>)}
       </div>
       <input className="ita-search" aria-label="Tìm repository" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repositories..." />
-      {loading && <p role="status">Đang tải repositories…</p>}
+      {loading && <LoadingState message="Đang tải repositories…" variant="rows" />}
       {error && <p role="alert" className="ita-error">{error}</p>}
       {error.includes("quyền truy cập private") && <a className="ita-grant" href="/api/v1/auth/github?include_private=true">Cấp quyền GitHub private →</a>}
       {notice && <p role="status" className="ita-success">{notice}</p>}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { useAuth } from '@/features/auth/useAuth'
 import { apiFetch } from '@/shared/api/client'
 import { Button } from '@/shared/ui/Button'
@@ -24,7 +25,7 @@ const statuses: Record<Status, string> = {
 
 export default function CareerRoadmap() {
   const { user, isLoading } = useAuth()
-  if (isLoading) return <p role="status">Đang xác thực…</p>
+  if (isLoading) return <LoadingState message="Đang xác thực…" variant="inline" />
   if (!user) return <p>Đăng nhập bằng GitHub để lập lộ trình.</p>
   return <RoadmapWorkspace key={user.id} />
 }
@@ -138,10 +139,10 @@ function RoadmapWorkspace() {
         <option value="backend">Backend Engineer</option><option value="frontend">Frontend Engineer</option>
         <option value="fullstack">Full-stack Engineer</option><option value="devops">DevOps Engineer</option>
       </select>
-      <Button disabled={busy} onClick={() => void run(create)}>Tạo lộ trình</Button>
-      {roadmap?.milestones?.length ? <Button disabled={busy} onClick={() => void run(reevaluate)}>Đánh giá lại tiến độ</Button> : null}
+      <Button disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void run(create)}>Tạo lộ trình</Button>
+      {roadmap?.milestones?.length ? <Button disabled={busy} className={busy ? 'ita-app-loading-btn' : ''} onClick={() => void run(reevaluate)}>Đánh giá lại tiến độ</Button> : null}
     </section>
-    {busy && <p role="status">Đang cập nhật lộ trình…</p>}
+    {busy && <LoadingState message="Đang cập nhật lộ trình…" variant={roadmap?.milestones?.length ? 'inline' : 'card'} />}
     {error && <p role="alert" className="career-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {roadmap && milestones.length > 0 && <p className="muted">Mốc tiếp theo: {nextMilestone?.skill || 'Đã hoàn thành tất cả'}</p>}

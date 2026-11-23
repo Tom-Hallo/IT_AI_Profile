@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { Link } from 'react-router'
 import { useAuth } from '@/features/auth/useAuth'
 import type { AuthUser } from '@/features/auth/types'
@@ -44,7 +45,7 @@ function RoleScore({ role, scope, dates }: { role: string; scope: Scope; dates: 
   const { state, retry } = useDashboardQuery<ScopedResult>(
     `/role-scoring/roles/${encodeURIComponent(role)}/score/scoped?${dates}`,
   )
-  if (state.phase === 'loading') return <p role="status">Đang tính điểm…</p>
+  if (state.phase === 'loading') return <LoadingState message="Đang tính điểm…" variant="card" />
   if (state.phase === 'error') return <p role="alert">
     Không tải được điểm vai trò. <button type="button" onClick={retry}>Thử lại</button>
   </p>
@@ -70,7 +71,7 @@ function RoleScore({ role, scope, dates }: { role: string; scope: Scope; dates: 
 function RolePanel({ scope, dates }: { scope: Scope; dates: string }) {
   const { state, retry } = useDashboardQuery<{ roles: RoleSummary[] }>('/role-scoring/roles')
   const [role, setRole] = useState('')
-  if (state.phase === 'loading') return <p role="status">Đang tải vai trò…</p>
+  if (state.phase === 'loading') return <LoadingState message="Đang tải vai trò…" variant="card" />
   if (state.phase === 'error') return <p role="alert">
     Không tải được vai trò. <button type="button" onClick={retry}>Thử lại</button>
   </p>
@@ -93,7 +94,7 @@ function RepoPanel({ scope, dates }: { scope: Scope; dates: string }) {
   const { state, retry } = useDashboardQuery<RepositoryListResponse>(
     `/github/repositories?visibility=${visibility}&per_page=50&page=${page}`,
   )
-  if (state.phase === 'loading') return <p role="status">Đang tải repository…</p>
+  if (state.phase === 'loading') return <LoadingState message="Đang tải repository…" variant="rows" />
   if (state.phase === 'error') return <p role="alert">
     Không tải được repository. <button type="button" onClick={retry}>Thử lại</button>
   </p>
@@ -194,7 +195,7 @@ export function DashboardPage() {
         </>}
       </nav>
     </header>
-    {isLoading && <p role="status">Đang kiểm tra đăng nhập…</p>}
+    {isLoading && <LoadingState message="Đang kiểm tra đăng nhập…" variant="inline" />}
     {error && <p role="alert">{error}</p>}
     {user && <DashboardContent key={user.id} user={user} />}
     {!isLoading && !error && !user && <p>Đăng nhập qua trang Tài khoản để xem hồ sơ.</p>}
