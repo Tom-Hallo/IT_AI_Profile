@@ -23,7 +23,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from hashlib import sha256
-from statistics import fmean
 from typing import Any, Protocol
 
 from pydantic import ValidationError
@@ -187,14 +186,13 @@ class DatabaseSkillSnapshotSource:
                     )
                 for sid, ev in self._db.execute(links).all():
                     evidence_by_score.setdefault(sid, []).append(
-                        EvidenceRef.from_record(ev)
+                        EvidenceRef.from_record(ev).model_copy(update={"verified": False})
                     )
 
-            contributions = (
-                self._verification_refs(scores, user_id)
-                if self._repo_id_filter is not None
-                else {}
-            )
+            # Verification refs remain authoritative in BOTH scoped and
+            # unscoped role scoring. Static analysis links never establish
+            # individual authorship by themselves.
+            contributions = self._verification_refs(scores, user_id)
             items: list[SkillScoreItem] = []
             repo_ids: set[str] = set()
 
@@ -206,7 +204,7 @@ class DatabaseSkillSnapshotSource:
                 if raw_status == "scored" and s.score is not None:
                     status = ScoreStatus.SCORED
                     score_val = float(s.score)
-                    confidence_val = float(s.score)
+                    confidence_val = None
                 elif raw_status == "insufficient":
                     status = ScoreStatus.INSUFFICIENT
                     score_val = None
@@ -217,42 +215,18 @@ class DatabaseSkillSnapshotSource:
                     confidence_val = None
 
                 refs = evidence_by_score.get(s.id, [])
-                if self._repo_id_filter is not None and status == ScoreStatus.SCORED:
+                if status == ScoreStatus.SCORED:
                     verified_refs, verified_confidence = contributions.get(
                         s.id, ([], None)
                     )
                     refs = [*refs, *verified_refs]
-                    # Derive confidence from distinct evidence references.
-                    confidence_by_ref: dict[str, float] = {}
-                    for ref in refs:
-                        key = ref.dedup_key
-                        confidence_by_ref[key] = min(
-                            confidence_by_ref.get(key, 1.0), ref.confidence_score
-                        )
-                    confidence_val = (
-                        100 * fmean(confidence_by_ref.values())
-                        if confidence_by_ref
-                        else None
-                    )
-                    if verified_confidence is not None:
-                        confidence_val = verified_confidence
-                    if not refs:
+                    # An existing skill score without report-bound verified
+                    # event IDs cannot be used as personal role evidence.
+                    if not verified_refs or verified_confidence is None:
                         status = ScoreStatus.INSUFFICIENT
                         score_val = None
-                elif not refs and status == ScoreStatus.SCORED:
-                    refs = [
-                        EvidenceRef(
-                            evidence_id=f"skill_score_{s.id}",
-                            repository_id=s.repository_id,
-                            commit_sha=s.commit_sha,
-                            file_path=f"skills/{s.technology}",
-                            finding_type="skill",
-                            classification=s.technology,
-                            confidence_score=1.0,
-                            verified=True,
-                            rationale=s.explanation,
-                        )
-                    ]
+                    else:
+                        confidence_val = verified_confidence
 
                 items.append(
                     SkillScoreItem(
