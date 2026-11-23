@@ -166,13 +166,22 @@ function replaceView(view,content) {
 // Keep the JD field sized to its wrapped content, with limits owned by CSS.
 function resizeJDTextarea(textarea = $('#jd-form textarea[name="jd"]')) {
   if (!textarea) return;
+  const previousHeight = textarea.getBoundingClientRect().height;
+  const previousScrollTop = textarea.scrollTop;
   textarea.style.height = 'auto';
   const computed = getComputedStyle(textarea);
   const minHeight = Number.parseFloat(computed.minHeight) || 0;
   const maxHeight = Number.parseFloat(computed.maxHeight) || Infinity;
   const borderHeight = textarea.offsetHeight - textarea.clientHeight;
-  const height = textarea.scrollHeight + borderHeight;
-  textarea.style.height = Math.ceil(Math.min(maxHeight, Math.max(minHeight, height))) + 'px';
+  const targetHeight = Math.ceil(Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + borderHeight)));
+
+  // Transition between numeric heights, never directly to/from "auto".
+  if (Math.abs(previousHeight - targetHeight) > 1) {
+    textarea.style.height = previousHeight + 'px';
+    void textarea.offsetHeight;
+  }
+  textarea.style.height = targetHeight + 'px';
+  textarea.scrollTop = previousScrollTop;
 }
 function updateStudio() {
   if (!isStudio()) return;
