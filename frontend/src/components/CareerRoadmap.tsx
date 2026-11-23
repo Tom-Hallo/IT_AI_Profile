@@ -97,9 +97,13 @@ function RoadmapWorkspace() {
 
   // Keep JSONB array order as the canonical timeline order; match tracking
   // by stable skill key, not by the row's index in a separate API response.
-  const milestones = Array.isArray(roadmap?.milestones) ? roadmap.milestones : []
+  const milestones = Array.isArray(roadmap?.milestones)
+    ? roadmap.milestones.filter(item => item && typeof item.skill === 'string')
+    : []
   const progressBySkill = new Map(
-    (tracking?.milestones ?? []).map(item => [item.external_key.toLowerCase(), item]),
+    (Array.isArray(tracking?.milestones) ? tracking.milestones : [])
+      .filter(item => item && typeof item.external_key === 'string')
+      .map(item => [item.external_key.trim().toLowerCase(), item]),
   )
   const nextMilestone = milestones.find(m =>
     progressBySkill.get(m.skill?.toLowerCase())?.status !== 'completed',
