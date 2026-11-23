@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoadingState } from '@/shared/ui/LoadingState'
 import { Link } from 'react-router'
 import { useAuth } from '@/features/auth/useAuth'
 import { apiFetch } from '@/shared/api/client'
@@ -51,7 +52,7 @@ function RoleResults({ role }: { role: string }) {
       setAttempt((value) => value + 1)
     }}>Thử lại</button>
   </>
-  if (!result) return <p role="status">Đang tính điểm…</p>
+  if (!result) return <LoadingState message="Đang tính điểm…" variant="card" />
 
   const active = result[scope]
   const score = active.score
@@ -119,7 +120,7 @@ function RoleSelection() {
   }, [])
 
   if (failed) return <p role="alert">Không tải được danh sách vai trò.</p>
-  if (!roles) return <p role="status">Đang tải danh sách vai trò…</p>
+  if (!roles) return <LoadingState message="Đang tải danh sách vai trò…" variant="rows" />
   if (!roles.length) return <p>Chưa có rubric chấm điểm.</p>
   return <>
     <p>
@@ -141,7 +142,7 @@ export function ScopedRoleScoresPage() {
       <p>Đánh giá năng lực theo vai trò với rubric, độ tin cậy và bằng chứng cụ thể.</p>
     </div>
     <Link to="/">Về trang chính</Link>
-    {isLoading && <p role="status">Đang kiểm tra phiên đăng nhập…</p>}
+    {isLoading && <LoadingState message="Đang kiểm tra phiên đăng nhập…" variant="inline" />}
     {error && <p role="alert">{error}</p>}
     {user && <RoleSelection key={user.id} />}
     {!isLoading && !error && !user && <p>Đăng nhập GitHub để xem điểm của bạn.</p>}
