@@ -149,9 +149,7 @@ def _match_skill(
             commit_url = None
             if repo and ref.commit_sha:
                 if getattr(repo, "html_url", None):
-                    commit_url = (
-                        f"{repo.html_url.rstrip('/')}/commit/{ref.commit_sha}"
-                    )
+                    commit_url = f"{repo.html_url.rstrip('/')}/commit/{ref.commit_sha}"
                 elif repo_full_name:
                     commit_url = (
                         f"https://github.com/{repo_full_name}/commit/{ref.commit_sha}"

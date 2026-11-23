@@ -11,6 +11,7 @@ Quy tắc:
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import re
 from datetime import UTC, datetime
@@ -202,12 +203,19 @@ class JobSearchService:
                     .replace("</h2>", "\n\n")
                     .replace("</h3>", "\n\n")
                 )
+                formatted = html.unescape(formatted)
                 formatted = re.sub(r"<[^>]+>", " ", formatted)
                 lines = [
                     re.sub(r"[ \t]+", " ", line).strip()
                     for line in formatted.splitlines()
                 ]
                 clean_text = "\n".join(line for line in lines if line)
+                # Loại bỏ phần footer tuyển dụng chung hoặc quảng cáo vị trí khác
+                footer_regex = (
+                    r"(?i)\n\s*(?:not your tech stack\??|"
+                    r"other (?:open )?roles|other opportunities|vị trí khác)\b"
+                )
+                clean_text = re.split(footer_regex, clean_text)[0].strip()
                 if len(clean_text) > 10000:
                     clean_text = clean_text[:10000]
 

@@ -829,23 +829,14 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const item = data.jobResults?.jobs.find(job => job.id === button.dataset.id);
       if (item) {
         const isVi = getLanguage() === 'vi';
-        const tags = item.tags || [];
-        const splitIdx = Math.min(Math.max(Math.ceil(tags.length / 2), 2), 4);
-        const reqTags = tags.slice(0, splitIdx).join(', ');
-        const prefTags = tags.slice(splitIdx, splitIdx + 4).join(', ');
-        const rawPreview = (item.description_preview || item.description_text || '').replace(/\.\.\.$/, '').trim();
-        const shortSummary = rawPreview.length > 250 ? rawPreview.slice(0, 250) + '...' : rawPreview;
+        const fullDesc = (item.description_text || item.description_preview || '').trim();
 
         if (isVi) {
-          data.jobText = `Vị trí: ${item.title} - ${item.company} (${item.location || 'Từ xa'})\n`
-            + (reqTags ? `Kỹ năng yêu cầu (Bắt buộc): ${reqTags}\n` : '')
-            + (prefTags ? `Điểm cộng (Ưu tiên): ${prefTags}\n` : '')
-            + `Mô tả tóm tắt: ${shortSummary}`;
+          data.jobText = `Vị trí: ${item.title} - ${item.company} (${item.location || 'Từ xa'})\n\n`
+            + `Mô tả công việc:\n${fullDesc}`;
         } else {
-          data.jobText = `Position: ${item.title} - ${item.company} (${item.location || 'Remote'})\n`
-            + (reqTags ? `Requirements (Must-have): ${reqTags}\n` : '')
-            + (prefTags ? `Preferred (Nice-to-have): ${prefTags}\n` : '')
-            + `Summary: ${shortSummary}`;
+          data.jobText = `Position: ${item.title} - ${item.company} (${item.location || 'Remote'})\n\n`
+            + `Job Description:\n${fullDesc}`;
         }
         data.jobURL = item.url || '';
         data.jobMatch = null;
@@ -854,7 +845,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         if (textarea) {
           textarea.focus();
           textarea.style.height = 'auto';
-          const targetHeight = Math.min(Math.max(textarea.scrollHeight + 4, 85), 200);
+          const targetHeight = Math.min(Math.max(textarea.scrollHeight + 4, 120), 280);
           textarea.style.height = targetHeight + 'px';
         }
       }

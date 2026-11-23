@@ -912,20 +912,28 @@ export function liveJobs(state, data) {
   if (report?.skills?.length) {
     const matchedSkills = report.skills.filter(s => s.status === 'matched');
     const gapSkills = report.skills.filter(s => s.status !== 'matched');
+    const reqSkills = report.skills.filter(s => s.level === 'required');
+    const matchedReqSkills = reqSkills.filter(s => s.status === 'matched');
     const pct = report.required_matched_percent != null ? Math.round(report.required_matched_percent) : 0;
 
     const summaryBlock = '<div class="job-match-summary">'
       + '<div class="match-summary-head"><div><p class="eyebrow">' + copy('Độ phù hợp hồ sơ', 'Profile Match Rate') + '</p>'
-      + '<h3>' + copy('Đáp ứng ', 'Matching ') + matchedSkills.length + '/' + report.skills.length + copy(' kỹ năng yêu cầu', ' required skills') + '</h3>'
+      + '<h3>' + copy('Đáp ứng ', 'Matching ') + matchedSkills.length + '/' + report.skills.length + copy(' kỹ năng', ' skills')
+      + (reqSkills.length ? '<small style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px">(' + matchedReqSkills.length + '/' + reqSkills.length + copy(' bắt buộc)', ' required)') + '</small>' : '')
+      + '</h3>'
       + '</div>' + badge(pct + '%', pct >= 70 ? 'green' : pct >= 40 ? 'amber' : '') + '</div>'
       + progress(pct, copy('Độ phù hợp yêu cầu', 'Match rate'))
       + (report.disclaimer ? '<p class="subtle" style="margin-top:6px">' + escape(report.disclaimer) + '</p>' : '')
       + '</div>';
 
-    const matchedHtml = matchedSkills.length ? '<div class="job-group-block"><h4 class="job-group-title green">'
+    const matchedHtml = '<div class="job-group-block"><h4 class="job-group-title green">'
       + icon('check') + ' ' + copy('Kỹ năng đã đáp ứng từ GitHub (Matching)', 'Matching Skills from GitHub') + ' (' + matchedSkills.length + ')</h4>'
-      + '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
-        + badge(t('jobs.has'), 'green') + '</div>' + paragraph(item.reason) + refs(item.evidence, data) + '</li>').join('') + '</ul></div>' : '';
+      + (matchedSkills.length
+        ? '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
+          + badge(t('jobs.has'), 'green') + '</div>' + paragraph(item.reason) + refs(item.evidence, data) + '</li>').join('') + '</ul>'
+        : '<p class="subtle" style="padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px dashed var(--line);margin:6px 0;">'
+          + escape(copy('Chưa có kỹ năng nào đạt ngưỡng đối chiếu từ mã nguồn GitHub của bạn trong phạm vi này.', 'No skills reached matching threshold from your GitHub source code in this scope.')) + '</p>')
+      + '</div>';
 
     const gapHtml = gapSkills.length ? '<div class="job-group-block"><h4 class="job-group-title amber">'
       + icon('pulse') + ' ' + copy('Khoảng cách kỹ năng cần bổ sung (Skill Gaps)', 'Skill Gaps to Address') + ' (' + gapSkills.length + ')</h4>'
