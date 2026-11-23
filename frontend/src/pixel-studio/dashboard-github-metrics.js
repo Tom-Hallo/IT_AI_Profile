@@ -13,7 +13,9 @@ const scored = (value, status) =>
 const verifiedScore = item => scored(item?.score, item?.status);
 
 const sourceCriterion = (criteria, predicate) =>
-  criteria.find(item => predicate(item) && verifiedScore(item)) ?? null;
+  criteria.find(item => predicate(item) && verifiedScore(item) &&
+    Array.isArray(item.evidence_refs) &&
+    item.evidence_refs.some(ref => ref.verified === true)) ?? null;
 
 function chosenRole(roles, roleKey) {
   const requested = roles.find(item => item.key === roleKey);
