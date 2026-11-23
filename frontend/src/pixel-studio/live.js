@@ -1,6 +1,7 @@
 import {request,post,remove,query,period,parseSkills,exportURL} from './live-api.js';
 import {escape,field,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
+import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
@@ -1124,7 +1125,26 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       );
       const url = String(values.get?.('evidence_url') || '').trim();
       const note = String(values.get?.('evidence_note') || '').trim();
-      if (!url) throw new Error(copy('Vui lòng nhập link minh chứng.', 'Please enter evidence URL.'));
+      const urlInput = formElement?.querySelector('[name="evidence_url"]');
+      const validationMessage = formElement?.querySelector('.road-evidence-validation');
+      if (!isGitHubCommitOrPrUrl(url)) {
+        const message = copy(
+          'Link không hợp lệ. Chỉ chấp nhận HTTPS GitHub dẫn trực tiếp đến Commit hoặc Pull Request.',
+          'Invalid link. Enter an official HTTPS GitHub Commit or Pull Request URL.'
+        );
+        if (validationMessage) {
+          validationMessage.textContent = message;
+          validationMessage.hidden = false;
+        }
+        urlInput?.setAttribute('aria-invalid', 'true');
+        urlInput?.focus();
+        return;
+      }
+      if (validationMessage) {
+        validationMessage.textContent = '';
+        validationMessage.hidden = true;
+      }
+      urlInput?.removeAttribute('aria-invalid');
       const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
         evidence_url:url,note:note || null,repository_id:null
       });
