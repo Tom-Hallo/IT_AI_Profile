@@ -76,10 +76,9 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
             and item.get("verification_status") == "verified"
             for item in submitted
         )
-        verified_evaluation = (
-            data_milestone.get("verification_status") == "verified"
-            and bool(data_milestone.get("evaluation_evidence"))
-        )
+        verified_evaluation = data_milestone.get(
+            "verification_status"
+        ) == "verified" and bool(data_milestone.get("evaluation_evidence"))
         res["evidence"] = submitted
         res["verification_status"] = (
             "verified"
