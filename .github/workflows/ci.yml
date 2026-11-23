@@ -74,6 +74,10 @@ jobs:
         working-directory: frontend
         run: npm run test:evidence
 
+      - name: Dashboard GitHub Radar Regression Tests
+        working-directory: frontend
+        run: node --test tests/dashboard-github-radar.test.js tests/score-presentation.test.js
+
       - name: Roadmap Re-evaluation Regression Tests
         working-directory: frontend
         run: npm run test:roadmap
