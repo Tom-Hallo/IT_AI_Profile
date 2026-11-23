@@ -17,7 +17,10 @@ Handles:
 
 from __future__ import annotations
 
+import ast
+import re
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Any
 
 from app.modules.analysis.evidence import (
@@ -28,6 +31,7 @@ from app.modules.analysis.evidence import (
     EvidenceSource,
     FindingType,
 )
+from app.modules.analysis.filters import is_ignored_path, is_safe_path
 from app.modules.analysis.parsers.base import ManifestParserResult
 
 # Định nghĩa các framework chính và quy tắc nhận diện
@@ -96,7 +100,7 @@ FRAMEWORK_CATALOG: list[dict[str, Any]] = [
         "category": "frontend_framework",
         "ecosystem": "JavaScript/TypeScript",
         "pkg_names": ["vue"],
-        "config_files": ["vue.config.js", "vite.config.ts"],
+        "config_files": ["vue.config.js"],
     },
     {
         "name": "Angular",
@@ -188,6 +192,30 @@ FRAMEWORK_CATALOG: list[dict[str, Any]] = [
 ]
 
 
+
+# A dependency/configuration proves a repository uses a framework, not that the
+# owner implemented it. Source imports are captured separately for attribution.
+SOURCE_IMPORT_PACKAGES = {
+    "FastAPI": "fastapi",
+    "Django": "django",
+    "Flask": "flask",
+    "SQLAlchemy": "sqlalchemy",
+    "Alembic": "alembic",
+    "Celery": "celery",
+    "RQ": "rq",
+    "React": "react",
+    "Vue": "vue",
+    "Angular": "@angular/core",
+    "Next.js": "next",
+    "Express": "express",
+    "NestJS": "@nestjs/core",
+    "Vite": "vite",
+}
+_JS_IMPORT_RE = re.compile(
+    r"""^\\s*import\\s+(?:(?:type\\s+)?[^'"]{1,120}?\\bfrom\\s+)?['"]([^'"]+)['"]"""
+)
+
+
 @dataclass
 class FrameworkFinding:
     """Kết quả phát hiện framework hoặc thư viện chính."""
@@ -207,6 +235,69 @@ class FrameworkDetector:
     def __init__(self, repository_id: int, commit_sha: str) -> None:
         self.repository_id = repository_id
         self.commit_sha = commit_sha
+
+    def record_source_imports(
+        self,
+        path: str,
+        content: str,
+        findings: list[FrameworkFinding],
+        collector: EvidenceCollector,
+    ) -> None:
+        """Record actual source imports, never infer authorship or proficiency.
+
+        Only previously detected frameworks are eligible. This method does not
+        execute repository code or store private source snippets.
+        """
+        if not is_safe_path(path) or is_ignored_path(path):
+            return
+        suffix = PurePosixPath(path).suffix.lower()
+        imported: dict[str, int] = {}
+        if suffix == ".py":
+            try:
+                tree = ast.parse(content)
+            except (SyntaxError, ValueError):
+                return
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported.setdefault(alias.name.split(".")[0], node.lineno)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.setdefault(node.module.split(".")[0], node.lineno)
+        elif suffix in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue"}:
+            for line_number, line in enumerate(content.splitlines(), 1):
+                match = _JS_IMPORT_RE.match(line)
+                if match is None:
+                    continue
+                module = match.group(1)
+                root = (
+                    "/".join(module.split("/")[:2])
+                    if module.startswith("@")
+                    else module.split("/")[0]
+                )
+                imported.setdefault(root, line_number)
+        else:
+            return
+
+        for finding in findings:
+            package = SOURCE_IMPORT_PACKAGES.get(finding.name)
+            if not package or package not in imported:
+                continue
+            record = EvidenceRecord(
+                repository_id=self.repository_id,
+                commit_sha=self.commit_sha,
+                file_path=path,
+                finding_type=FindingType.FRAMEWORK,
+                classification=finding.name,
+                evidence_source=EvidenceSource.SOURCE_CODE,
+                detection_method=DetectionMethod.CONTENT_INSPECTION,
+                confidence=ConfidenceLevel.HIGH,
+                confidence_score=0.95,
+                line_number=imported[package],
+                matched_content=None,
+                rationale=f"Tệp mã nguồn import trực tiếp {finding.name}.",
+            )
+            if collector.add(record):
+                finding.evidence.append(record)
 
     def detect_from_manifests(
         self,
