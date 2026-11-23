@@ -234,10 +234,22 @@ class RepositoryInspector:
         # Only scan safe first-party source, without recording source snippets.
         if frameworks:
             source_extensions = {
-                ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue"
+                ".py",
+                ".js",
+                ".jsx",
+                ".ts",
+                ".tsx",
+                ".mjs",
+                ".cjs",
+                ".vue",
             }
             entry_names = {
-                "main.py", "app.py", "app.tsx", "main.ts", "main.tsx", "index.tsx"
+                "main.py",
+                "app.py",
+                "app.tsx",
+                "main.ts",
+                "main.tsx",
+                "index.tsx",
             }
             source_paths = [
                 path
