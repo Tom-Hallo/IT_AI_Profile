@@ -2,13 +2,14 @@ import {request,post,remove,query,period,parseSkills,exportURL} from './live-api
 import {escape,field,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
+import {summarizeReevaluation} from './reevaluation.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
-    road:null, tracking:null, history:[], goal:'backend', milestone:null, jobResults:null, jobMatch:null,
+    road:null, tracking:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
     errors:{}, messages:{}, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
@@ -388,6 +389,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.goal = data.road.goal;
     }
     data.tracking = data.road ? await request(trackingPath()) : null;
+    data.reevaluation = null;
     data.milestone = data.tracking?.milestones[0]?.id ?? null;
     data.history = [];
   }
@@ -397,6 +399,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.road = await post('/career-roadmaps',{goal:data.goal});
       data.roadmaps = await request('/career-roadmaps');
       data.tracking = await request(trackingPath());
+      data.reevaluation = null;
       data.milestone = data.tracking.milestones[0]?.id ?? null;
       data.history = [];
     });
@@ -837,21 +840,25 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
     },
     'road-create':roadCreate,
-    'road-draft':() => work('road',async () => {
+    'road-draft':() => work('road', async () => {
+      data.reevaluation = null;
       const result = await post(trackingPath() + '/re-evaluate');
       data.tracking = await request(trackingPath());
-      data.messages.road = result.suggestions.some(item => item.state === 'pending')
-        ? copy('Có đề xuất mới từ bằng chứng GitHub.', 'New suggestions from GitHub evidence.') : copy('Chưa có mốc mới đạt mục tiêu.', 'No new milestones reached.');
+      data.reevaluation = summarizeReevaluation(result, data.tracking);
     }),
     milestone:button => { data.milestone = Number(button.dataset.id); data.history = []; render(); },
     'focus-milestone':button => navigate('roadmap','#milestone-detail'),
     'road-history':() => work('road',roadHistory),
     'road-status':button => roadStatus(Number(button.dataset.id),button.dataset.status),
-    'road-suggestion':button => work('road',async () => {
-      await post(trackingPath() + '/suggestions/' + button.dataset.id + '/' + button.dataset.decision);
+    'road-suggestion':button => work('road', async () => {
+      const decision = button.dataset.decision;
+      await post(trackingPath() + '/suggestions/' + button.dataset.id + '/' + decision);
       data.tracking = await request(trackingPath());
       if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
       await roadHistory();
+      data.messages.road = decision === 'apply'
+        ? copy('Đã áp dụng đề xuất vào cột mốc.', 'Suggestion applied to milestone.')
+        : copy('Đã bỏ qua đề xuất.', 'Suggestion dismissed.');
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
     'cv-check':ats,
