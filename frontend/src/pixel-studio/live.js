@@ -1,5 +1,5 @@
 import {request,post,remove,query,period,parseSkills,exportURL} from './live-api.js';
-import {escape,field,tags} from './ui.js';
+import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
@@ -516,11 +516,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       if (data.jobDraft.fallback) data.messages.jobs = data.jobDraft.fallback.message;
     });
     if (!loaded || !data.jobDraft || data.jobDraft.fallback) return;
-    const required = data.jobDraft.required_skills.map(item => item.skill_key).join(', ');
-    const preferred = data.jobDraft.preferred_skills.map(item => item.skill_key).join(', ');
+    const required = data.jobDraft.required_skills.map(item => formatSkillName(item.raw_name || item.skill_key)).join(', ');
+    const preferred = data.jobDraft.preferred_skills.map(item => formatSkillName(item.raw_name || item.skill_key)).join(', ');
     showModal(copy('Xác nhận kỹ năng', 'Confirm skills'),'<div class="stack">'
-      + field(copy('Bắt buộc', 'Required'),'<textarea name="required" rows="3">' + escape(required) + '</textarea>')
-      + field(copy('Ưu tiên', 'Preferred'),'<textarea name="preferred" rows="3">' + escape(preferred) + '</textarea>') + '</div>',
+      + field(copy('Kỹ năng yêu cầu (Bắt buộc)', 'Required Skills (Must-have)'),'<textarea name="required" rows="3">' + escape(required) + '</textarea>')
+      + field(copy('Kỹ năng thêm (Ưu tiên)', 'Additional Skills (Preferred)'),'<textarea name="preferred" rows="3">' + escape(preferred) + '</textarea>') + '</div>',
       copy('Đối chiếu', 'Match'),form => void work('jobs',async () => {
         const skills = [...parseSkills(String(form.get('required')),'required'),...parseSkills(String(form.get('preferred')),'preferred')];
         if (!skills.length) throw new Error(copy('Nhập ít nhất một kỹ năng để đối chiếu.', 'Enter at least one skill to match.'));
@@ -829,17 +829,22 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const item = data.jobResults?.jobs.find(job => job.id === button.dataset.id);
       if (item) {
         const isVi = getLanguage() === 'vi';
-        const tagsList = (item.tags || []).slice(0, 10).join(', ');
+        const tags = item.tags || [];
+        const splitIdx = Math.min(Math.max(Math.ceil(tags.length / 2), 2), 4);
+        const reqTags = tags.slice(0, splitIdx).join(', ');
+        const prefTags = tags.slice(splitIdx, splitIdx + 4).join(', ');
         const rawPreview = (item.description_preview || item.description_text || '').replace(/\.\.\.$/, '').trim();
-        const shortSummary = rawPreview.length > 280 ? rawPreview.slice(0, 280) + '...' : rawPreview;
+        const shortSummary = rawPreview.length > 250 ? rawPreview.slice(0, 250) + '...' : rawPreview;
 
         if (isVi) {
           data.jobText = `Vị trí: ${item.title} - ${item.company} (${item.location || 'Từ xa'})\n`
-            + (tagsList ? `Kỹ năng yêu cầu: ${tagsList}\n` : '')
+            + (reqTags ? `Kỹ năng yêu cầu (Bắt buộc): ${reqTags}\n` : '')
+            + (prefTags ? `Điểm cộng (Ưu tiên): ${prefTags}\n` : '')
             + `Mô tả tóm tắt: ${shortSummary}`;
         } else {
           data.jobText = `Position: ${item.title} - ${item.company} (${item.location || 'Remote'})\n`
-            + (tagsList ? `Required skills: ${tagsList}\n` : '')
+            + (reqTags ? `Requirements (Must-have): ${reqTags}\n` : '')
+            + (prefTags ? `Preferred (Nice-to-have): ${prefTags}\n` : '')
             + `Summary: ${shortSummary}`;
         }
         data.jobURL = item.url || '';
@@ -873,14 +878,17 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
     'ask-gap-skill':button => {
-      const skill = button.dataset.skill || '';
+      const rawSkill = button.dataset.skill || '';
+      const skillName = formatSkillName(rawSkill);
       openMentor();
-      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skill}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và một dự án thực tế để rèn luyện kỹ năng này.`;
-      const promptEn = `I need to learn the missing skill: "${skill}" to meet job requirements. Please guide me with an effective learning path, best resources, and a hands-on project to practice this skill.`;
+      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và một dự án thực tế để rèn luyện kỹ năng này.`;
+      const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and a hands-on project to practice this skill.`;
       void send(copy(promptVi, promptEn));
     },
     'view-skill-roadmap':async button => {
-      const skillKey = (button.dataset.skill || '').toLowerCase().trim();
+      const rawSkill = button.dataset.skill || '';
+      const skillKey = rawSkill.toLowerCase().trim();
+      const formatted = formatSkillName(skillKey);
       await work('road',async () => {
         const items = await request('/career-roadmaps');
         data.roadmaps = items;
@@ -916,8 +924,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         }
         navigate('roadmap','#milestone-detail');
         data.messages.road = copy(
-          `Đã chuyển đến Lộ trình cho kỹ năng "${skillKey}".`,
-          `Navigated to Roadmap for skill "${skillKey}".`
+          `Đã chuyển đến Lộ trình cho kỹ năng "${formatted}".`,
+          `Navigated to Roadmap for skill "${formatted}".`
         );
       });
     },

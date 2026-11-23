@@ -40,6 +40,8 @@ SKILL_ALIASES = {
     "tailwindcss": "tailwind",
     "postgres": "postgresql",
     "ci_cd": "cicd",
+    "net": "csharp",
+    "dotnet": "csharp",
 }
 
 
@@ -145,10 +147,15 @@ def _match_skill(
             repo_full_name = repo.full_name or repo.name if repo else None
             repo_name = repo.name if repo else None
             commit_url = None
-            if repo_full_name and ref.commit_sha:
-                commit_url = (
-                    f"https://github.com/{repo_full_name}/commit/{ref.commit_sha}"
-                )
+            if repo and ref.commit_sha:
+                if getattr(repo, "html_url", None):
+                    commit_url = (
+                        f"{repo.html_url.rstrip('/')}/commit/{ref.commit_sha}"
+                    )
+                elif repo_full_name:
+                    commit_url = (
+                        f"https://github.com/{repo_full_name}/commit/{ref.commit_sha}"
+                    )
             refs.setdefault(
                 ref.dedup_key,
                 MatchEvidence(

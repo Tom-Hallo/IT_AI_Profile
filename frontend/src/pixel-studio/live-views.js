@@ -1,5 +1,5 @@
 import { dateLabel, getLanguage, rangeLabel, scopeLabel, t } from './i18n.js';
-import { attr, badge, blank, brand, btn, details, escape, field, filterControls, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
+import { attr, badge, blank, brand, btn, details, escape, field, filterControls, formatSkillName, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
 import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 
@@ -924,12 +924,12 @@ export function liveJobs(state, data) {
 
     const matchedHtml = matchedSkills.length ? '<div class="job-group-block"><h4 class="job-group-title green">'
       + icon('check') + ' ' + copy('Kỹ năng đã đáp ứng từ GitHub (Matching)', 'Matching Skills from GitHub') + ' (' + matchedSkills.length + ')</h4>'
-      + '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(item.skill_key) + '</strong>'
+      + '<ul class="job-evidence-list">' + matchedSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
         + badge(t('jobs.has'), 'green') + '</div>' + paragraph(item.reason) + refs(item.evidence, data) + '</li>').join('') + '</ul></div>' : '';
 
     const gapHtml = gapSkills.length ? '<div class="job-group-block"><h4 class="job-group-title amber">'
       + icon('pulse') + ' ' + copy('Khoảng cách kỹ năng cần bổ sung (Skill Gaps)', 'Skill Gaps to Address') + ' (' + gapSkills.length + ')</h4>'
-      + '<ul class="job-evidence-list">' + gapSkills.map(item => '<li><div><strong>' + escape(item.skill_key) + '</strong>'
+      + '<ul class="job-evidence-list">' + gapSkills.map(item => '<li><div><strong>' + escape(formatSkillName(item.skill_key)) + '</strong>'
         + badge(t('jobs.' + ({ partial: 'partial', unknown: 'missing' })[item.status]), 'amber')
         + '</div>' + paragraph(item.reason)
         + '<div class="gap-action-row" style="margin-top:6px">'
