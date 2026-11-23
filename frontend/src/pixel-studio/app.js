@@ -21,6 +21,8 @@ import {settingsView, syncThemeControls} from './settings-view.js';
 import {applyTheme, colorFields, defaultPreset, hexColor, loadTheme, presets, saveTheme, themeColors, themeKey} from './theme.js';
 import {mountAboutMotion} from './about-motion.js';
 import {createLiveStudio} from './live.js';
+import {installVietnameseFormValidation} from './form-validation.js';
+import './form-validation.css';
 import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus} from './live-views.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
@@ -29,6 +31,7 @@ const $ = selector => document.querySelector(selector);
 const root = $('#root');
 const mentorPanel = $('#mentor-panel');
 const dialog = $('#dialog');
+installVietnameseFormValidation(document);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const compactMentor = matchMedia('(max-width: 860px)');
 const liveMode = document.body.dataset.studioMode === 'live';
