@@ -19,7 +19,7 @@ const number = value => Number.isFinite(value) ? String(Math.round(value * 10) /
 function feedback(data, ...keys) {
   return keys.map(key => data.errors[key] ? '<p class="notice red" role="alert">' + escape(data.errors[key]) + '</p>'
     : data.messages[key] ? '<p class="notice" role="status">' + escape(data.messages[key]) + '</p>'
-      : data.busy.has(key) ? '<p class="subtle" role="status">' + escape(copy('Đang tải…', 'Loading…')) + '</p>' : '').join('');
+      : data.busy.has(key) ? '<p class="ita-loading-status" role="status"><span class="ita-loading-spinner" aria-hidden="true"></span><span>' + escape(copy('Đang tải…', 'Loading…')) + '</span></p>' : '').join('');
 }
 
 function formatEvidenceItem(item, data) {
@@ -459,7 +459,7 @@ export function liveRepos(state, data, active) {
     + '<div class="panel">' + blank(t('repos.disconnected'), t('repos.disconnectedCopy'), namedButton(t('repos.connect'), 'reconnect', 'primary')) + '</div>';
   const busy = data.busy.has('repos') || data.busy.has('sync') || data.busy.has('bulk');
   const toolbar = '<div class="panel analysis-toolbar"><div class="toolbar">' + filterControls(state, busy || Boolean(data.analysis))
-    + btn(icon('repo') + escape(t('action.sync')), 'sync', 'secondary', busy ? 'disabled' : '')
+    + btn(icon('repo') + escape(t('action.sync')), 'sync', 'secondary' + (data.busy.has('sync') ? ' is-loading' : ''), busy ? 'disabled' : '')
     + namedButton(copy('Tải lại', 'Refresh'), 'reload-reports', 'quiet small') + '</div>'
     + '<form class="field-row" id="repo-search">' + field(copy('Tìm repository', 'Find repository'), '<input name="repo-query" value="'
       + escape(data.search) + '">')
@@ -468,7 +468,9 @@ export function liveRepos(state, data, active) {
     + '</form>'
     + '<p class="scope-summary" role="status">' + escape(t('repos.count', { count: data.total })) + '</p>'
     + feedback(data, 'repos', 'sync', 'activity', 'cancel') + '</div>';
-  if (!active) return intro + toolbar + '<div class="panel">' + blank(t('repos.noRepo'), t('repos.noRepoCopy')) + '</div>';
+  if (!active) return intro + toolbar + (data.busy.has('repos')
+    ? '<section class="panel ita-list-skeleton" role="status"><span class="ita-visually-hidden">' + escape(copy('Đang tải repository…', 'Loading repositories…')) + '</span>' + Array.from({length:3}, () => '<div class="ita-skeleton-row" aria-hidden="true"><i class="ita-skeleton-line ita-skeleton-line--wide"></i><i class="ita-skeleton-line ita-skeleton-line--short"></i></div>').join('') + '</section>'
+    : '<div class="panel">' + blank(t('repos.noRepo'), t('repos.noRepoCopy')) + '</div>');
   const info = data.repoData[active.id] ?? { errors: {} };
   const report = info.report;
 
@@ -771,6 +773,19 @@ export function displayRoadmapTitle(title, goal) {
   return title || (goal || '');
 }
 
+function roadmapLoadingSkeleton() {
+  const label = escape(copy('Đang tải lộ trình và bản đồ kỹ năng…', 'Loading roadmap and skill map…'));
+  const lines = '<span class="ita-skeleton-line ita-skeleton-line--wide"></span><span class="ita-skeleton-line"></span><span class="ita-skeleton-line ita-skeleton-line--short"></span>';
+  return '<div class="ita-roadmap-skeleton" role="status" aria-label="' + label + '">'
+    + '<span class="ita-visually-hidden">' + label + '</span>'
+    + '<div class="road-banner"><section class="panel road-next ita-skeleton-card" aria-hidden="true">' + lines + '</section>'
+    + '<section class="panel road-progress ita-skeleton-card" aria-hidden="true">' + lines + '</section></div>'
+    + '<div class="road-layout"><section class="panel map-panel ita-skeleton-card ita-skeleton-map" aria-hidden="true">'
+    + lines + '<div class="ita-skeleton-map-grid">'
+    + Array.from({length:6}, () => '<span class="ita-skeleton-node"></span>').join('') + '</div></section>'
+    + '<section class="panel road-detail ita-skeleton-card ita-skeleton-detail" aria-hidden="true">' + lines + lines + '</section></div></div>';
+}
+
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
   const selected = milestones.find(m => m.id === data.milestone) ?? milestones[0];
@@ -790,6 +805,10 @@ export function liveRoadmap(data) {
       + '</select>')
     : '';
 
+  if (data.busy.has('road') && !data.road && !data.tracking) {
+    return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + roadmapLoadingSkeleton();
+  }
+
   const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
     + attr('state', milestone.status === 'completed' ? 'done' : 'ready') + ' aria-pressed="' + (milestone === selected) + '">'
     + '<span class="map-icon">' + icon(milestone.status === 'completed' ? 'check' : 'branch') + '</span><strong>'
@@ -804,7 +823,7 @@ export function liveRoadmap(data) {
   })[src] ?? src;
 
   const history = '<details class="panel road-history"' + (data.history.length ? ' open' : '') + '><summary>' + escape(t('road.history')) + '</summary>'
-    + namedButton(copy('Tải lịch sử', 'Load history'), 'road-history', 'quiet small') + '<ul class="audit-list">'
+    + btn(escape(copy('Tải lịch sử', 'Load history')), 'road-history', 'quiet small' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '<ul class="audit-list">'
     + data.history.map(record => '<li><time>' + escape(formattedDate(record.created_at)) + '</time>'
       + '<span>' + escape(statusLabel(record.old_status) + ' → ' + statusLabel(record.new_status)) + '</span>'
       + (record.source ? ' ' + badge(sourceLabel(record.source), record.source === 'verified' ? 'green' : record.source === 'mentor' ? 'blue' : '') : '')
@@ -844,10 +863,10 @@ export function liveRoadmap(data) {
         evidenceCount + ' verified evidence references found.')) + '</p>'
       + '<p class="subtle">' + escape(suggestion.explanation || '') + '</p>'
       + '<div class="action-row">'
-      + btn(escape(copy('Áp dụng', 'Apply')), 'road-suggestion', 'primary small',
-        attr('id', suggestion.id) + attr('decision', 'apply'))
-      + btn(escape(copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small',
-        attr('id', suggestion.id) + attr('decision', 'reject'))
+      + btn(escape(copy('Áp dụng', 'Apply')), 'road-suggestion', 'primary small' + (data.busy.has('road') ? ' is-loading' : ''),
+        attr('id', suggestion.id) + attr('decision', 'apply') + (data.busy.has('road') ? ' disabled' : ''))
+      + btn(escape(copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small' + (data.busy.has('road') ? ' is-loading' : ''),
+        attr('id', suggestion.id) + attr('decision', 'reject') + (data.busy.has('road') ? ' disabled' : ''))
       + '</div></article>';
   }).join('');
   const evaluationHtml = evaluation ? '<section class="panel road-review-result" role="status" aria-live="polite">'
@@ -917,7 +936,7 @@ export function liveRoadmap(data) {
     + '<div class="field-row">'
     + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" required>'
     + '<input name="evidence_note" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
-    + '<button type="submit" class="button primary small">' + copy('Nộp minh chứng', 'Submit') + '</button>'
+    + '<button type="submit" class="button primary small' + (data.busy.has('road') ? ' is-loading' : '') + '"' + (data.busy.has('road') ? ' disabled aria-busy="true"' : '') + '>' + copy('Nộp minh chứng', 'Submit') + '</button>'
     + '</div><p id="road-evidence-validation" class="road-evidence-validation" role="alert" hidden></p></form>' : '';
 
   let actionButtonsHtml = '';
@@ -960,12 +979,12 @@ export function liveRoadmap(data) {
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
     + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
     + (goal ? paragraph(goal.objective) : '') + '</div>'
-    + btn(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary', data.busy.has('road') ? 'disabled' : '') + '</section>'
+    + btn(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '</section>'
     + '<section class="panel road-progress"><div><p class="eyebrow">' + escape(t('road.progress')) + '</p><strong>' + done.length + '<span> / ' + milestones.length
     + '</span></strong><p>' + escape(t('road.progressCount', { done: done.length, total: milestones.length })) + '</p></div>'
     + '<div class="milestone-pips" aria-hidden="true">' + milestones.map(m => '<i' + attr('state', m.status === 'completed' ? 'done' : 'ready') + '></i>').join('') + '</div></section></div>'
     + (data.road ? '<section class="road-update"><div>' + icon('pulse') + escape(copy('Cập nhật từ kết quả phân tích GitHub', 'Recheck GitHub evidence')) + '</div>'
-      + btn(escape(copy('Đánh giá lại', 'Re-evaluate')), 'road-draft', 'secondary small', data.busy.has('road') ? 'disabled' : '') + '</section>' : '')
+      + btn(escape(copy('Đánh giá lại', 'Re-evaluate')), 'road-draft', 'secondary small' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '</section>' : '')
     + evaluationHtml
     + '<div class="road-layout"><section class="panel map-panel">' + panelHead(t('road.map'), copy('Chọn mốc để xem mục tiêu và bằng chứng.', 'Select a milestone to see its goal and evidence.'))
     + '<div class="map-legend">' + ['done', 'ready'].map(mode => '<span data-state="' + mode + '"><i></i>' + escape(t('road.' + mode)) + '</span>').join('') + '</div>'
@@ -1036,16 +1055,16 @@ export function liveJobs(state, data) {
     + '<div class="columns"><div class="stack"><article class="panel">' + panelHead(t('jobs.search'), 'Remotive')
     + '<form id="job-search" class="field-row">' + field(t('jobs.keyword'), '<input name="query" value="' + escape(data.jobQuery ?? '')
       + '" maxlength="200" placeholder="Python, FastAPI, TypeScript" required>')
-    + '<button class="button secondary" type="submit"' + (data.busy.has('jobs') ? ' disabled' : '') + '>' + escape(t('jobs.searchAction')) + '</button></form>'
+    + '<button class="button secondary' + (data.busy.has('jobs') ? ' is-loading' : '') + '" type="submit"' + (data.busy.has('jobs') ? ' disabled' : '') + '>' + escape(t('jobs.searchAction')) + '</button></form>'
     + '<div class="rows view-rows">' + (data.jobResults?.warnings ?? []).map(muted).join('')
     + (rows || (data.jobResults ? muted(t('jobs.noMatch')) : '')) + '</div></article>'
     + '<article class="panel">' + panelHead(t('jobs.paste')) + '<form id="jd-form" class="stack">'
     + field(t('jobs.description'), '<textarea name="jd" id="jd-textarea" rows="4" maxlength="50000" class="auto-scale-textarea" placeholder="' + escape(t('jobs.placeholder'))
       + '">' + escape(data.jobText ?? '') + '</textarea>')
     + field(copy('Hoặc URL tuyển dụng', 'Or listing URL'), '<input name="jd-url" type="url" value="' + escape(data.jobURL ?? '') + '">')
-    + '<button class="button primary" type="submit"' + (data.busy.has('jobs') ? ' disabled' : '') + '>' + escape(t('jobs.analyze')) + '</button></form></article></div>'
+    + '<button class="button primary' + (data.busy.has('jobs') ? ' is-loading' : '') + '" type="submit"' + (data.busy.has('jobs') ? ' disabled' : '') + '>' + escape(t('jobs.analyze')) + '</button></form></article></div>'
     + '<article class="panel">' + panelHead(t('jobs.compare'), scopeLabel(state.scope))
-    + (comparisonHtml || blank(t('jobs.none'), t('jobs.noneCopy'))) + '</article></div>';
+    + (comparisonHtml || (data.busy.has('jobs') ? '<div class="ita-compare-skeleton" role="status"><span class="ita-visually-hidden">' + escape(copy('Đang đối chiếu yêu cầu công việc…', 'Matching job requirements…')) + '</span><span class="ita-skeleton-line ita-skeleton-line--wide" aria-hidden="true"></span><span class="ita-skeleton-meter" aria-hidden="true"></span><span class="ita-skeleton-line" aria-hidden="true"></span><span class="ita-skeleton-line ita-skeleton-line--short" aria-hidden="true"></span></div>' : blank(t('jobs.none'), t('jobs.noneCopy')))) + '</article></div>';
 }
 
 export function liveCV(state, runtime, data) {

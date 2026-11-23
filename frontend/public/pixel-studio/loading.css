@@ -1,0 +1,35 @@
+/* Visual-only motion for Pixel Studio loading states. */
+.ita-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ita-loading-status{display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 14px;margin:10px 0;border:1px solid var(--accent-border);border-radius:12px;background:var(--accent-panel);color:var(--surface-ink);font-size:13px}
+.ita-loading-spinner,.button.is-loading::before{content:"";display:inline-block;width:15px;height:15px;flex:none;border:2px solid currentColor;border-right-color:transparent;border-top-color:var(--gold);border-radius:50%;animation:ita-loading-spin .9s linear infinite}
+.button.is-loading{display:inline-flex;align-items:center;justify-content:center;gap:9px;opacity:.85}
+.button.is-loading::before{width:13px;height:13px}
+.ita-loading-status .ita-loading-spinner{color:var(--accent)}
+.ita-skeleton-line,.ita-skeleton-node,.ita-skeleton-meter{display:block;max-width:100%;border-radius:9px;background:linear-gradient(105deg,var(--surface-2) 20%,var(--accent-wash) 45%,var(--surface-2) 70%);background-size:220% 100%;animation:ita-loading-shimmer 1.9s ease-in-out infinite}
+.ita-skeleton-line{width:74%;height:16px;min-height:16px}
+.ita-skeleton-line--wide{width:94%;height:20px}
+.ita-skeleton-line--short{width:44%;height:12px}
+.ita-skeleton-card{display:flex;flex-direction:column;gap:15px;overflow:hidden}
+.ita-roadmap-skeleton .road-banner{margin-bottom:12px}
+.ita-roadmap-skeleton .road-next,.ita-roadmap-skeleton .road-progress{min-height:144px}
+.ita-roadmap-skeleton .ita-skeleton-map{min-height:370px}
+.ita-roadmap-skeleton .ita-skeleton-detail{min-height:330px}
+.ita-skeleton-map-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px;margin:16px 0 0}
+.ita-skeleton-node{height:47px;border-radius:12px}
+.ita-list-skeleton{display:grid;gap:12px;min-height:220px}
+.ita-skeleton-row{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:9px}
+.ita-compare-skeleton{display:flex;flex-direction:column;gap:17px;min-height:205px;padding:10px 0}
+.ita-skeleton-meter{width:100%;height:24px;border-radius:10px}
+.analysis-pipeline-notice{position:relative;overflow:hidden}
+.analysis-pipeline-notice::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--accent-border);opacity:.55;animation:ita-loading-breathe 2.5s ease-in-out infinite}
+.command-job-status .spinner,.dashboard-updating-banner .spinner{flex:none}
+.mentor-shell .chat-bubble:has(.typing-dots){min-height:42px;display:flex;align-items:center;gap:7px}
+.mentor-shell .typing-dots i{width:5px;height:5px;border-radius:50%;animation:ita-loading-dot 1.4s ease-in-out infinite}
+.mentor-shell .typing-dots i:nth-child(2){animation-delay:.18s}
+.mentor-shell .typing-dots i:nth-child(3){animation-delay:.36s}
+@keyframes ita-loading-spin{to{transform:rotate(360deg)}}
+@keyframes ita-loading-shimmer{to{background-position-x:-220%}}
+@keyframes ita-loading-breathe{0%,100%{opacity:.2}50%{opacity:.8}}
+@keyframes ita-loading-dot{0%,65%,100%{opacity:.45;transform:translateY(0)}32%{opacity:1;transform:translateY(-4px)}}
+@media(max-width:690px){.ita-skeleton-map-grid{gap:14px}.ita-roadmap-skeleton .road-layout{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.ita-loading-spinner,.button.is-loading::before,.ita-skeleton-line,.ita-skeleton-node,.ita-skeleton-meter,.analysis-pipeline-notice::after,.mentor-shell .typing-dots i{animation:none!important}.mentor-shell .typing-dots i{opacity:1;transform:none}}
