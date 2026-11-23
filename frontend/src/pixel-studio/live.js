@@ -203,7 +203,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   async function analyze() {
     const repo = active();
-    if (!repo || analysisJob || analysisStarted) return;
+    if (!repo || analysisJob || analysisStarted || data.busy.has('bulk')) return;
     analysisStarted = true;
     data.analysis = {status:'queued',progress:0,repo_id:repo.id};
     data.errors.repos = '';
@@ -871,14 +871,134 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
       render();
     },
-    'analyze-selected': async () => {
-      if (!data.selectedRepos || data.selectedRepos.size === 0) return;
-      const ids = [...data.selectedRepos];
-      notice(copy(`Bắt đầu phân tích ${ids.length} repository đã chọn...`, `Starting analysis for ${ids.length} selected repositories...`));
-      for (const id of ids) {
-        await focusRepo(id);
-        await analyze();
+    "analyze-selected": async () => {
+      const ids = [...new Set(data.selectedRepos ?? [])];
+      if (!ids.length) return;
+
+      if (analysisJob || analysisStarted || data.busy.has("bulk")) {
+        notice(
+          copy(
+            "Đang có phiên phân tích khác. Hãy đợi phiên đó hoàn tất.",
+            "Another analysis is running. Wait for it to finish.",
+          ),
+        );
+        return;
       }
+
+      const results = [];
+      const range = period(state.range);
+
+      await work("bulk", async () => {
+        data.bulkAnalysis = {
+          total: ids.length,
+          done: 0,
+          results,
+        };
+
+        for (const id of ids) {
+          const item = {
+            repo_id: id,
+            status: "preparing",
+            progress: 0,
+          };
+
+          results.push(item);
+          render();
+
+          try {
+            const repo =
+              data.repos.find((r) => String(r.id) === String(id)) ??
+              (await request("/github/repositories/" + encodeURIComponent(id)));
+
+            item.name = repo.full_name || repo.name;
+
+            const job = await post("/analysis/jobs", {
+              repo_id: repo.id,
+              scope: repo.private ? "private" : "public",
+              mode: "custom",
+              ...range,
+              timezone: "UTC",
+            });
+
+            if (!job?.id) {
+              throw new Error("Analysis API returned no job ID");
+            }
+
+            item.job_id = job.id;
+            item.status = job.status;
+
+            const deadline = Date.now() + 10 * 60 * 1000;
+
+            while (
+              ["queued", "running", "cancel_requested"].includes(item.status)
+            ) {
+              if (Date.now() >= deadline) {
+                throw new Error(
+                  "Analysis job has not reached a terminal state within 10 minutes. Check its status before retrying.",
+                );
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1200));
+
+              const current = await request(
+                "/analysis/jobs/" + encodeURIComponent(item.job_id),
+              );
+
+              item.status = current.status;
+              item.progress = current.progress ?? item.progress;
+              item.report_id = current.report_id;
+              render();
+            }
+
+            if (item.status === "succeeded") {
+              data.scores = [];
+
+              if (String(active()?.id) === String(id)) {
+                await repoDetail({ reportId: item.report_id });
+              }
+            } else if (!["failed", "cancelled"].includes(item.status)) {
+              item.error = copy(
+                "Trạng thái job không xác định.",
+                "Unknown analysis job status.",
+              );
+            }
+          } catch (error) {
+            // Nếu đã có job_id, job có thể vẫn đang chạy trên backend.
+            // Không tự động tạo job mới khi mất kết nối.
+            item.status = item.job_id ? "unknown" : "request_error";
+            item.error = errorText(error);
+          }
+
+          data.bulkAnalysis.done += 1;
+          render();
+
+          if (["unknown", "request_error"].includes(item.status)) {
+            for (const remainingId of ids.slice(data.bulkAnalysis.done)) {
+              results.push({
+                repo_id: remainingId,
+                status: "not_started",
+                progress: 0,
+              });
+            }
+
+            break;
+          }
+        }
+
+        const success = results.filter(
+          (item) => item.status === "succeeded",
+        ).length;
+
+        const failed = results.filter(
+          (item) => item.status !== "succeeded",
+        ).length;
+
+        data.messages.repos = copy(
+          `Đã xử lý ${results.length} repository: ${success} thành công, ${failed} chưa thành công hoặc cần kiểm tra.`,
+          `Processed ${results.length} repositories: ${success} succeeded, ${failed} failed or need review.`,
+        );
+
+        notice(data.messages.repos);
+      });
     },
     'ask-milestone': button => {
       const mId = Number(button.dataset.id);
