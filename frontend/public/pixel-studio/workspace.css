@@ -1150,15 +1150,21 @@
   color: #e3b341;
 }
 
-#jd-form textarea, .auto-scale-textarea {
+#jd-form textarea[name="jd"] {
+  display: block;
+  width: 100%;
   min-height: 90px;
-  max-height: 280px;
-  resize: vertical;
+  max-height: clamp(260px, 42vh, 340px);
+  resize: none;
   line-height: 1.5;
   font-size: 13px;
   padding: 8px 10px;
   overflow-y: auto;
   box-sizing: border-box;
+  transition: height 160ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  #jd-form textarea[name="jd"] { transition: none; }
 }
 
 .audit-list .evidence-item {
