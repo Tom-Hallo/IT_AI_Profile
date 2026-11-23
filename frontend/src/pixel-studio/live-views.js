@@ -823,9 +823,10 @@ export function liveRoadmap(data) {
       const note = typeof ev === 'object' ? ev.note : '';
       const vStatus = typeof ev === 'object' ? ev.verification_status : selected?.verification_status || 'self_reported';
       const isVerified = vStatus === 'verified';
+      const href = safeLink(url);
       return '<li><div class="evidence-link-row">'
-        + '<a href="' + escape(url) + '" target="_blank" rel="noopener noreferrer" class="evidence-anchor">'
-        + icon('branch') + ' ' + escape(url) + '</a>'
+        + (href ? '<a href="' + escape(href) + '" target="_blank" rel="noopener noreferrer" class="evidence-anchor">'
+          + icon('branch') + ' ' + escape(url) + '</a>' : '<span class="evidence-anchor">' + escape(url) + '</span>')
         + badge(isVerified ? copy('Đã xác minh (Verified)', 'Verified') : copy('Tự khai báo', 'Self-reported'), isVerified ? 'green' : 'amber')
         + '</div>' + (note ? '<p class="evidence-subnote">' + escape(note) + '</p>' : '') + '</li>';
     }).join('') + '</ul></div>' : '';
