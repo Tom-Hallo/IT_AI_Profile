@@ -48,6 +48,15 @@ function formatEvidenceItem(item, data) {
     }
   }
 
+  const prNumber = Number(item.pr_number);
+  const safeRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoName);
+  const prUrl = safeRepo && Number.isSafeInteger(prNumber) && prNumber > 0
+    ? 'https://github.com/' + repoName + '/pull/' + prNumber : '';
+  const prBadge = prUrl
+    ? '<a href="' + escape(prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+      + icon('branch') + ' PR #' + prNumber + ' <span class="ext-icon" aria-hidden="true">↗</span></a>'
+    : '';
+
   const label = item.label || item.target_identifier || item.evidence_id || '';
   const generalBadge = (!repoBadge && !fileBadge && !commitBadge && label)
     ? '<span class="evidence-general">' + icon('check') + ' ' + escape(label) + '</span>'
@@ -57,7 +66,7 @@ function formatEvidenceItem(item, data) {
 
   return '<li class="evidence-item">'
     + '<div class="evidence-info">' + (infoRow || generalBadge || '<span class="evidence-general">' + icon('check') + ' ' + escape(copy('Minh chứng mã nguồn GitHub', 'GitHub source evidence')) + '</span>') + '</div>'
-    + (commitBadge ? '<div class="evidence-action">' + commitBadge + '</div>' : '')
+    + (commitBadge || prBadge ? '<div class="evidence-action">' + (commitBadge || prBadge) + '</div>' : '')
     + '</li>';
 }
 
@@ -95,9 +104,10 @@ function scorePill(value) {
 }
 
 function scoreStatusLabel(status) {
-  if (status === 'Scored') return copy('Đã chấm điểm', 'Scored');
+  if (status === 'Scored' || status === 'SCORED') return copy('Đã chấm điểm', 'Scored');
   if (status === 'Insufficient' || status === 'INSUFFICIENT') return copy('Chưa đủ bằng chứng', 'Insufficient evidence');
   if (status === 'Unknown' || status === 'UNKNOWN') return copy('Chưa xác định', 'Unknown');
+  if (status === 'Conflicting' || status === 'CONFLICTING') return copy('Bằng chứng mâu thuẫn', 'Conflicting evidence');
   return status || '—';
 }
 
@@ -163,21 +173,39 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     const selected = selection?.score;
     scores = data.roles.map(item => scoreRow(item.name, numericScore(item.score?.role_score), 'role-score', item.key, selection === item)).join('');
     if (selected) {
-      const selectedValue = numericScore(selected.role_score);
-      evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name) + '</h3>'
+      const selectedValue = selected.status === 'SCORED' ? numericScore(selected.role_score) : null;
+      const coverage = Number.isFinite(selected.coverage)
+        ? Math.round(selected.coverage * 100) + '%' : '—';
+      const confidence = Number.isFinite(selected.confidence)
+        ? number(selected.confidence) + '/100' : '—';
+      const criteria = Array.isArray(selected.criteria) ? selected.criteria : [];
+      const blockers = criteria.filter(item => item.status !== 'SCORED');
+      const refsUsed = Array.isArray(selected.evidence_refs) ? selected.evidence_refs : [];
+      const blockersList = blockers.length
+        ? '<div class="role-score-audit"><h4>' + copy('Tiêu chí chưa đạt hoặc chưa xác định', 'Unmet or unknown criteria') + '</h4>'
+          + '<ul class="audit-list">' + blockers.map(item => '<li><strong>' + escape(item.name || item.key) + '</strong>'
+            + (item.required ? ' <span class="tag-badge yellow">' + copy('Bắt buộc', 'Required') + '</span>' : '')
+            + muted(item.rationale || scoreStatusLabel(item.status)) + '</li>').join('') + '</ul></div>'
+        : '';
+      evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name || selection.name) + '</h3>'
         + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + (selectedValue === null
-          ? copy('Chưa đủ bằng chứng', 'Insufficient evidence')
-          : copy('Đánh giá vai trò', 'Role evaluation')) + '</span></div>'
+          ? escape(scoreStatusLabel(selected.status))
+          : copy('Đã chấm điểm vai trò', 'Role score available')) + '</span></div>'
         + scorePill(selectedValue) + '</div>'
         + paragraph(selected.rationale)
         + details([
-          [copy('Độ tin cậy', 'Confidence'), number(selected.confidence)],
-          [copy('Trạng thái', 'Status'), escape(scoreStatusLabel(selected.status))]
+          [copy('Độ phủ tiêu chí', 'Criterion coverage'), coverage],
+          [copy('Độ tin cậy bằng chứng', 'Evidence confidence'), confidence],
+          [copy('Trạng thái', 'Status'), escape(scoreStatusLabel(selected.status))],
+          [copy('Rubric vai trò', 'Role rubric'), escape(selected.rubric_version ?? '—')]
         ])
+        + blockersList
         + (selected.limitations ?? []).map(item => muted(item.message ?? item.label ?? item.code)).join('')
-        + refs(selected.evidence_refs)
+        + '<h4>' + copy('Bằng chứng được xem xét', 'Evidence considered') + ': ' + refsUsed.length + '</h4>'
+        + (refs(refsUsed, data) || muted(copy('Không có bằng chứng được dùng để chấm vai trò.', 'No evidence was used to score this role.')))
+        + (refsUsed.length > 20 ? muted(copy('Chỉ hiển thị 20 bằng chứng đầu tiên.', 'Showing the first 20 evidence references.')) : '')
         + '<div class="evidence-action-row" style="margin-top:12px">'
-        + [...new Set(selected.evidence_refs?.map(ref => ref.repository_id).filter(Boolean) ?? [])]
+        + [...new Set(refsUsed.map(ref => ref.repository_id).filter(Boolean))]
           .map(id => namedButton(copy('Mở repo #', 'Open repo #') + id + ' ↗', 'evidence', 'secondary small', id)).join(' ')
         + '</div>';
     } else if (selection?.limitations?.length) {

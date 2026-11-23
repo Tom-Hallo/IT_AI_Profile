@@ -77,6 +77,7 @@ class EvidenceRef(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     evidence_id: str | None = None
+    pr_number: int | None = Field(default=None, ge=1)
     repository_id: int | None = None
     commit_sha: str | None = None
     file_path: str | None = None

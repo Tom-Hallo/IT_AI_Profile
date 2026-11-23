@@ -18,6 +18,7 @@ from app.modules.role_scoring.service import RoleScoringOutcome
 
 class EvidenceRefOut(BaseModel):
     evidence_id: str | None = None
+    pr_number: int | None = Field(default=None, ge=1)
     repository_id: int | None = None
     commit_sha: str | None = None
     file_path: str | None = None
@@ -30,6 +31,7 @@ class EvidenceRefOut(BaseModel):
     def from_ref(cls, ref: EvidenceRef) -> EvidenceRefOut:
         return cls(
             evidence_id=ref.evidence_id,
+            pr_number=ref.pr_number,
             repository_id=ref.repository_id,
             commit_sha=ref.commit_sha,
             file_path=ref.file_path,
