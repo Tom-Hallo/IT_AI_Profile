@@ -936,7 +936,7 @@ export function liveRoadmap(data) {
     + evaluationHtml
     + '<div class="road-layout"><section class="panel map-panel">' + panelHead(t('road.map'), copy('Chọn mốc để xem mục tiêu và bằng chứng.', 'Select a milestone to see its goal and evidence.'))
     + '<div class="map-legend">' + ['done', 'ready'].map(mode => '<span data-state="' + mode + '"><i></i>' + escape(t('road.' + mode)) + '</span>').join('') + '</div>'
-    + (map ? '<div class="road-map"><canvas aria-hidden="true"></canvas>' + map + '</div>' : muted(copy('Chưa có cột mốc để hiển thị.', 'No milestones to display.')))
+    + (map ? '<div class="road-map"><svg class="road-map-lines" aria-hidden="true" focusable="false"></svg><canvas aria-hidden="true"></canvas>' + map + '</div>' : muted(copy('Chưa có cột mốc để hiển thị.', 'No milestones to display.')))
     + '</section>' + detail + (selected ? '<div class="road-records stack">'
       + (done.length ? '<section class="panel achievements">' + panelHead(t('road.trophies')) + '<div class="award-list">'
         + done.map(m => '<button class="award-card" type="button" data-act="milestone"' + attr('id', m.id) + '><span class="award-icon">'
