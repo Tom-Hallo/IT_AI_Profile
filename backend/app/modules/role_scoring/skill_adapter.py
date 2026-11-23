@@ -186,7 +186,9 @@ class DatabaseSkillSnapshotSource:
                     )
                 for sid, ev in self._db.execute(links).all():
                     evidence_by_score.setdefault(sid, []).append(
-                        EvidenceRef.from_record(ev).model_copy(update={"verified": False})
+                        EvidenceRef.from_record(ev).model_copy(
+                            update={"verified": False}
+                        )
                     )
 
             # Verification refs remain authoritative in BOTH scoped and
