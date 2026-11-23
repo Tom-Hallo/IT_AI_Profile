@@ -4,7 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, reportBackedSkillScore, verifiedSkillScore} from './score-presentation.js';
+import {numericScore, reportBackedSkillScore} from './score-presentation.js';
 import {githubRadarMetrics} from './dashboard-github-metrics.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
