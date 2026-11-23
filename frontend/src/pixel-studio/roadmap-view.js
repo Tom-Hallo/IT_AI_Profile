@@ -144,14 +144,12 @@ export function paintMap(map,state,trace,liveMilestones) {
     liveMilestones.find(item => String(item.id) === node.dataset.id)
   );
   const alignedLive = orderedLive?.every(Boolean) ? orderedLive : liveMilestones;
-  const milestones = alignedLive ? alignedLive.map((item,index) => ({
-
   // The SVG is decorative only. Keep the canvas for the existing unlock trace
   // and as a fallback, using the exact same node centers and elbow coordinates.
   const svg = map.querySelector('.road-map-lines');
   const existing = svg ? new Map([...svg.querySelectorAll('g[data-connector]')].map(group => [group.dataset.connector,group])) : null;
   if (svg) svg.setAttribute('viewBox','0 0 ' + width + ' ' + height);
-  const milestones = liveMilestones ? liveMilestones.map((item,index) => ({
+  const milestones = alignedLive ? alignedLive.map((item,index) => ({
     ...item,needs:index ? [index - 1] : []
   })) : milestonesFor(state);
   for (const [i,item] of milestones.entries()) {
@@ -160,7 +158,6 @@ export function paintMap(map,state,trace,liveMilestones) {
       const to = points[i];
       if (!from || !to) continue;
       const done = alignedLive ? alignedLive[dep]?.status === 'completed' : stateOf(state,dep) === 'done';
-      const done = liveMilestones ? liveMilestones[dep].status === 'completed' : stateOf(state,dep) === 'done';
       const route = connectorPoints(from,to,vertical);
 
       if (svg) {
