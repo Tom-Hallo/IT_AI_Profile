@@ -116,7 +116,11 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
         ms_list = roadmap.data.get("milestones", [])
         if not isinstance(ms_list, list):
             ms_list = []
-        if not ms_list and isinstance(roadmap.data.get("steps"), list):
+        if (
+            not ms_list
+            and isinstance(roadmap.data.get("steps"), list)
+            and roadmap.data["steps"]
+        ):
             ms_list = [
                 {
                     "skill": f"step_{idx}",
