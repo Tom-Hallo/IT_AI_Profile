@@ -1117,7 +1117,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.references = await request('/cvs/references?' + query(data.referencesQuery));
     }),
     'cv-form':cvSave,
-    'milestone-evidence-form':(values,formElement) => work('road',async () => {
+    'milestone-evidence-form':(values,formElement) => {
       const milestoneId = Number(
         values.get?.('milestone_id') ||
         formElement?.dataset?.milestone ||
@@ -1145,7 +1145,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         validationMessage.hidden = true;
       }
       urlInput?.removeAttribute('aria-invalid');
-      const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
+      return work('road', async () => {
+        const res = await post(trackingPath() + '/milestones/' + milestoneId + '/evidence',{
         evidence_url:url,note:note || null,repository_id:null
       });
       data.tracking = await request(trackingPath());
@@ -1155,7 +1156,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
         : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
       );
-    }),
+      });
+    },
     'skill-form':form => work('skill',async () => {
       const name = String(form.get('skill')).trim();
       if (!name) throw new Error(copy('Nhập tên kỹ năng.', 'Enter skill name.'));
