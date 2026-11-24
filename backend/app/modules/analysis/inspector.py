@@ -118,6 +118,8 @@ class RepositoryInspector:
         source: RepositoryContentSource,
         github_languages: dict[str, int] | None = None,
         on_progress: Callable[[str, int], None] | None = None,
+        *,
+        priority_paths: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         """Thực thi toàn bộ quy trình kiểm tra và phân tích tĩnh repository."""
         # 1. Lấy toàn bộ cây tập tin
@@ -264,13 +266,17 @@ class RepositoryInspector:
             ]
             source_paths.sort(
                 key=lambda path: (
+                    path not in priority_paths,
                     0 if PurePosixPath(path).name.lower() in entry_names else 1,
                     path.count("/"),
                     path,
                 )
             )
             source_max_bytes = min(64 * 1024, self.limits.max_file_size_bytes)
-            for path in source_paths[:32]:
+            scanned = 0
+            for path in source_paths:
+                if scanned >= 32:
+                    break
                 size = file_sizes.get(path, 0)
                 if size <= 0 or size > source_max_bytes:
                     continue
@@ -283,6 +289,7 @@ class RepositoryInspector:
                     > self.limits.analysis_timeout_seconds * 0.75
                 ):
                     break
+                scanned += 1
                 content = await source.get_file_content(
                     path, max_bytes=source_max_bytes
                 )
@@ -298,7 +305,9 @@ class RepositoryInspector:
             on_progress("analyzing_architecture", 82)
         arch_analyzer = ArchitectureAnalyzer(self.repository_id, self.commit_sha)
         architecture = arch_analyzer.analyze(
-            tree_paths=valid_tree_paths,
+            tree_paths=sorted(
+                valid_tree_paths, key=lambda path: (path not in priority_paths, path)
+            ),
             manifest_results=manifest_results,
             collector=self.collector,
         )

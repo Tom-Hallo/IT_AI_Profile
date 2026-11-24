@@ -14,13 +14,17 @@ from sqlalchemy import select
 
 from app.core.time_range import resolve_range
 from app.modules.analysis.evidence import UTC
+from app.modules.analysis.filters import is_ignored_path, is_safe_path
 from app.modules.analysis.inspector import (
     RepositoryContentSource,
     RepositoryInspector,
 )
 from app.modules.analysis.limits import AnalysisLimits
 from app.modules.analysis.models import AnalysisJob
-from app.modules.analysis.schemas import VerificationRequest
+from app.modules.analysis.schemas import (
+    RepositoryVerificationResponse,
+    VerificationRequest,
+)
 from app.modules.analysis.service import (
     GitHubRepositoryContentSource,
     cache_analysis_result,
@@ -60,6 +64,39 @@ def checkpoint(job_id: uuid.UUID, token: uuid.UUID, step: str, progress: int) ->
                 event(db, job, "progress")
     if stop:
         raise Cancelled()
+
+
+def verified_priority_paths(
+    result: RepositoryVerificationResponse | None,
+) -> frozenset[str]:
+    """Prioritize real personal file changes; never use repo ownership alone."""
+    paths: set[str] = set()
+    for item in result.evidence if result is not None else ():
+        if (
+            item.verification_status != "verified"
+            or item.is_bot
+            or item.actor_type == "Bot"
+            or item.is_fork_inherited
+            or item.evidence_type not in {"commit", "pull_request"}
+            or (item.evidence_type == "commit" and item.is_merge)
+        ):
+            continue
+        files = (item.metadata or {}).get("changed_files", [])
+        if not isinstance(files, list):
+            continue
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+            path, changes = entry.get("path"), entry.get("changes")
+            if (
+                isinstance(path, str)
+                and type(changes) is int
+                and changes > 0
+                and is_safe_path(path)
+                and not is_ignored_path(path)
+            ):
+                paths.add(path)
+    return frozenset(paths)
 
 
 def run_analysis(
@@ -216,16 +253,13 @@ def run_analysis(
                 source=content_source,
                 github_languages=repo_languages,
                 on_progress=_on_progress,
+                priority_paths=verified_priority_paths(verification_result),
             )
 
-        checkpoint(job_uuid, token, "inspecting_repository_content", 30)
+        # Verify first so bounded inspection can sample personally changed files.
+        checkpoint(job_uuid, token, "verifying_fork_and_authorship", 26)
 
-        # 3. Chạy phân tích tĩnh mã nguồn, framework & kiến trúc (PBI-012)
-        analysis_result = asyncio.run(_execute_inspection())
-
-        checkpoint(job_uuid, token, "verifying_fork_and_authorship", 75)
-
-        # 4. Thu thập verification, chưa ghi database.
+        # Collect verification without writing to the database.
         verification_result = None
 
         if custom_source is None and access_token:
@@ -254,12 +288,17 @@ def run_analysis(
                         )
                     )
 
+            except Cancelled:
+                raise
             except Exception as ve:
                 logger.warning(
                     "Verification collection failed for job %s: %s",
                     job_uuid,
                     ve,
                 )
+
+        checkpoint(job_uuid, token, "inspecting_repository_content", 30)
+        analysis_result = asyncio.run(_execute_inspection())
 
         checkpoint(job_uuid, token, "finalizing_evidence", 85)
 
