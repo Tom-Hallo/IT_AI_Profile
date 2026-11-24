@@ -19,6 +19,10 @@ test('rejects issues, lookalike hosts, repository pages and malformed identifier
     'https://github.com/Tom-Hallo/IT_AI_Profile/pull/98/files',
     'https://github.com@attacker.com/Tom-Hallo/IT_AI_Profile/pull/98',
     'https://gitlab.com/Tom-Hallo/IT_AI_Profile/pull/98',
+    'https://github.com/a//b/pull/12',
+    'https://github.com:443/a/b/pull/12',
+    'https://github.com/a/x/../b/pull/12',
+    'https://github.com/a/b/PULL/12',
     '',
   ]) {
     assert.equal(isGitHubCommitOrPrUrl(url), false, url);
