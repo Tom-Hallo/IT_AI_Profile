@@ -938,6 +938,11 @@ export function liveRoadmap(data) {
     + '<span class="map-icon">' + icon(nodeIcon(milestone)) + '</span><strong>'
     + escape(displayMilestoneTitle(milestone.title, milestone.external_key)) + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></button>').join('');
 
+  const historyNote = record => {
+    const note = String(record.note || '');
+    if (record.source === 'suggestion' && /^Applied suggestion/.test(note)) return note.replace('Applied suggestion',copy('Đã áp dụng đề xuất','Applied suggestion')).replace(' from snapshot ',copy(' từ snapshot ',' from snapshot '));
+    return note.replace(/^\[SELF_REPORTED\]/,copy('[Tự khai báo]','[Self-reported]')).replace(/^\[VERIFIED\]/,copy('[Đã xác minh lúc nộp]','[Verified at submission]'));
+  };
   const sourceLabel = src => ({
     manual: copy('Thủ công', 'Manual'),
     mentor: copy('Đề xuất AI Mentor', 'AI Mentor proposal'),
@@ -951,7 +956,7 @@ export function liveRoadmap(data) {
     + data.history.map(record => '<li><time>' + escape(formattedDate(record.created_at)) + '</time>'
       + '<span>' + escape(statusLabel(record.old_status) + ' → ' + statusLabel(record.new_status)) + '</span>'
       + (record.source ? ' ' + badge(sourceLabel(record.source), record.source === 'verified' ? 'green' : record.source === 'mentor' ? 'blue' : '') : '')
-      + (record.note ? '<div class="history-note-text"><small>' + escape(record.source === 'suggestion' && /^Applied suggestion/.test(record.note) ? copy('Đã áp dụng đề xuất từ kết quả phân tích.', 'Applied suggestion from analysis results.') : record.note) + '</small></div>' : '')
+      + (record.note ? '<div class="history-note-text"><small>' + escape(historyNote(record)) + '</small></div>' : '')
       + '</li>').join('') + '</ul>' + (data.historyLoaded && !data.history.length ? muted(copy('Chưa có hoạt động nào được ghi nhận cho mốc này.', 'No activity has been recorded for this milestone.')) : '') + '</details>';
 
   const evaluation = data.reevaluation;
@@ -960,15 +965,16 @@ export function liveRoadmap(data) {
     suggestion => suggestion.state === 'pending' && suggestion.milestone_id === selected?.id
   ) ?? []);
 
-  const resolvedEvaluation = evaluation?.kind === 'suggestions' && !evaluationSuggestions.length;
-  const evaluationTitle = resolvedEvaluation ? copy('Đã xử lý tất cả đề xuất', 'All suggestions resolved') : evaluation?.kind === 'suggestions'
+  const staleEvaluation = evaluation && data.tracking?.suggestions?.some(s => s.snapshot_id === evaluation.snapshotId && s.state === 'stale');
+  const resolvedEvaluation = evaluation?.kind === 'suggestions' && !evaluationSuggestions.length && !staleEvaluation;
+  const evaluationTitle = staleEvaluation ? copy('Kết quả đánh giá đã cũ', 'Evaluation is outdated') : resolvedEvaluation ? copy('Đã xử lý tất cả đề xuất', 'All suggestions resolved') : evaluation?.kind === 'suggestions'
     ? copy('Đã tìm thấy bằng chứng GitHub xác minh hợp lệ', 'Verified GitHub evidence found')
     : evaluation?.kind === 'no-verified-evidence'
       ? copy('Chưa có bằng chứng GitHub được xác minh', 'No verified GitHub evidence yet')
       : evaluation?.kind === 'all-completed'
         ? copy('Các mốc hiện tại đều đã hoàn thành', 'All milestones are already completed')
         : copy('Chưa có mốc mới đáp ứng đủ điều kiện', 'No additional milestones meet the criteria');
-  const evaluationDescription = !evaluation ? '' : resolvedEvaluation ? copy('Không còn đề xuất đang chờ. Bạn có thể đánh giá lại khi có dữ liệu phân tích mới.', 'No pending suggestions remain. Re-evaluate when new analysis is available.') : evaluation.kind === 'suggestions'
+  const evaluationDescription = !evaluation ? '' : staleEvaluation ? copy('Dữ liệu phân tích đã thay đổi. Hãy đánh giá lại trước khi áp dụng đề xuất.', 'Analysis data changed. Re-evaluate before applying suggestions.') : resolvedEvaluation ? copy('Không còn đề xuất đang chờ. Bạn có thể đánh giá lại khi có dữ liệu phân tích mới.', 'No pending suggestions remain. Re-evaluate when new analysis is available.') : evaluation.kind === 'suggestions'
     ? copy('Có ' + evaluationSuggestions.length + ' đề xuất từ dữ liệu đã xác minh. Chọn Áp dụng hoặc Bỏ qua cho từng mốc.',
       evaluationSuggestions.length + ' verified suggestions. Apply or dismiss each one.')
     : evaluation?.kind === 'no-verified-evidence'
@@ -1040,6 +1046,11 @@ export function liveRoadmap(data) {
     : '';
 
   const isCompleted = selected?.status === 'completed';
+  const evidenceDraft = data.roadEvidenceDraft?.roadId === data.road?.id
+    && data.roadEvidenceDraft?.milestoneId === selected?.id ? data.roadEvidenceDraft : null;
+  const evidenceNotice = data.roadNotice ? '<div class="notice road-evidence-result' + (data.roadNotice.verified ? ' green' : '') + '" role="status"><strong>'
+    + escape(data.roadNotice.title) + '</strong><p>' + escape(data.roadNotice.detail) + '</p>'
+    + (data.roadNotice.verified ? '' : '<a class="button secondary small" href="#studio/repos">' + escape(copy('Đến phân tích GitHub','Go to GitHub analysis')) + '</a>') + '</div>' : '';
   const evidenceFormHtml = selected ? '<form class="stack road-evidence-form" id="milestone-evidence-form" data-milestone="' + selected.id + '" novalidate>'
     + '<input type="hidden" name="milestone_id" value="' + selected.id + '">'
     + '<h4>' + icon('pulse') + ' ' + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Submit additional evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence')) + '</h4>'
@@ -1047,8 +1058,8 @@ export function liveRoadmap(data) {
       ? copy('Cột mốc này đã hoàn thành. Bạn có thể nộp thêm liên kết Commit/PR để làm phong phú bằng chứng cho portfolio và CV.', 'This milestone is completed. You can submit more Commit/PR links to enrich your evidence.')
       : copy('Chỉ nộp URL HTTPS trực tiếp đến Commit hoặc Pull Request trên github.com. Link Issue hoặc trang repository sẽ bị từ chối.', 'Submit only direct HTTPS GitHub Commit or Pull Request URLs. Issue and repository page links are rejected.')) + '</p>'
     + '<div class="field-row">'
-    + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" maxlength="2000" required>'
-    + '<input name="evidence_note" maxlength="2000" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
+    + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" maxlength="2000" value="' + escape(evidenceDraft?.url || '') + '"' + disabled + ' required>'
+    + '<input name="evidence_note" maxlength="2000" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '" value="' + escape(evidenceDraft?.note || '') + '"' + disabled + '>'
     + '<button type="submit" class="button primary small' + (loading('evidence') ? ' is-loading' : '') + '"' + busyAttr('evidence') + '>' + copy('Nộp minh chứng', 'Submit') + '</button>'
     + '</div><p id="road-evidence-validation" class="road-evidence-validation" role="alert" hidden></p></form>' : '';
 
@@ -1076,7 +1087,7 @@ export function liveRoadmap(data) {
     + '<div class="milestone-proof"><span class="feature-icon">' + icon('award') + '</span><div><h3>'
     + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + proofLinksHtml + '</div></div>'
     + assessmentRefsHtml
-    + evidenceFormHtml
+    + evidenceFormHtml + evidenceNotice
     + '<div class="action-row" style="margin-top:14px">'
     + actionButtonsHtml
     + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', detailTitle)) + '</div>'
