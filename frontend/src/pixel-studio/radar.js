@@ -1,9 +1,9 @@
 import {escape, icon, labelAttr, link} from './ui.js';
 import {t} from './i18n.js';
 
-export function radarView(scores, reportCount, scope, range, comparison, insights='') {
-  const header = '<header class="radar-header"><div><h2 id="radar-title">' + escape(t('radar.title'))
-    + '</h2><p>' + escape(scope + ' · ' + range) + '</p></div><span class="radar-scale">' + escape(t('radar.scale')) + '</span></header>';
+export function radarView(scores, reportCount, scope, range, comparison, insights='', coverage=false) {
+  const header = '<header class="radar-header"><div><h2 id="radar-title">' + escape(t(coverage ? 'radar.coverageTitle' : 'radar.title'))
+    + '</h2><p>' + escape(scope + ' · ' + range) + '</p></div><span class="radar-scale">' + escape(t(coverage ? 'radar.coverageScale' : 'radar.scale')) + '</span></header>';
   if (!scores.length) {
     return '<section class="panel radar-panel" aria-labelledby="radar-title">' + header
       + '<div class="radar-empty"><span class="radar-mark">' + icon('pulse') + '</span><div><h3>' + escape(t('radar.empty'))
@@ -20,7 +20,7 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
       + (trend ? ' data-previous="' + trend.before + '"' : '')
       + ' aria-controls="radar-detail-' + key + '" aria-expanded="false">'
       + '<span class="radar-dot" aria-hidden="true"></span><span class="radar-label">' + escape(label) + '</span>'
-      + '<span class="radar-number"><strong>' + (valid ? score + '<small>/100</small>' : '—') + '</strong>'
+      + '<span class="radar-number"><strong>' + (valid ? score + (coverage ? '<small>%</small>' : '<small>/100</small>') : '—') + '</strong>'
       + (change ? '<span class="radar-change" data-change="' + Math.sign(trend.delta) + '" title="' + escape(t('radar.delta',{change})) + '">'
         + '<span class="sr-only">' + escape(t('radar.delta',{change})) + '</span><span aria-hidden="true">' + change + '</span></span>' : '')
       + '</span></button></li>';
@@ -29,9 +29,9 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
     ? '<div class="radar-legend"><span>' + escape(t('radar.current')) + '</span><span>' + escape(t('radar.prior')) + '</span></div>' : '';
   return '<section class="panel radar-panel" aria-labelledby="radar-title">' + header
     + '<div class="radar-body"><div class="radar-chart"><div class="radar-plot"><canvas aria-hidden="true"></canvas></div>' + legend + '</div>'
-    + '<div class="radar-values"><p>' + escape(t('radar.caption',{count:reportCount})) + '</p>'
+    + '<div class="radar-values"><p>' + escape(t(coverage ? 'radar.coverageCaption' : 'radar.caption',{count:reportCount})) + '</p>'
     + '<ul class="radar-indicators"' + labelAttr(t('radar.axes')) + '>' + indicators + '</ul>'
-    + '<p class="subtle">' + escape(t('radar.missingAxes')) + '</p></div></div>' + insights + '</section>';
+    + '<p class="subtle">' + escape(t(coverage ? 'radar.coverageMissing' : 'radar.missingAxes')) + '</p></div></div>' + insights + '</section>';
 }
 
 export function mountRadar(panel, selectedAxis, selectAxis) {

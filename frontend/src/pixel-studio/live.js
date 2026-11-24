@@ -9,7 +9,7 @@ const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
-    dashboardRepos:null, dashboardPartial:false, dashboardLoadErrors:[],
+    dashboardRepos:null, dashboardRadar:[], dashboardPartial:false, dashboardLoadErrors:[],
     road:null, tracking:null, pendingRoadmapFocus:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
@@ -293,6 +293,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
           if (active()?.id === repo.id)
             await repoDetail({ reportId: job.report_id });
           data.scores = [];
+          data.dashboardRadar = [];
         } else {
           data.messages.repos =
             job.status === "cancelled"
@@ -370,6 +371,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   async function dashboard() {
     const token = ++dashboardRequest;
     data.dashboardRepos = null;
+    data.dashboardRadar = [];
     data.dashboardPartial = false;
     data.dashboardLoadErrors = [];
     await Promise.all([
@@ -444,18 +446,23 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     // Per-repository requests may fail independently. Do not discard a real
     // analysis report if its skill score endpoint temporarily fails.
     const collected = [];
+    const radarReports = [];
     for (let i = 0; i < dashboardRepos.length; i += 8) {
       const batch = await Promise.all(dashboardRepos.slice(i, i + 8).map(async repo => {
         try {
           const report = await request(repository(repo) + '/analysis/dashboard-report?' + filters);
           if (!report) return {repo,report:null,scores:[]};
-          try {
-            const scores = await request('/scoring/repositories/' + repo.id +
-              '/skills?report_id=' + report.id);
-            return {repo,report,scores:Array.isArray(scores) ? scores : []};
-          } catch (error) {
-            return {repo,report,scores:[],error};
-          }
+          const [skillsResult, radarResult] = await Promise.allSettled([
+            request('/scoring/repositories/' + repo.id + '/skills?report_id=' + report.id),
+            request(repository(repo) + '/analysis/dashboard-radar?' + filters +
+              '&report_id=' + encodeURIComponent(report.id))
+          ]);
+          const errors = [skillsResult,radarResult].filter(item => item.status === 'rejected')
+            .map(item => item.reason);
+          return {repo,report,
+            scores:skillsResult.status === 'fulfilled' && Array.isArray(skillsResult.value) ? skillsResult.value : [],
+            radar:radarResult.status === 'fulfilled' ? radarResult.value : null,
+            errors};
         } catch (error) {
           return {repo,report:null,scores:[],error};
         }
@@ -468,11 +475,17 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
           data.dashboardLoadErrors.push(errorText(result.error));
           data.dashboardPartial = true;
         }
+        for (const error of result.errors ?? []) {
+          data.dashboardLoadErrors.push(errorText(error));
+          data.dashboardPartial = true;
+        }
+        if (result.radar) radarReports.push(result.radar);
         collected.push(...result.scores.map(item => ({...item,repo:result.repo})));
       }
     }
     if (token !== dashboardRequest) return;
     data.scores = collected;
+    data.dashboardRadar = radarReports;
   }
 
   async function road(targetId) {
@@ -924,8 +937,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.repos = [];
     data.repoData = {};
     data.scores = [];
+    data.dashboardRadar = [];
     data.roles = [];
     data.dashboardRepos = null;
+    data.dashboardRadar = [];
     data.dashboardPartial = false;
     data.dashboardLoadErrors = [];
     data.jobMatch = null;
@@ -941,6 +956,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       () => void work('data',async () => {
         await post('/auth/github/disconnect');
         data.repos = []; data.repoData = {}; data.scores = []; data.roles = []; data.total = 0;
+        data.dashboardRadar = []; data.dashboardRepos = null;
         data.jobMatch = null;
         analysisEpoch++;
         clearTimeout(analysisPolling); analysisJob = null; data.analysis = null;
@@ -956,8 +972,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       try { sessionStorage.setItem('ita-studio-selected-range', String(state.range)); } catch {}
       data.roles = [];
       data.scores = [];
+      data.dashboardRadar = [];
       data.repoData = {};
       data.dashboardRepos = null;
+      data.dashboardRadar = [];
       data.dashboardPartial = false;
       data.dashboardLoadErrors = [];
       return location.hash === '#studio/dashboard' ? loads.dashboard() : loads.repos();
@@ -1240,6 +1258,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
             if (item.status === "succeeded") {
               data.scores = [];
+              data.dashboardRadar = [];
 
               if (String(active()?.id) === String(id)) {
                 await repoDetail({ reportId: item.report_id });

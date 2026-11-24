@@ -5,7 +5,7 @@ import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
 import {numericScore, reportBackedSkillScore} from './score-presentation.js';
-import {githubRadarMetrics} from './dashboard-github-metrics.js';
+import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metrics.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
@@ -239,57 +239,65 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
     + '</section></div>';
 }
 
+const radarCriterionNames = {
+  source_change:['Thay đổi tệp mã nguồn','Source file changes'],
+  framework_source:['Thay đổi tệp có bằng chứng framework','Changes to framework source files'],
+  service_design:['Tệp API / worker','API / worker files'],
+  data_design:['Tệp tích hợp dữ liệu / schema','Data integration / schema files'],
+  structure_design:['Tệp trong cấu trúc đã phát hiện','Files in detected architecture structure'],
+  test_change:['Thay đổi tệp kiểm thử','Test file changes'],
+  test_config:['Thay đổi cấu hình kiểm thử','Test configuration changes'],
+  authored_pr:['PR do người dùng tạo','Authored pull request'],
+  merged_pr:['PR của người dùng đã merge','Merged authored pull request'],
+  peer_review:['Review PR của người khác','Review on another contributor’s PR'],
+  workflow_change:['Thay đổi cấu hình workflow CI','CI workflow configuration changes'],
+  completed_check:['Check đã hoàn tất trên PR của người dùng','Completed check on authored PR']
+};
+
 function getLiveRadar(state, data) {
   const availableRepos = data.dashboardRepos ?? data.repos;
   const analyzedRepos = availableRepos.filter(repo =>
-    Boolean(data.repoData?.[repo.id]?.report?.id)
+    Boolean(data.repoData?.[repo.id]?.report?.id || data.repoData?.[repo.id]?.report?.report_id)
   );
   const analyzedIds = new Set(analyzedRepos.map(repo => repo.id));
   const activeRepo = data.repos.find(repo => String(repo.id) === String(state.repo)) ?? data.repos[0];
   const activeRepoAnalyzed = activeRepo ? analyzedIds.has(activeRepo.id) : false;
-  const rawMetrics = githubRadarMetrics({
-    roles: data.roles,
-    scores: data.scores,
-    roleKey: data.roleKey
-  });
-  const hasVerifiedScores = rawMetrics.some(item => item.score !== null);
-  const metrics = analyzedRepos.length || hasVerifiedScores
-    ? rawMetrics.map(item => ({...item, label: t('metric.' + item.key)}))
+  const metrics = analyzedRepos.length
+    ? githubRadarMetrics(data.dashboardRadar ?? []).map(item => ({...item,
+      label:item.key === 'architecture' ? copy('Kiến trúc','Architecture') : t('metric.' + item.key)}))
     : [];
-
-  // Snapshot comparisons are unavailable unless the backend supplies a real
-  // historical score with matching rubric and scope. Never invent deltas.
-  const comparison = {};
   const metricDetails = metrics.map(item => {
-    const source = item.evidence;
-    const repo = source?.repository_id != null
-      ? availableRepos.find(repo => repo.id === source.repository_id) : null;
-    const sourceDescription = source ? source.origin === 'role'
-      ? copy('Tiêu chí đã chấm từ rubric vai trò: ', 'Scored role criterion: ') + source.source
-      : copy('Điểm kỹ năng đã chấm từ GitHub: ', 'Scored GitHub skill: ') + source.source
-      : copy('Chưa có điểm được xác minh cho nhóm này. Đây không phải 0 điểm.',
-        'No verified score for this category. This does not mean zero.');
+    const entries = item.criteria.map(criterion => {
+      const label = radarCriterionNames[criterion.key] ?? [criterion.key,criterion.key];
+      const ref = criterion.evidence;
+      const repo = ref && availableRepos.find(r => r.id === ref.repository_id);
+      const tab = ref?.kind === 'collaboration' ? 'collab' : 'ownership';
+      return '<li><strong>' + escape(copy(...label)) + '</strong> '
+        + '<span class="tag-badge ' + (ref ? 'green' : 'yellow') + '">'
+        + escape(ref ? copy('Đã ghi nhận','Observed') : copy('Chưa có minh chứng','Not observed')) + '</span>'
+        + (ref ? muted((ref.kind === 'collaboration' ? 'PBI-014' : 'PBI-013') +
+          ' #' + ref.evidence_id + ' · ' + (ref.target || '') + (ref.path ? ' · ' + ref.path : '')) : '')
+        + (repo ? btn(escape(repo.full_name || repo.name), 'metric-evidence', 'secondary small',
+          attr('id', repo.id) + attr('tab', tab)) : '') + '</li>';
+    }).join('');
     return '<section id="radar-detail-' + item.key + '" class="radar-insight"'
       + ' aria-labelledby="radar-label-' + item.key + '" hidden>'
       + '<div class="radar-insight-head"><h3 id="radar-label-' + item.key + '">'
       + escape(item.label) + '</h3><b>'
-      + (item.score === null ? '—' : number(item.score) + '<small>/100</small>') + '</b></div>'
-      + '<p>' + escape(sourceDescription) + '</p>'
-      + (source?.detail ? paragraph(source.detail) : '')
-      + '<p class="subtle">' + escape(t('analysis.noComparison')) + '</p>'
-      + (repo ? '<div class="radar-evidence-line"><div><strong>'
-        + escape(repo.full_name || repo.name) + '</strong></div>'
-        + btn(icon('file') + escape(t('radar.openEvidence')), 'evidence', 'secondary small',
-          attr('id', repo.id)) + '</div>' : '')
+      + (item.score === null ? '—' : number(item.score) + '<small>%</small>') + '</b></div>'
+      + paragraph(copy('Đã ghi nhận ', 'Observed ') + item.observed + '/' + item.total
+        + copy(' tiêu chí minh chứng. Không phải điểm thành thạo.', ' evidence criteria. Not proficiency.'))
+      + '<ul class="audit-list">' + entries + '</ul>'
+      + muted(copy('Rubric đề xuất, chưa hiệu chuẩn: ', 'Proposed, uncalibrated rubric: ') + RADAR_RUBRIC_VERSION)
+      + (['testing','collaboration','ci'].includes(item.key) ? muted(copy(
+        'Nếu thiếu dữ liệu, mở repository và chạy phân tích PR, Review và CI hoặc phân tích lại mã nguồn.',
+        'If evidence is missing, open a repository and analyze PRs, reviews and CI or reanalyze code.')) : '')
       + '<div class="radar-next-actions">'
       + btn(icon('bot') + escape(t('radar.askMetric')), 'ask-metric', 'secondary small',
         attr('id', item.key)) + '</div></section>';
   }).join('');
-
-  return {
-    metrics, comparison, metricDetails, count: analyzedRepos.length,
-    analyzedRepos, activeRepo, activeRepoAnalyzed
-  };
+  return {metrics, comparison:{}, metricDetails, count:analyzedRepos.length,
+    analyzedRepos, activeRepo, activeRepoAnalyzed};
 }
 
 export function liveDashboard(state, runtime, data) {
@@ -348,8 +356,8 @@ export function liveDashboard(state, runtime, data) {
     + '<div class="dashboard-scope-notice">'
     + '<span class="notice-icon">' + icon('info') + '</span>'
     + '<p>' + copy(
-      'Radar chỉ hiển thị những điểm kỹ năng hoặc tiêu chí vai trò đã được chấm từ bằng chứng GitHub thực tế trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Trục chưa đủ dữ liệu sẽ hiển thị dấu —, không coi là 0 điểm. Các chỉ số kiểm thử, cộng tác và CI/CD chỉ có điểm khi backend có rubric và bằng chứng tương ứng. Chọn repository để mở báo cáo chi tiết tại trang <em>Phân tích GitHub</em>.',
-      'The Radar displays only scored GitHub skills or role criteria for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Missing axes display —, not zero. Testing, collaboration, and CI/CD require their own verified rubric evidence. Select a repository to inspect its report under <em>GitHub Analysis</em>.'
+      'Radar đo độ phủ tiêu chí minh chứng GitHub đã ghi nhận trong phạm vi ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Trục chưa đủ dữ liệu sẽ hiển thị dấu —, không coi là 0 điểm. Đây không phải điểm thành thạo; điểm kỹ năng và vai trò vẫn hiển thị riêng bên dưới. Chọn repository để mở báo cáo chi tiết tại trang <em>Phân tích GitHub</em>.',
+      'The Radar measures observed GitHub evidence criterion coverage for scope ' + scopeLabel(state.scope) + ' (' + rangeLabel(state.range) + '). Missing axes display —, not zero. This is not proficiency; skill and role scores remain separate below. Select a repository to inspect its report under <em>GitHub Analysis</em>.'
     ) + '</p>'
     + '</div>'
     + '</section>';
@@ -369,7 +377,7 @@ export function liveDashboard(state, runtime, data) {
     + escape(t('profile.milestonesDone')) + '</small>' + progress(milestones.length ? done.length / milestones.length * 100 : 0, t('road.progress')) + '</div>'
     + '<div class="dash-award"><span class="award-icon">' + icon('award') + '</span><div><p class="eyebrow">'
     + escape(t('profile.latestAchievement')) + '</p>' + paragraph(done.at(-1) ? displayMilestoneTitle(done.at(-1).title, done.at(-1).external_key) : t('profile.achievementsEmpty')) + '</div></div></section></div>'
-    + radarView(radar.metrics, radar.count, scopeLabel(state.scope), rangeLabel(state.range), radar.comparison, radar.metricDetails)
+    + radarView(radar.metrics, radar.count, scopeLabel(state.scope), rangeLabel(state.range), radar.comparison, radar.metricDetails, true)
     + dashboardScores(state, runtime, data, radar.count);
 }
 
