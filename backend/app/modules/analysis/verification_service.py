@@ -155,147 +155,215 @@ async def verify_repository_contributions(
     if not token and client is None:
         raise HTTPException(401, "Vui lòng liên kết lại tài khoản GitHub để xác minh.")
     api_client = client or GitHubApiClient(access_token=token)
+    manage_client = type(api_client) is GitHubApiClient
+    if manage_client:
+        await api_client.__aenter__()
 
     try:
-        if token or client:
-            user_profile = await api_client.get_authenticated_user()
-            if isinstance(user_profile, dict):
-                auth_github_login = user_profile.get("login")
-                if user_profile.get("id"):
-                    auth_github_user_id = str(user_profile.get("id"))
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
-        ) from exc
-    except GitHubApiError:
-        pass
 
-    # 3. Phân loại repository provenance và metadata parent
-    if repo.full_name and "/" in repo.full_name:
-        owner, repo_name = repo.full_name.split("/", 1)
-    else:
-        owner, repo_name = repo.name, repo.name
+        try:
+            if token or client:
+                user_profile = await api_client.get_authenticated_user()
+                if isinstance(user_profile, dict):
+                    auth_github_login = user_profile.get("login")
+                    if user_profile.get("id"):
+                        auth_github_user_id = str(user_profile.get("id"))
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+            ) from exc
+        except GitHubApiError:
+            pass
 
-    parent_metadata_status = "none"
-    parent_repo_name: str | None = None
-    parent_repo_url: str | None = None
-    is_fork = bool(repo.is_fork)
+        # 3. Phân loại repository provenance và metadata parent
+        if repo.full_name and "/" in repo.full_name:
+            owner, repo_name = repo.full_name.split("/", 1)
+        else:
+            owner, repo_name = repo.name, repo.name
 
-    limitations: list[str] = [
-        "Xác minh tác giả commit dựa trên định danh actor ID / login.",
-        "Tên hoặc email trong commit không liên kết GitHub được coi là unverified.",
-    ]
+        parent_metadata_status = "none"
+        parent_repo_name: str | None = None
+        parent_repo_url: str | None = None
+        is_fork = bool(repo.is_fork)
 
-    try:
-        repo_details = await api_client.get_repository_details(owner, repo_name)
-        if isinstance(repo_details, dict):
-            is_fork = bool(repo_details.get("fork", is_fork))
+        limitations: list[str] = [
+            "Xác minh tác giả commit dựa trên định danh actor ID / login.",
+            "Tên hoặc email trong commit không liên kết GitHub được coi là unverified.",
+        ]
+
+        try:
+            repo_details = await api_client.get_repository_details(owner, repo_name)
+            if isinstance(repo_details, dict):
+                is_fork = bool(repo_details.get("fork", is_fork))
+                if is_fork:
+                    parent_data = repo_details.get("parent")
+                    if isinstance(parent_data, dict):
+                        parent_repo_name = parent_data.get("full_name")
+                        parent_repo_url = parent_data.get("html_url")
+                        parent_metadata_status = "verified"
+                    elif repo.fork_source:
+                        parent_repo_name = repo.fork_source
+                        parent_metadata_status = "unknown"
+                    else:
+                        parent_metadata_status = "unknown"
+                        limitations.append(
+                            "Không thể lấy metadata repository gốc từ GitHub API."
+                        )
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+            ) from exc
+        except (GitHubNotFoundError, GitHubPermissionError, GitHubApiError) as exc:
             if is_fork:
-                parent_data = repo_details.get("parent")
-                if isinstance(parent_data, dict):
-                    parent_repo_name = parent_data.get("full_name")
-                    parent_repo_url = parent_data.get("html_url")
-                    parent_metadata_status = "verified"
-                elif repo.fork_source:
-                    parent_repo_name = repo.fork_source
-                    parent_metadata_status = "unknown"
-                else:
-                    parent_metadata_status = "unknown"
-                    limitations.append(
-                        "Không thể lấy metadata repository gốc từ GitHub API."
-                    )
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
-        ) from exc
-    except (GitHubNotFoundError, GitHubPermissionError, GitHubApiError) as exc:
-        if is_fork:
-            parent_repo_name = repo.fork_source
-            parent_metadata_status = "unknown"
-            limitations.append(
-                f"Không thể lấy chi tiết repository gốc ({type(exc).__name__})."
+                parent_repo_name = repo.fork_source
+                parent_metadata_status = "unknown"
+                limitations.append(
+                    f"Không thể lấy chi tiết repository gốc ({type(exc).__name__})."
+                )
+
+        # 4. Xác định quyền sở hữu repository
+        is_user_owner = bool(
+            (auth_github_login and owner.lower() == auth_github_login.lower())
+            or (repo.owner_id == user.id and not repo.full_name)
+        )
+
+        if is_user_owner:
+            ownership_status = "fork_owner" if is_fork else "owner"
+            provenance_type = "fork" if is_fork else "original"
+        else:
+            ownership_status = "collaborator"
+            provenance_type = "collaboration"
+
+        # 5. Xử lý khoảng thời gian (PBI-010 integration)
+        time_range_info = None
+        start_utc: datetime | None = None
+        end_utc: datetime | None = None
+
+        if request.mode:
+            start_utc, end_utc = resolve_range(
+                mode=request.mode,
+                preset=request.preset,
+                month=request.month,
+                year=request.year,
+                start_date=request.start_date,
+                end_date=request.end_date,
+                timezone_name=request.timezone,
+            )
+            time_range_info = {
+                "start_utc": start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+                "timezone": request.timezone,
+            }
+
+        # 6. Thu thập và xác minh Commits
+        target_branch = request.branch or repo.default_branch or "main"
+        evidence_list: list[VerificationEvidenceItem] = []
+        seen_commit_shas: set[str] = set()
+
+        verified_commits_count = 0
+        unverified_commits_count = 0
+        verified_additions = 0
+        verified_deletions = 0
+        coverage_status = "complete"
+        confidence = "high"
+        collection_truncated = False
+        collect_score_files = report_id is not None or job_id is not None
+        scoring_files_partial = False
+
+        def mark_collection_truncated() -> None:
+            nonlocal collection_truncated
+            collection_truncated = True
+
+        try:
+            if on_progress:
+                on_progress("verifying_fork_and_authorship", 26)
+
+            raw_commits = await api_client.list_commits(
+                owner=owner,
+                repo=repo_name,
+                since=start_utc,
+                until=end_utc,
+                sha=target_branch,
+                per_page=100,
+                max_pages=20,
+                on_truncated=mark_collection_truncated,
             )
 
-    # 4. Xác định quyền sở hữu repository
-    is_user_owner = bool(
-        (auth_github_login and owner.lower() == auth_github_login.lower())
-        or (repo.owner_id == user.id and not repo.full_name)
-    )
+            if on_progress:
+                on_progress("verifying_fork_and_authorship", 27)
 
-    if is_user_owner:
-        ownership_status = "fork_owner" if is_fork else "owner"
-        provenance_type = "fork" if is_fork else "original"
-    else:
-        ownership_status = "collaborator"
-        provenance_type = "collaboration"
+            sem = asyncio.Semaphore(10)
 
-    # 5. Xử lý khoảng thời gian (PBI-010 integration)
-    time_range_info = None
-    start_utc: datetime | None = None
-    end_utc: datetime | None = None
+            # Pre-select bounded commits for detailed file inspections
+            commits_to_fetch_details: set[str] = set()
+            if collect_score_files:
+                for c in raw_commits:
+                    sha = c.get("sha", "")
+                    if not sha:
+                        continue
+                    author_obj = c.get("author")
+                    author_id = (
+                        str(author_obj.get("id"))
+                        if isinstance(author_obj, dict) and author_obj.get("id")
+                        else None
+                    )
+                    author_login = (
+                        author_obj.get("login") if isinstance(author_obj, dict) else None
+                    )
+                    author_type = (
+                        author_obj.get("type", "User")
+                        if isinstance(author_obj, dict)
+                        else "User"
+                    )
+                    commit_meta = c.get("commit") or {}
+                    git_author = commit_meta.get("author") or {}
+                    git_author_name = git_author.get("name", "")
+                    is_bot = (
+                        author_type.lower() == "bot"
+                        or (author_login and "[bot]" in author_login.lower())
+                        or "[bot]" in git_author_name.lower()
+                    )
+                    is_merge = len(c.get("parents", [])) > 1
+                    id_match = bool(
+                        auth_github_user_id
+                        and author_id
+                        and author_id == str(auth_github_user_id)
+                    )
+                    login_match = bool(
+                        auth_github_login
+                        and author_login
+                        and author_login.lower() == auth_github_login.lower()
+                    )
+                    if (id_match or login_match) and not is_bot and not is_merge:
+                        if len(commits_to_fetch_details) < MAX_COMMIT_FILE_REQUESTS:
+                            commits_to_fetch_details.add(sha)
+                        else:
+                            scoring_files_partial = True
 
-    if request.mode:
-        start_utc, end_utc = resolve_range(
-            mode=request.mode,
-            preset=request.preset,
-            month=request.month,
-            year=request.year,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            timezone_name=request.timezone,
-        )
-        time_range_info = {
-            "start_utc": start_utc.isoformat(),
-            "end_utc": end_utc.isoformat(),
-            "timezone": request.timezone,
-        }
-
-    # 6. Thu thập và xác minh Commits
-    target_branch = request.branch or repo.default_branch or "main"
-    evidence_list: list[VerificationEvidenceItem] = []
-    seen_commit_shas: set[str] = set()
-
-    verified_commits_count = 0
-    unverified_commits_count = 0
-    verified_additions = 0
-    verified_deletions = 0
-    coverage_status = "complete"
-    confidence = "high"
-    collection_truncated = False
-    collect_score_files = report_id is not None or job_id is not None
-    scoring_files_partial = False
-
-    def mark_collection_truncated() -> None:
-        nonlocal collection_truncated
-        collection_truncated = True
-
-    try:
-        if on_progress:
-            on_progress("verifying_fork_and_authorship", 26)
-
-        raw_commits = await api_client.list_commits(
-            owner=owner,
-            repo=repo_name,
-            since=start_utc,
-            until=end_utc,
-            sha=target_branch,
-            per_page=100,
-            max_pages=20,
-            on_truncated=mark_collection_truncated,
-        )
-
-        if on_progress:
-            on_progress("verifying_fork_and_authorship", 27)
-
-        sem = asyncio.Semaphore(10)
-
-        # Pre-select bounded commits for detailed file inspections
-        commits_to_fetch_details: set[str] = set()
-        if collect_score_files:
-            for c in raw_commits:
+            async def _inspect_commit(
+                c: dict[str, Any],
+            ) -> VerificationEvidenceItem | None:
+                nonlocal scoring_files_partial
                 sha = c.get("sha", "")
-                if not sha:
-                    continue
+                if not sha or sha in seen_commit_shas:
+                    return None
+                seen_commit_shas.add(sha)
+
+                commit_meta = c.get("commit") or {}
+                msg = (commit_meta.get("message") or "").split("\n")[0]
+                git_author = commit_meta.get("author") or {}
+                committer_date = (commit_meta.get("committer") or {}).get("date")
+                author_date = git_author.get("date")
+                recorded_at_str = committer_date or author_date
+
+                if start_utc or end_utc:
+                    parsed_dt = _parse_timestamp(recorded_at_str)
+                    if parsed_dt:
+                        if start_utc and parsed_dt < start_utc:
+                            return None
+                        if end_utc and parsed_dt >= end_utc:
+                            return None
+
                 author_obj = c.get("author")
                 author_id = (
                     str(author_obj.get("id"))
@@ -310,15 +378,15 @@ async def verify_repository_contributions(
                     if isinstance(author_obj, dict)
                     else "User"
                 )
-                commit_meta = c.get("commit") or {}
-                git_author = commit_meta.get("author") or {}
                 git_author_name = git_author.get("name", "")
+
                 is_bot = (
                     author_type.lower() == "bot"
                     or (author_login and "[bot]" in author_login.lower())
                     or "[bot]" in git_author_name.lower()
                 )
                 is_merge = len(c.get("parents", [])) > 1
+
                 id_match = bool(
                     auth_github_user_id
                     and author_id
@@ -329,283 +397,259 @@ async def verify_repository_contributions(
                     and author_login
                     and author_login.lower() == auth_github_login.lower()
                 )
-                if (id_match or login_match) and not is_bot and not is_merge:
-                    if len(commits_to_fetch_details) < MAX_COMMIT_FILE_REQUESTS:
-                        commits_to_fetch_details.add(sha)
-                    else:
-                        scoring_files_partial = True
+                is_author_verified = (id_match or login_match) and not is_bot
 
-        async def _inspect_commit(
-            c: dict[str, Any],
-        ) -> VerificationEvidenceItem | None:
-            nonlocal scoring_files_partial
-            sha = c.get("sha", "")
-            if not sha or sha in seen_commit_shas:
-                return None
-            seen_commit_shas.add(sha)
-
-            commit_meta = c.get("commit") or {}
-            msg = (commit_meta.get("message") or "").split("\n")[0]
-            git_author = commit_meta.get("author") or {}
-            committer_date = (commit_meta.get("committer") or {}).get("date")
-            author_date = git_author.get("date")
-            recorded_at_str = committer_date or author_date
-
-            if start_utc or end_utc:
-                parsed_dt = _parse_timestamp(recorded_at_str)
-                if parsed_dt:
-                    if start_utc and parsed_dt < start_utc:
-                        return None
-                    if end_utc and parsed_dt >= end_utc:
-                        return None
-
-            author_obj = c.get("author")
-            author_id = (
-                str(author_obj.get("id"))
-                if isinstance(author_obj, dict) and author_obj.get("id")
-                else None
-            )
-            author_login = (
-                author_obj.get("login") if isinstance(author_obj, dict) else None
-            )
-            author_type = (
-                author_obj.get("type", "User")
-                if isinstance(author_obj, dict)
-                else "User"
-            )
-            git_author_name = git_author.get("name", "")
-
-            is_bot = (
-                author_type.lower() == "bot"
-                or (author_login and "[bot]" in author_login.lower())
-                or "[bot]" in git_author_name.lower()
-            )
-            is_merge = len(c.get("parents", [])) > 1
-
-            id_match = bool(
-                auth_github_user_id
-                and author_id
-                and author_id == str(auth_github_user_id)
-            )
-            login_match = bool(
-                auth_github_login
-                and author_login
-                and author_login.lower() == auth_github_login.lower()
-            )
-            is_author_verified = (id_match or login_match) and not is_bot
-
-            additions = None
-            deletions = None
-            changed_files = []
-            c_stats = c.get("stats")
-            if (
-                isinstance(c_stats, dict)
-                and "additions" in c_stats
-                and not (collect_score_files and is_author_verified and not is_merge)
-            ):
-                additions = int(c_stats.get("additions", 0))
-                deletions = int(c_stats.get("deletions", 0))
-            elif not is_fork and not is_author_verified:
-                additions = 0
-                deletions = 0
-            elif (
-                collect_score_files
-                and is_author_verified
-                and not is_merge
-                and sha not in commits_to_fetch_details
-            ):
-                additions = 0
-                deletions = 0
-                scoring_files_partial = True
-            else:
-                try:
-                    async with sem:
-                        details = await api_client.get_commit_details(
-                            owner, repo_name, sha
-                        )
-                        if collect_score_files and is_author_verified and not is_merge:
-                            files = details.get("files")
-                            changed_files = _scoring_files(files)
-                            if not isinstance(files, list) or len(files) > 300:
-                                scoring_files_partial = True
-                        stats = details.get("stats") or {}
-                        additions = int(stats.get("additions", 0))
-                        deletions = int(stats.get("deletions", 0))
-                except GitHubTokenRevokedError:
-                    raise
-                except Exception:
-                    if collect_score_files and is_author_verified and not is_merge:
-                        scoring_files_partial = True
-
-            parent_contains_commit: bool | None = None
-
-            if is_fork and parent_repo_name and "/" in parent_repo_name:
-                parent_owner, parent_name = parent_repo_name.split("/", 1)
-
-                try:
-                    async with sem:
-                        await api_client.get_commit_details(
-                            parent_owner,
-                            parent_name,
-                            sha,
-                        )
-                    parent_contains_commit = True
-
-                except GitHubNotFoundError:
-                    parent_contains_commit = False
-
-                except GitHubTokenRevokedError:
-                    raise
-                except GitHubApiError:
-                    parent_contains_commit = None
-
-            is_fork_inherited = parent_contains_commit is True
-
-            if is_fork and parent_contains_commit is True:
-                v_status = "unverified"
-                rationale = (
-                    f"Commit {sha[:7]} được xác nhận tồn tại trong repo cha "
-                    "(kế thừa từ repo gốc theo đối chiếu SHA). "
-                    "Không tính là đóng góp mới của fork."
-                )
-
-            elif is_fork and parent_contains_commit is None:
-                v_status = "unknown"
-                rationale = (
-                    f"Chưa xác định được commit {sha[:7]} "
-                    "có kế thừa từ upstream hay không."
-                )
-
-            elif is_author_verified:
-                v_status = "verified"
-                rationale = (
-                    f"Commit {sha[:7]} được liên kết với tài khoản "
-                    f"GitHub @{author_login}."
-                )
-
-            else:
-                v_status = "unverified"
-
-                if author_obj is None:
-                    rationale = (
-                        f"Commit {sha[:7]} thiếu liên kết GitHub "
-                        "với tài khoản tác giả. "
-                        "Không thể xác minh bằng tên hoặc email."
-                    )
+                additions = None
+                deletions = None
+                changed_files = []
+                c_stats = c.get("stats")
+                if (
+                    isinstance(c_stats, dict)
+                    and "additions" in c_stats
+                    and not (collect_score_files and is_author_verified and not is_merge)
+                ):
+                    additions = int(c_stats.get("additions", 0))
+                    deletions = int(c_stats.get("deletions", 0))
+                elif not is_fork and not is_author_verified:
+                    additions = 0
+                    deletions = 0
+                elif (
+                    collect_score_files
+                    and is_author_verified
+                    and not is_merge
+                    and sha not in commits_to_fetch_details
+                ):
+                    additions = 0
+                    deletions = 0
+                    scoring_files_partial = True
                 else:
+                    try:
+                        async with sem:
+                            details = await api_client.get_commit_details(
+                                owner, repo_name, sha
+                            )
+                            if collect_score_files and is_author_verified and not is_merge:
+                                files = details.get("files")
+                                changed_files = _scoring_files(files)
+                                if not isinstance(files, list) or len(files) > 300:
+                                    scoring_files_partial = True
+                            stats = details.get("stats") or {}
+                            additions = int(stats.get("additions", 0))
+                            deletions = int(stats.get("deletions", 0))
+                    except GitHubTokenRevokedError:
+                        raise
+                    except Exception:
+                        if collect_score_files and is_author_verified and not is_merge:
+                            scoring_files_partial = True
+
+                parent_contains_commit: bool | None = None
+
+                if is_fork and parent_repo_name and "/" in parent_repo_name:
+                    parent_owner, parent_name = parent_repo_name.split("/", 1)
+
+                    try:
+                        async with sem:
+                            await api_client.get_commit_details(
+                                parent_owner,
+                                parent_name,
+                                sha,
+                            )
+                        parent_contains_commit = True
+
+                    except GitHubNotFoundError:
+                        parent_contains_commit = False
+
+                    except GitHubTokenRevokedError:
+                        raise
+                    except GitHubApiError:
+                        parent_contains_commit = None
+
+                is_fork_inherited = parent_contains_commit is True
+
+                if is_fork and parent_contains_commit is True:
+                    v_status = "unverified"
                     rationale = (
-                        f"Commit {sha[:7]} có tác giả GitHub "
-                        "không khớp với người dùng hiện tại."
+                        f"Commit {sha[:7]} được xác nhận tồn tại trong repo cha "
+                        "(kế thừa từ repo gốc theo đối chiếu SHA). "
+                        "Không tính là đóng góp mới của fork."
                     )
 
-            return VerificationEvidenceItem(
-                evidence_type="commit",
-                target_identifier=sha,
-                verification_status=v_status,
-                actor_login=author_login,
-                actor_id=author_id,
-                actor_type=author_type,
-                html_url=(
-                    c.get("html_url")
-                    or f"https://github.com/{repo.full_name}/commit/{sha}"
-                ),
-                title_or_message=msg,
-                is_merge=is_merge,
-                is_bot=is_bot,
-                is_fork_inherited=is_fork_inherited,
-                additions=additions,
-                deletions=deletions,
-                recorded_at=recorded_at_str,
-                rationale=rationale,
-                metadata={
-                    "sha": sha,
-                    "parents_count": len(c.get("parents", [])),
-                    "changed_files": changed_files if v_status == "verified" else [],
-                },
-            )
+                elif is_fork and parent_contains_commit is None:
+                    v_status = "unknown"
+                    rationale = (
+                        f"Chưa xác định được commit {sha[:7]} "
+                        "có kế thừa từ upstream hay không."
+                    )
 
-        if raw_commits:
-            processed_commits = await asyncio.gather(
-                *[_inspect_commit(c) for c in raw_commits]
-            )
-            for ev in processed_commits:
-                if ev is not None:
-                    evidence_list.append(ev)
-                    if ev.verification_status == "verified":
-                        verified_commits_count += 1
-                        verified_additions += ev.additions or 0
-                        verified_deletions += ev.deletions or 0
+                elif is_author_verified:
+                    v_status = "verified"
+                    rationale = (
+                        f"Commit {sha[:7]} được liên kết với tài khoản "
+                        f"GitHub @{author_login}."
+                    )
+
+                else:
+                    v_status = "unverified"
+
+                    if author_obj is None:
+                        rationale = (
+                            f"Commit {sha[:7]} thiếu liên kết GitHub "
+                            "với tài khoản tác giả. "
+                            "Không thể xác minh bằng tên hoặc email."
+                        )
                     else:
-                        unverified_commits_count += 1
+                        rationale = (
+                            f"Commit {sha[:7]} có tác giả GitHub "
+                            "không khớp với người dùng hiện tại."
+                        )
 
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
-        ) from exc
-    except GitHubRateLimitError:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(
-            "Đạt giới hạn GitHub rate-limit khi lấy commits; kết quả partial."
-        )
-    except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-        pass
-    except (GitHubApiError, GitHubServerError) as exc:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(f"Lỗi khi thu thập commits: {type(exc).__name__}.")
+                return VerificationEvidenceItem(
+                    evidence_type="commit",
+                    target_identifier=sha,
+                    verification_status=v_status,
+                    actor_login=author_login,
+                    actor_id=author_id,
+                    actor_type=author_type,
+                    html_url=(
+                        c.get("html_url")
+                        or f"https://github.com/{repo.full_name}/commit/{sha}"
+                    ),
+                    title_or_message=msg,
+                    is_merge=is_merge,
+                    is_bot=is_bot,
+                    is_fork_inherited=is_fork_inherited,
+                    additions=additions,
+                    deletions=deletions,
+                    recorded_at=recorded_at_str,
+                    rationale=rationale,
+                    metadata={
+                        "sha": sha,
+                        "parents_count": len(c.get("parents", [])),
+                        "changed_files": changed_files if v_status == "verified" else [],
+                    },
+                )
 
-    # 7. Thu thập và xác minh Pull Requests
-    verified_prs_count = 0
-    unverified_prs_count = 0
-    seen_pr_numbers: set[int] = set()
-    eligible_pr_files = 0
-    completed_pr_files = 0
+            if raw_commits:
+                processed_commits = await asyncio.gather(
+                    *[_inspect_commit(c) for c in raw_commits]
+                )
+                for ev in processed_commits:
+                    if ev is not None:
+                        evidence_list.append(ev)
+                        if ev.verification_status == "verified":
+                            verified_commits_count += 1
+                            verified_additions += ev.additions or 0
+                            verified_deletions += ev.deletions or 0
+                        else:
+                            unverified_commits_count += 1
 
-    try:
-        if on_progress:
-            on_progress("verifying_fork_and_authorship", 28)
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+            ) from exc
+        except GitHubRateLimitError:
+            coverage_status = "partial"
+            confidence = "uncertain"
+            limitations.append(
+                "Đạt giới hạn GitHub rate-limit khi lấy commits; kết quả partial."
+            )
+        except (GitHubEmptyRepositoryError, GitHubNotFoundError):
+            pass
+        except (GitHubApiError, GitHubServerError) as exc:
+            coverage_status = "partial"
+            confidence = "uncertain"
+            limitations.append(f"Lỗi khi thu thập commits: {type(exc).__name__}.")
 
-        raw_prs = await api_client.list_pull_requests(
-            owner=owner,
-            repo=repo_name,
-            state="all",
-            sort="created",
-            direction="desc",
-            per_page=100,
-            max_pages=10,
-            on_truncated=mark_collection_truncated,
-        )
+        # 7. Thu thập và xác minh Pull Requests
+        verified_prs_count = 0
+        unverified_prs_count = 0
+        seen_pr_numbers: set[int] = set()
+        eligible_pr_files = 0
+        completed_pr_files = 0
 
-        pr_file_rate_limited = False
-        sem_pr = asyncio.Semaphore(10)
+        try:
+            if on_progress:
+                on_progress("verifying_fork_and_authorship", 28)
 
-        # Pre-filter PRs by number and time window
-        filtered_prs = []
-        for pr in raw_prs:
-            pr_num = pr.get("number")
-            if not pr_num or pr_num in seen_pr_numbers:
-                continue
-            seen_pr_numbers.add(pr_num)
+            raw_prs = await api_client.list_pull_requests(
+                owner=owner,
+                repo=repo_name,
+                state="all",
+                sort="created",
+                direction="desc",
+                per_page=100,
+                max_pages=10,
+                on_truncated=mark_collection_truncated,
+            )
 
-            created_at_str = pr.get("created_at")
-            if start_utc or end_utc:
-                parsed_dt = _parse_timestamp(created_at_str)
-                if parsed_dt:
-                    if start_utc and parsed_dt < start_utc:
-                        continue
-                    if end_utc and parsed_dt >= end_utc:
-                        continue
-            filtered_prs.append(pr)
+            pr_file_rate_limited = False
+            sem_pr = asyncio.Semaphore(10)
 
-        # Pre-determine which PRs get files fetched to respect MAX_PR_FILE_REQUESTS cleanly
-        prs_to_fetch_files: set[int] = set()
-        if collect_score_files:
-            for pr in filtered_prs:
+            # Pre-filter PRs by number and time window
+            filtered_prs = []
+            for pr in raw_prs:
+                pr_num = pr.get("number")
+                if not pr_num or pr_num in seen_pr_numbers:
+                    continue
+                seen_pr_numbers.add(pr_num)
+
+                created_at_str = pr.get("created_at")
+                if start_utc or end_utc:
+                    parsed_dt = _parse_timestamp(created_at_str)
+                    if parsed_dt:
+                        if start_utc and parsed_dt < start_utc:
+                            continue
+                        if end_utc and parsed_dt >= end_utc:
+                            continue
+                filtered_prs.append(pr)
+
+            # Pre-determine which PRs get files fetched to respect MAX_PR_FILE_REQUESTS cleanly
+            prs_to_fetch_files: set[int] = set()
+            if collect_score_files:
+                for pr in filtered_prs:
+                    pr_user = pr.get("user") or {}
+                    pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
+                    pr_user_login = pr_user.get("login")
+                    base_data = pr.get("base") or {}
+                    id_match = bool(
+                        auth_github_user_id
+                        and pr_user_id
+                        and pr_user_id == str(auth_github_user_id)
+                    )
+                    login_match = bool(
+                        auth_github_login
+                        and pr_user_login
+                        and pr_user_login.lower() == auth_github_login.lower()
+                    )
+                    if (
+                        (id_match or login_match)
+                        and pr_user.get("type") != "Bot"
+                        and base_data.get("ref") == target_branch
+                    ):
+                        eligible_pr_files += 1
+                        if len(prs_to_fetch_files) < MAX_PR_FILE_REQUESTS:
+                            pr_num_val = pr.get("number")
+                            if pr_num_val is not None:
+                                prs_to_fetch_files.add(int(pr_num_val))
+                        else:
+                            scoring_files_partial = True
+
+            async def _inspect_pr(pr: dict[str, Any]) -> VerificationEvidenceItem:
+                nonlocal completed_pr_files, pr_file_rate_limited, scoring_files_partial
+                pr_num = pr.get("number")
+                created_at_str = pr.get("created_at")
+
                 pr_user = pr.get("user") or {}
                 pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
                 pr_user_login = pr_user.get("login")
+                pr_state = pr.get("state", "open")
+                pr_merged = bool(pr.get("merged_at") or pr.get("merged"))
+
+                head_data = pr.get("head") or {}
                 base_data = pr.get("base") or {}
+                head_repo = head_data.get("repo") or {}
+                base_repo = base_data.get("repo") or {}
+
                 id_match = bool(
                     auth_github_user_id
                     and pr_user_id
@@ -616,135 +660,99 @@ async def verify_repository_contributions(
                     and pr_user_login
                     and pr_user_login.lower() == auth_github_login.lower()
                 )
-                if (
-                    (id_match or login_match)
-                    and pr_user.get("type") != "Bot"
-                    and base_data.get("ref") == target_branch
-                ):
-                    eligible_pr_files += 1
-                    if len(prs_to_fetch_files) < MAX_PR_FILE_REQUESTS:
-                        pr_num_val = pr.get("number")
-                        if pr_num_val is not None:
-                            prs_to_fetch_files.add(int(pr_num_val))
-                    else:
-                        scoring_files_partial = True
+                is_pr_author = id_match or login_match
 
-        async def _inspect_pr(pr: dict[str, Any]) -> VerificationEvidenceItem:
-            nonlocal completed_pr_files, pr_file_rate_limited, scoring_files_partial
-            pr_num = pr.get("number")
-            created_at_str = pr.get("created_at")
-
-            pr_user = pr.get("user") or {}
-            pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
-            pr_user_login = pr_user.get("login")
-            pr_state = pr.get("state", "open")
-            pr_merged = bool(pr.get("merged_at") or pr.get("merged"))
-
-            head_data = pr.get("head") or {}
-            base_data = pr.get("base") or {}
-            head_repo = head_data.get("repo") or {}
-            base_repo = base_data.get("repo") or {}
-
-            id_match = bool(
-                auth_github_user_id
-                and pr_user_id
-                and pr_user_id == str(auth_github_user_id)
-            )
-            login_match = bool(
-                auth_github_login
-                and pr_user_login
-                and pr_user_login.lower() == auth_github_login.lower()
-            )
-            is_pr_author = id_match or login_match
-
-            if is_pr_author:
-                pr_v_status = "verified"
-                merge_text = "đã merge" if pr_merged else "chưa merge"
-                rationale = (
-                    f"Pull Request #{pr_num} do người dùng tạo "
-                    f"({pr_state}, {merge_text})."
-                )
-            else:
-                pr_v_status = "unverified"
-                rationale = f"Pull Request #{pr_num} do @{pr_user_login} tạo."
-
-            changed_files = []
-            if pr_num is not None and int(pr_num) in prs_to_fetch_files:
-                if pr_file_rate_limited:
-                    scoring_files_partial = True
+                if is_pr_author:
+                    pr_v_status = "verified"
+                    merge_text = "đã merge" if pr_merged else "chưa merge"
+                    rationale = (
+                        f"Pull Request #{pr_num} do người dùng tạo "
+                        f"({pr_state}, {merge_text})."
+                    )
                 else:
-                    try:
-                        async with sem_pr:
-                            files = await api_client.get_pull_request_files(
-                                owner, repo_name, int(pr_num)
-                            )
-                        if isinstance(files, list) and len(files) <= 300:
-                            changed_files = _scoring_files(files)
-                            completed_pr_files += 1
-                        else:
-                            scoring_files_partial = True
-                    except GitHubTokenRevokedError:
-                        raise
-                    except GitHubRateLimitError:
-                        pr_file_rate_limited = True
-                        scoring_files_partial = True
-                    except GitHubApiError:
-                        scoring_files_partial = True
+                    pr_v_status = "unverified"
+                    rationale = f"Pull Request #{pr_num} do @{pr_user_login} tạo."
 
-            return VerificationEvidenceItem(
-                evidence_type="pull_request",
-                target_identifier=str(pr_num),
-                verification_status=pr_v_status,
-                actor_login=pr_user_login,
-                actor_id=pr_user_id,
-                actor_type=pr_user.get("type", "User"),
-                html_url=pr.get("html_url"),
-                title_or_message=pr.get("title", ""),
-                pr_state=pr_state,
-                pr_merged=pr_merged,
-                source_repo=head_repo.get("full_name"),
-                target_repo=base_repo.get("full_name"),
-                recorded_at=created_at_str,
-                rationale=rationale,
-                metadata={
-                    "number": pr_num,
-                    "state": pr_state,
-                    "merged": pr_merged,
-                    "changed_files": changed_files,
-                },
-            )
-
-        if filtered_prs:
-            processed_prs = await asyncio.gather(
-                *[_inspect_pr(pr) for pr in filtered_prs]
-            )
-            for ev in processed_prs:
-                if ev is not None:
-                    evidence_list.append(ev)
-                    if ev.verification_status == "verified":
-                        verified_prs_count += 1
+                changed_files = []
+                if pr_num is not None and int(pr_num) in prs_to_fetch_files:
+                    if pr_file_rate_limited:
+                        scoring_files_partial = True
                     else:
-                        unverified_prs_count += 1
+                        try:
+                            async with sem_pr:
+                                files = await api_client.get_pull_request_files(
+                                    owner, repo_name, int(pr_num)
+                                )
+                            if isinstance(files, list) and len(files) <= 300:
+                                changed_files = _scoring_files(files)
+                                completed_pr_files += 1
+                            else:
+                                scoring_files_partial = True
+                        except GitHubTokenRevokedError:
+                            raise
+                        except GitHubRateLimitError:
+                            pr_file_rate_limited = True
+                            scoring_files_partial = True
+                        except GitHubApiError:
+                            scoring_files_partial = True
 
-        if on_progress:
-            on_progress("verifying_fork_and_authorship", 29)
+                return VerificationEvidenceItem(
+                    evidence_type="pull_request",
+                    target_identifier=str(pr_num),
+                    verification_status=pr_v_status,
+                    actor_login=pr_user_login,
+                    actor_id=pr_user_id,
+                    actor_type=pr_user.get("type", "User"),
+                    html_url=pr.get("html_url"),
+                    title_or_message=pr.get("title", ""),
+                    pr_state=pr_state,
+                    pr_merged=pr_merged,
+                    source_repo=head_repo.get("full_name"),
+                    target_repo=base_repo.get("full_name"),
+                    recorded_at=created_at_str,
+                    rationale=rationale,
+                    metadata={
+                        "number": pr_num,
+                        "state": pr_state,
+                        "merged": pr_merged,
+                        "changed_files": changed_files,
+                    },
+                )
 
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
-        ) from exc
-    except GitHubRateLimitError:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(
-            "Đạt giới hạn GitHub API rate-limit trong quá trình thu thập PRs."
-        )
-    except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-        pass
-    except (GitHubApiError, GitHubServerError) as exc:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(f"Lỗi khi thu thập Pull Requests: {type(exc).__name__}.")
+            if filtered_prs:
+                processed_prs = await asyncio.gather(
+                    *[_inspect_pr(pr) for pr in filtered_prs]
+                )
+                for ev in processed_prs:
+                    if ev is not None:
+                        evidence_list.append(ev)
+                        if ev.verification_status == "verified":
+                            verified_prs_count += 1
+                        else:
+                            unverified_prs_count += 1
+
+            if on_progress:
+                on_progress("verifying_fork_and_authorship", 29)
+
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                401, "GitHub từ chối token. Vui lòng liên kết lại GitHub."
+            ) from exc
+        except GitHubRateLimitError:
+            coverage_status = "partial"
+            confidence = "uncertain"
+            limitations.append(
+                "Đạt giới hạn GitHub API rate-limit trong quá trình thu thập PRs."
+            )
+        except (GitHubEmptyRepositoryError, GitHubNotFoundError):
+            pass
+        except (GitHubApiError, GitHubServerError) as exc:
+            coverage_status = "partial"
+            confidence = "uncertain"
+            limitations.append(f"Lỗi khi thu thập Pull Requests: {type(exc).__name__}.")
+    finally:
+        if manage_client:
+            await api_client.__aexit__(None, None, None)
 
     # 8. Xác định Verification Status và Flag Anti-Inflation
 

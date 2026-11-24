@@ -12,7 +12,7 @@ const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
-    user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
+    user:null, repos:[], page:1, total:0, search:'', repoData:{}, repoTabBusy:null, roles:[], scores:[], skills:[],
     dashboardRepos:null, dashboardRadar:[], dashboardPartial:false, dashboardLoadErrors:[],
     road:null, tracking:null, pendingRoadmapFocus:null, history:[], historyLoaded:false, roadAction:null, roadEvidenceDraft:null, roadNotice:null, reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
@@ -374,16 +374,24 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const repo = active();
     const report = currentReport()?.report;
     if (!repo || !report) return;
+    if (data.repoTabBusy) return;
     const endpoint = tab === 'ownership' ? 'verification' : 'collaboration';
-    await work('repos',async () => {
-      const result = await post(repository(repo) + '/' + endpoint,{
-        report_id:report.report_id,scope:repo.private ? 'private' : 'public',
-        mode:'custom',...period(state.range),timezone:'UTC'
-      },65000);
-      if (active()?.id === repo.id && currentReport()?.report?.report_id === report.report_id) {
-        data.repoData[repo.id][endpoint] = result;
-      }
-    });
+    data.repoTabBusy = tab;
+    render();
+    try {
+      await work('repos',async () => {
+        const result = await post(repository(repo) + '/' + endpoint,{
+          report_id:report.report_id,scope:repo.private ? 'private' : 'public',
+          mode:'custom',...period(state.range),timezone:'UTC'
+        },65000);
+        if (active()?.id === repo.id && currentReport()?.report?.report_id === report.report_id) {
+          data.repoData[repo.id][endpoint] = result;
+        }
+      });
+    } finally {
+      data.repoTabBusy = null;
+      render();
+    }
   }
 
   async function dashboard() {

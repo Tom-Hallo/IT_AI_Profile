@@ -3612,6 +3612,68 @@ body.print-cv .cv-paper {
   font-size: 12px;
   margin: 0;
 }
+.milestone-unverified-guide {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(237, 201, 132, .08);
+  border: 1px dashed rgba(237, 201, 132, .35);
+}
+.milestone-unverified-guide .guide-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5dfb9;
+  margin-bottom: 4px;
+}
+.milestone-unverified-guide .guide-desc {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #d8cbb7;
+}
+.milestone-unverified-guide .guide-steps {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none !important;
+  display: grid;
+  gap: 8px;
+}
+.milestone-unverified-guide .guide-steps li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  font-size: 11px;
+  list-style: none !important;
+}
+.milestone-unverified-guide .step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1.2;
+  color: #edc984;
+}
+.milestone-unverified-guide .guide-steps strong {
+  display: block;
+  font-size: 11px;
+  color: #f0d5a7;
+  line-height: 1.35;
+}
+.milestone-unverified-guide .guide-steps p {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #d1cbc0;
+}
+.milestone-unverified-guide .guide-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
 .milestone-analysis-refs {
   margin-top: 12px;
   padding: 9px 12px;
@@ -4257,6 +4319,25 @@ body.print-cv .cv-paper {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.road-layout .milestone-unverified-guide {
+  background: var(--accent-wash);
+  border-color: var(--accent-border);
+}
+.road-layout .milestone-unverified-guide .guide-header {
+  color: var(--accent-strong);
+}
+.road-layout .milestone-unverified-guide .guide-desc {
+  color: var(--muted);
+}
+.road-layout .milestone-unverified-guide .step-dot {
+  color: var(--accent-strong);
+}
+.road-layout .milestone-unverified-guide .guide-steps strong {
+  color: var(--ink);
+}
+.road-layout .milestone-unverified-guide .guide-steps p {
+  color: var(--muted);
+}
 .road-layout .road-detail { min-width: 0; }
 .road-layout .detail-top { flex-wrap: wrap; justify-content: flex-start; }
 .road-layout .road-evidence-form input { min-width: 0; max-width: 100%; }
@@ -4315,4 +4396,3 @@ body.print-cv .cv-paper {
     var(--inset)
   );
 }
-

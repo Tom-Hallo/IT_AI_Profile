@@ -10,7 +10,7 @@ import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metri
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
-const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
+const namedButton = (label, action, style, id, attributes = '') => btn(escape(label), action, style, (id === undefined ? '' : attr('id', id)) + (attributes ? ' ' + attributes : ''));
 const paragraph = value => '<p>' + escape(value) + '</p>';
 const muted = value => '<p class="subtle">' + escape(value) + '</p>';
 const fallback = value => value ?? '—';
@@ -443,8 +443,15 @@ export function liveDashboard(state, runtime, data) {
     + dashboardScores(state, runtime, data, radar.count);
 }
 
-function reportContent(report, info, tab) {
+function reportContent(report, info, tab, data) {
   if (tab === 'ownership') {
+    const isOwnershipBusy = data?.repoTabBusy === 'ownership';
+    const ownershipLabel = isOwnershipBusy
+      ? copy('Đang xác minh đóng góp…', 'Verifying contributions…')
+      : copy('Xác minh đóng góp', 'Verify contributions');
+    const ownershipStyle = 'secondary small' + (isOwnershipBusy ? ' is-loading' : '');
+    const ownershipAttr = isOwnershipBusy ? 'disabled aria-busy="true"' : '';
+
     const v = info.verification;
     return (v ? details([
       ['Trạng thái xác minh', escape(v.verification_status)],
@@ -459,13 +466,23 @@ function reportContent(report, info, tab) {
       ['Cờ chống thổi phồng', v.anti_inflation_flag ? copy('Đã phát hiện bất thường', 'Inflation detected') : copy('Bình thường', 'Normal')],
       ['Độ tin cậy', escape(v.confidence ?? '—')]
     ]) + refs(v.evidence) : muted(copy('Chưa có kết quả xác minh.', 'No verification yet.')))
-      + namedButton(copy('Xác minh đóng góp', 'Verify contributions'), 'repo-analyze-tab', 'secondary small', 'ownership');
+      + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr);
   }
   if (tab === 'collab') {
+    const isCollabBusy = data?.repoTabBusy === 'collab';
+    const collabLabel = isCollabBusy
+      ? copy('Đang phân tích PR, Review và CI…', 'Analyzing PR, reviews and CI…')
+      : copy('Phân tích PR, Review và CI', 'Analyze PR, reviews and CI');
+    const collabReLabel = isCollabBusy
+      ? copy('Đang phân tích lại PR, Review và CI…', 'Re-analyzing PR, reviews and CI…')
+      : copy('Phân tích lại PR, Review và CI', 'Re-analyze PR, reviews and CI');
+    const collabStyle = 'secondary small' + (isCollabBusy ? ' is-loading' : '');
+    const collabAttr = isCollabBusy ? 'disabled aria-busy="true"' : '';
+
     const c = info.collaboration;
     if (!c) {
       return muted(copy('Chưa có kết quả PR, Review và CI.', 'No PR, review or CI results yet.'))
-        + namedButton(copy('Phân tích PR, Review và CI', 'Analyze PR, reviews and CI'), 'repo-analyze-tab', 'secondary small', 'collab');
+        + namedButton(collabLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr);
     }
     const prDetails = details([
       ['Tổng PR phân tích', escape(c.total_prs_analyzed)],
@@ -508,7 +525,7 @@ function reportContent(report, info, tab) {
       + (c.limitations ?? []).map(muted).join('')
       + '</div>'
       + refs(c.evidence)
-      + namedButton(copy('Phân tích lại PR, Review và CI', 'Re-analyze PR, reviews and CI'), 'repo-analyze-tab', 'secondary small', 'collab');
+      + namedButton(collabReLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr);
   }
   const list = (title, items, key) => '<h3>' + escape(title) + '</h3>' + tags(items.map(item => item[key]).filter(Boolean));
   const snippet = info.evidence?.find(item => typeof item.matched_content === 'string' && item.matched_content.trim());
@@ -809,7 +826,7 @@ export function liveRepos(state, data, active) {
     + (counters ? tags(['Commits ' + counters.commits, 'PR ' + counters.pull_requests_created,
     '+' + counters.additions, '−' + counters.deletions]) : '')
     + btn(escape(copy('Tải hoạt động', 'Load activity')), 'repo-activity', 'secondary small', data.busy.has('activity') ? 'disabled' : '') + '</div></section>'
-    + (report ? highlightsCard + tabs + '<div id="repo-details">' + reportContent(report, info, data.reportTab) + '</div>' + nextStepsSection
+    + (report ? highlightsCard + tabs + '<div id="repo-details">' + reportContent(report, info, data.reportTab, data) + '</div>' + nextStepsSection
       : blank(t('repos.noReport'), t('repos.noReportCopy'), btn(icon('pulse') + escape(copy('Bắt đầu phân tích repo ngay', 'Start analyzing this repository')), 'analyze', 'primary', job || busy ? 'disabled' : '')))
     + '</div></article></div>';
 }
@@ -1054,6 +1071,48 @@ export function liveRoadmap(data) {
   // Proof checkmarks represent submitted links, never scoring references.
   const evidenceItems = submittedEvidenceLinks(selected?.evidence);
   const verifiedLinkCount = evidenceItems.filter(ev => ev.verified).length;
+  const selfReportedCount = evidenceItems.length - verifiedLinkCount;
+  const unverifiedGuideHtml = selfReportedCount > 0
+    ? '<div class="milestone-unverified-guide" role="region" aria-label="' + escape(copy('Hướng dẫn xác minh năng lực', 'Competency verification guide')) + '">'
+      + '<div class="guide-header">'
+      + icon('pulse') + ' <strong>' + escape(copy('Làm sao để xác minh năng lực cho minh chứng này?', 'How to verify competency for this evidence?')) + '</strong>'
+      + '</div>'
+      + '<p class="guide-desc">'
+      + escape(copy(
+        'Minh chứng của bạn đang ở trạng thái Tự khai báo. Để được hệ thống cấp huy hiệu Đã xác minh năng lực cho cột mốc này, hãy thực hiện theo các bước sau:',
+        'Your evidence is currently Self-reported. To earn the Verified Skill badge for this milestone, follow these steps:'
+      ))
+      + '</p>'
+      + '<ul class="guide-steps">'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Code thực tế trong PR/Commit', 'Actual code in PR/Commit')) + '</strong>'
+      + '<p>' + escape(copy('Đảm bảo PR hoặc Commit chứa mã nguồn thực tế liên quan đến kỹ năng của mốc.', 'Ensure the PR or Commit contains actual code demonstrating this milestone skill.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Chạy Phân tích GitHub', 'Run GitHub Analysis')) + '</strong>'
+      + '<p>' + escape(copy('Vào mục Phân tích GitHub để hệ thống quét và chấm điểm năng lực từ repository chứa code.', 'Go to GitHub Analysis to scan and score competencies from the repository.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Bấm "Đánh giá lại"', 'Click "Re-evaluate"')) + '</strong>'
+      + '<p>' + escape(copy('Sau khi phân tích xong, quay lại Lộ trình và bấm "Đánh giá lại" để hệ thống tự động đối chiếu và thăng hạng thành Đã xác minh.', 'After analysis, return to Roadmap and click "Re-evaluate" to automatically verify.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '</ul>'
+      + '<div class="guide-actions">'
+      + '<a class="button secondary small" href="#studio/repos">'
+      + icon('repo') + ' ' + escape(copy('Đến Phân tích GitHub', 'Go to GitHub Analysis'))
+      + '</a>'
+      + '</div>'
+      + '</div>'
+    : '';
   const proofLinksHtml = '<div class="milestone-proof-evidence">'
     + '<div class="milestone-proof-summary"><strong>'
     + escape(copy('Đã nộp ' + evidenceItems.length + ' liên kết', evidenceItems.length + ' submitted links'))
@@ -1075,6 +1134,7 @@ export function liveRoadmap(data) {
       : '<p class="milestone-proof-empty">'
         + escape(copy('Chưa có liên kết bằng chứng được nộp.', 'No evidence links submitted yet.'))
         + '</p>')
+    + unverifiedGuideHtml
     + '<small class="milestone-proof-help">'
     + escape(copy('Chỉ minh chứng đáp ứng tiêu chí năng lực mới được xác minh.', 'Only evidence meeting skill criteria is verified.'))
     + '</small></div>';
