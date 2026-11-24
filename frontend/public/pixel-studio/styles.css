@@ -481,7 +481,7 @@ dialog::backdrop{background:#10171bcc;backdrop-filter:blur(3px);animation:macosB
 .dialog-contents h2{font-size:20px}
 .dialog-contents p{color:var(--muted);font-size:13px}
 .dialog-contents>.action-row{justify-content:flex-end}
-.toast{position:fixed;bottom:12px;left:12px;z-index:10;max-width:min(440px,calc(100% - 24px));padding:9px 12px;border:1px solid var(--accent-border);border-radius:8px;background:var(--accent-wash);color:var(--ink);font-size:13px;box-shadow:0 6px 18px #080e0b88}
+.toast{position:fixed;top:24px;left:50%;bottom:auto;right:auto;z-index:99999;max-width:min(560px,calc(100% - 32px));border-radius:12px;box-shadow:0 16px 36px rgba(0,0,0,0.5)}
 .share-view{
   --ink:var(--page-ink);--muted:var(--page-muted);--accent:var(--page-accent);--accent-strong:var(--page-accent-strong);
   width:min(690px,calc(100% - 36px));margin:50px auto;display:grid;gap:13px;color:var(--ink)
