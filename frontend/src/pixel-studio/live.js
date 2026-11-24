@@ -3,6 +3,7 @@ import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
+import {chooseRoadmap, chooseMilestone} from './roadmap-selection.js';
 import {parseCVForReference, serializeCVFromSections} from './cv-renderer.js';
 import {verifiedCVSkills, cvSkillKey} from './score-presentation.js';
 import {updateCVFitScale} from './live-views.js';
@@ -508,16 +509,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     try {
       storedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || null;
     } catch {}
-    const preferredId = targetId ?? data.road?.id ?? storedId;
-    const preferred = data.roadmaps.find(item => item.id === preferredId
-      && (targetId || !goalWasChosen || item.goal === data.goal));
-    const matchingGoal = data.roadmaps.find(item => item.goal === data.goal
-      && Array.isArray(item.milestones) && item.milestones.length > 0)
-      ?? data.roadmaps.find(item => item.goal === data.goal);
-    data.road = targetId ? (preferred ?? null) : (preferred ?? matchingGoal
-      ?? (goalWasChosen ? null : data.roadmaps.find(item =>
-        Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? data.roadmaps[0] ?? null));
+    data.road = chooseRoadmap(data.roadmaps, {targetId, currentId:data.road?.id, storedId, goal:data.goal, goalWasChosen});
 
     if (pendingFocus) {
       const targetRoadmap = data.roadmaps.find(item => String(item?.id) === String(pendingFocus.roadmapId));
@@ -552,9 +544,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     try { storedMilestone = Number(sessionStorage.getItem('ita-studio-selected-milestone:' + data.road?.id)) || null; } catch {}
     data.tracking = data.road ? await request(trackingPath()) : null;
     data.reevaluation = null;
-    data.milestone = data.tracking?.milestones?.find(m => m.id === previousMilestone)?.id
-      ?? data.tracking?.milestones?.find(m => m.id === storedMilestone)?.id
-      ?? data.tracking?.milestones?.[0]?.id ?? null;
+    data.milestone = chooseMilestone(data.tracking?.milestones, previousMilestone, storedMilestone);
     data.history = []; data.historyLoaded = false;
   }
 
