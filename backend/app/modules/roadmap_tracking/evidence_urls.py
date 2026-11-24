@@ -33,8 +33,11 @@ class GitHubEvidenceLink:
 
 def parse_github_evidence_url(value: str) -> GitHubEvidenceLink:
     """Fail closed for non-GitHub hosts, Issues, repo pages and malformed IDs."""
+    value = value.strip()
+    if any(ord(char) <= 32 or ord(char) == 127 for char in value):
+        raise ValueError(_ERROR)
     try:
-        parsed = urlsplit(value.strip())
+        parsed = urlsplit(value)
     except ValueError as exc:
         raise ValueError(_ERROR) from exc
     if (
