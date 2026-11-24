@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 MAX_COMMITS_LIMIT = 1000
 MAX_PRS_LIMIT = 500
+MAX_PR_FILE_REQUESTS = 100
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
@@ -491,6 +492,8 @@ async def verify_repository_contributions(
     verified_prs_count = 0
     unverified_prs_count = 0
     seen_pr_numbers: set[int] = set()
+    eligible_pr_files = 0
+    completed_pr_files = 0
 
     try:
         raw_prs = await api_client.list_pull_requests(
@@ -505,6 +508,7 @@ async def verify_repository_contributions(
         )
 
         requested_pr_files = 0
+        pr_file_rate_limited = False
         for pr in raw_prs:
             pr_num = pr.get("number")
             if not pr_num or pr_num in seen_pr_numbers:
@@ -563,18 +567,25 @@ async def verify_repository_contributions(
                 and pr_user.get("type") != "Bot"
                 and base_data.get("ref") == target_branch
             ):
-                if requested_pr_files >= 20:
+                eligible_pr_files += 1
+                if pr_file_rate_limited or requested_pr_files >= MAX_PR_FILE_REQUESTS:
                     scoring_files_partial = True
                 else:
                     requested_pr_files += 1
                     try:
-                        changed_files = _scoring_files(
-                            await api_client.get_pull_request_files(
-                                owner, repo_name, int(pr_num)
-                            )
+                        files = await api_client.get_pull_request_files(
+                            owner, repo_name, int(pr_num)
                         )
+                        if isinstance(files, list) and len(files) <= 300:
+                            changed_files = _scoring_files(files)
+                            completed_pr_files += 1
+                        else:
+                            scoring_files_partial = True
                     except GitHubTokenRevokedError:
                         raise
+                    except GitHubRateLimitError:
+                        pr_file_rate_limited = True
+                        scoring_files_partial = True
                     except GitHubApiError:
                         scoring_files_partial = True
             evidence_list.append(
@@ -761,7 +772,12 @@ async def verify_repository_contributions(
         anti_inflation_flag=anti_inflation_flag,
         time_range=time_range_info,
         limitations=limitations,
-        summary_data={**summary_data, "scoring_files_partial": scoring_files_partial},
+        summary_data={
+            **summary_data,
+            "scoring_files_partial": scoring_files_partial,
+            "eligible_pr_files": eligible_pr_files,
+            "completed_pr_files": completed_pr_files,
+        },
         verified_at=verified_at.isoformat(),
         evidence=evidence_list,
     )
