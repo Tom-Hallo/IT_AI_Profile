@@ -89,9 +89,7 @@ def visible_milestone(
                 )
             )
             entry["verified"] = verified
-            entry["verification_status"] = (
-                "verified" if verified else "self_reported"
-            )
+            entry["verification_status"] = "verified" if verified else "self_reported"
         visible.append(entry)
     item["evidence"] = visible
 
@@ -128,7 +126,8 @@ def visible_milestone(
     if len(visible) != len(entries) or (
         item.get("gap_type") == "skill_gap"
         and not any(
-            isinstance(ref, dict) and ref.get("source") != "submission"
+            isinstance(ref, dict)
+            and ref.get("source") != "submission"
             and not ref.get("url")
             for ref in visible
         )
