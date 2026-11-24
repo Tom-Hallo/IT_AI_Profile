@@ -292,33 +292,70 @@ function renderMessage(msg,animate) {
       const act = msg.action;
       const targetTitle = act.proposal?.add_milestone?.title || act.proposal?.title || act.proposal?.add_milestone?.skill || '';
       const actionLabel = act.tool === 'update_roadmap'
-        ? (isEn ? 'Preview roadmap update' : 'Xem đề xuất lộ trình')
-        : act.tool === 'create_roadmap' ? (isEn ? 'Preview roadmap' : 'Xem lộ trình đề xuất')
-        : act.tool === 'create_cv' ? (isEn ? 'Preview CV' : 'Xem CV đề xuất')
+        ? (isEn ? 'Apply to Roadmap' : 'Áp dụng vào Lộ trình')
+        : act.tool === 'create_roadmap' ? (isEn ? 'Create Roadmap' : 'Tạo Lộ trình này')
+        : act.tool === 'create_cv' ? (isEn ? 'Save to CV Studio' : 'Lưu vào CV Studio')
         : t('mentor.preview');
-      const headerTitle = isEn ? '⚡ AI Update Proposal:' : '⚡ Đề xuất cập nhật từ AI:';
-      const milestoneLabel = isEn ? 'Proposed item:' : 'Nội dung đề xuất:';
+      const headerTitle = isEn ? 'AI Action Proposal' : 'Đề xuất cập nhật từ AI';
+      const milestoneLabel = isEn ? 'Proposed item:' : 'Cột mốc đề xuất:';
       const declineLabel = isEn ? 'Decline' : 'Từ chối';
       const hintText = isEn
-        ? 'Review the proposal before confirming, or decline if not needed.'
-        : 'Xem đề xuất trước khi xác nhận, hoặc từ chối nếu không cần.';
+        ? 'Click to apply to your Roadmap, or decline if not needed.'
+        : 'Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần.';
       actionHtml = '<div class="chat-action-card">'
         + '<div class="chat-action-toolbar">'
         + '<div class="chat-action-header chat-action-card-header">'
+        + '<span class="chat-action-badge-dot">⚡</span>'
         + '<span class="chat-action-kicker">' + escape(headerTitle) + '</span>'
         + '</div>'
+        + '<div class="chat-action-controls-row">'
         + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small chat-action-trigger',attr('id',msg.id))
+        + btn(icon('close') + ' ' + escape(declineLabel),'agent-decline','secondary small chat-action-decline-btn',attr('id',msg.id))
+        + '</div>'
         + '</div>'
         + '<div class="chat-action-card-body">'
+        + (targetTitle ? '<div class="chat-action-target-banner">'
+            + '<div class="chat-action-target-header"><span class="chat-action-target-tag">🎯 ' + escape(milestoneLabel) + '</span></div>'
+            + '<div class="chat-action-target-title">' + escape(targetTitle) + '</div>'
+            + '</div>' : '')
         + '<p class="chat-action-impact">' + escape(act.impact || '') + '</p>'
-        + (targetTitle ? '<div class="chat-action-target"><span class="target-label">' + escape(milestoneLabel) + '</span> <strong class="target-pill chat-action-target-pill">' + escape(targetTitle) + '</strong></div>' : '')
-        + '</div>'
-        + '<div class="chat-action-buttons-group action-row chat-action-secondary">'
-        + btn(icon('close') + ' ' + escape(declineLabel),'agent-decline','secondary small chat-action-decline-btn',attr('id',msg.id))
         + '</div>'
         + '<p class="chat-action-hint">💡 ' + escape(hintText) + '</p>'
         + '</div>';
     }
+  }
+
+  let existingMilestoneCard = '';
+  if (msg.existingSkill && !msg.action) {
+    const isEn = getLanguage() === 'en';
+    const title = msg.existingMilestoneTitle || msg.existingSkill;
+    const roadmapName = msg.existingRoadmapTitle ? ` (${msg.existingRoadmapTitle})` : '';
+    const cardTitle = isEn ? 'Existing Milestone in Roadmap' : 'Cột mốc đã có trong Lộ trình';
+    const cardDesc = isEn
+      ? `You already have "${title}" in your roadmap${roadmapName}. Click below to view milestone details and practice tasks.`
+      : `Bạn đã có sẵn cột mốc "${title}" trong lộ trình${roadmapName} của mình. Bấm bên dưới để xem chi tiết mục tiêu và kế hoạch rèn luyện.`;
+    const btnLabel = isEn ? 'View Milestone in Roadmap' : 'Xem chi tiết cột mốc trong Lộ trình';
+
+    existingMilestoneCard = '<div class="chat-action-card existing-milestone-card">'
+      + '<div class="chat-action-toolbar">'
+      + '<div class="chat-action-header chat-action-card-header">'
+      + '<span class="chat-action-badge-dot">🎯</span>'
+      + '<span class="chat-action-kicker">' + escape(cardTitle) + '</span>'
+      + '</div>'
+      + '<div class="chat-action-controls-row">'
+      + '<button class="button primary small chat-action-trigger existing-view-btn" type="button" data-act="view-skill-roadmap" data-skill="' + escape(msg.existingSkill) + '">'
+      + icon('target') + ' ' + escape(btnLabel)
+      + '</button>'
+      + '</div>'
+      + '</div>'
+      + '<div class="chat-action-card-body">'
+      + '<div class="chat-action-target-banner existing-milestone-banner">'
+      + '<div class="chat-action-target-header"><span class="chat-action-target-tag">✓ ' + (isEn ? 'Already in Roadmap' : 'Đã có trong Lộ trình') + '</span></div>'
+      + '<div class="chat-action-target-title">' + escape(title) + '</div>'
+      + '</div>'
+      + '<p class="chat-action-impact">' + escape(cardDesc) + '</p>'
+      + '</div>'
+      + '</div>';
   }
 
   const evidenceTray = msg.evidence?.length
@@ -334,7 +371,7 @@ function renderMessage(msg,animate) {
 
   return '<div class="chat-row">' + bot('pixel-small',replyMood(msg)) + '<div class="chat-bubble' + entering + '">'
     + body + evidenceTray + limitationsTray
-    + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + actionHtml
+    + (msg.used?.length ? tags(msg.used.map(sourceLabel),'green') : '') + source + actionHtml + existingMilestoneCard
     + '</div></div>';
 }
 

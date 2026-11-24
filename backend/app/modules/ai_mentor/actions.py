@@ -105,9 +105,28 @@ def propose_action(
     uses_private_github: bool,
     provider: Provider | None = None,
 ) -> ActionPreview | None:
+    text = model_text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     try:
-        data = json.loads(model_text)
-        proposal = tool_proposal_adapter.validate_python(data.get("proposal"))
+        data = json.loads(text, strict=False)
+        proposal_data = data.get("proposal")
+        if not isinstance(proposal_data, dict):
+            if data.get("tool"):
+                proposal_data = {
+                    k: v for k, v in data.items() if k not in ("claims", "limitations")
+                }
+            elif isinstance(data.get("claims"), list):
+                for c in data["claims"]:
+                    if isinstance(c, dict) and c.get("proposal"):
+                        proposal_data = c["proposal"]
+                        break
+        proposal = tool_proposal_adapter.validate_python(proposal_data)
     except (AttributeError, ValueError):
         return None
 

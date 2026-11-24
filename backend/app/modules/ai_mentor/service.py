@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -94,8 +95,12 @@ Adopt the persona of an experienced, encouraging Tech Lead / Senior Engineer.
 # GENERAL COMMUNICATION RULES
 
 1. Language:
-   - Always respond in the same language as the user's latest message
-     (Vietnamese or English).
+   - Always respond in the determined language: Vietnamese when the user
+     message or locale is Vietnamese, or when the user asks in Vietnamese.
+   - When the app is in English mode and the user message is in English,
+     respond entirely in English.
+   - If the app is in English mode but the user asks in Vietnamese (with or
+     without accents), ALWAYS respond in natural, professional Vietnamese.
 2. Clarification:
    - If the request is ambiguous and clarification is essential,
      ask no more than ONE concise question.
@@ -133,10 +138,23 @@ Adopt the persona of an experienced, encouraging Tech Lead / Senior Engineer.
    - Do not sacrifice factual accuracy, technical correctness, or clarity to
      satisfy stylistic preferences.
 7. User Confirmations & Roadmap Updates:
-   - When the user asks to add something to roadmap (e.g. "thêm vào roadmap",
-     "thì thêm vào đi"), OR asks why roadmap hasn't updated yet (e.g. "sao
-     chưa cập nhật", "sao chưa thấy gì"):
-     * Do NOT act confused, repeat unsolicited questions, or ask what to study next.
+   - If the user asks about learning or improving a skill, but they ALREADY HAVE
+     this milestone or skill in their current roadmap (or in evidence/context):
+     * DO NOT propose adding a new milestone or updating with a duplicate!
+     * Instead, advise them directly:
+       "Bạn đã có sẵn cột mốc này trong lộ trình '{roadmap_title}' rồi!
+       Bạn có muốn mở xem chi tiết cột mốc trong Lộ trình để bắt đầu
+       thực hành không?"
+       (In English: "You already have this milestone in your roadmap
+       '{roadmap_title}'! Would you like to view the milestone details in
+       your Roadmap to start practicing?")
+   - When user asks to add a NEW skill to roadmap (e.g. "thêm vào roadmap",
+     "thì thêm vào đi", "đề xuất tạo một cột mốc", "bổ sung kỹ năng"),
+     OR asks why roadmap hasn't updated yet:
+     * You MUST include the proposal in your JSON output (e.g. in "proposal"):
+       {"tool":"update_roadmap","roadmap_id":<target_roadmap_id>,
+       "add_milestone":{"title":"...","skill":"...","objective":"...",
+       "metric":"...","target_score":70}}
      * Explain directly:
        "Để bảo vệ dữ liệu lộ trình của bạn, hệ thống tạo sẵn thẻ đề xuất
        hành động ở ngay bên dưới. Bạn hãy bấm vào nút **[➕ Áp dụng vào
@@ -171,8 +189,9 @@ You MUST respond with valid JSON adhering to this schema:
 
 ACTION_INSTRUCTIONS = """
 Only when the user explicitly requests to create a CV, generate a roadmap,
-update an existing roadmap, or reanalyze a repository (e.g. 'tạo CV',
-'lập lộ trình', 'cập nhật lộ trình', 'thêm mốc', 'phân tích lại repo'),
+update an existing roadmap, propose adding a milestone, or reanalyze a
+repository (e.g. 'tạo CV', 'lập lộ trình', 'cập nhật lộ trình', 'thêm mốc',
+'đề xuất tạo một cột mốc', 'phân tích lại repo'),
 optionally add exactly one proposal field to the JSON object. Do NOT propose
 actions for general questions, job inquiries, explanations, or advice.
 Allowed proposal forms:
@@ -199,6 +218,83 @@ Do not claim an action has run. The user must review and confirm the proposal.
 """.strip()
 
 
+_VI_DIACRITICS = re.compile(
+    r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
+    r"ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]"
+)
+
+_VI_COMMON_WORDS = {
+    "tôi",
+    "bạn",
+    "mình",
+    "người",
+    "làm",
+    "sao",
+    "thế",
+    "nào",
+    "được",
+    "không",
+    "muốn",
+    "học",
+    "hướng",
+    "dẫn",
+    "cách",
+    "giúp",
+    "cho",
+    "hỏi",
+    "về",
+    "lộ",
+    "trình",
+    "kỹ",
+    "năng",
+    "gì",
+    "này",
+    "kia",
+    "đang",
+    "đã",
+    "sẽ",
+    "phải",
+    "cần",
+    "như",
+    "hay",
+    "hoặc",
+    "của",
+    "trong",
+    "ngoài",
+    "rất",
+    "quá",
+    "ơi",
+    "nhé",
+    "nha",
+    "ạ",
+    # Unaccented versions of common indicators
+    "toi",
+    "giup",
+    "muon",
+    "huong",
+    "dan",
+    "cach",
+    "khong",
+    "duoc",
+    "lo",
+    "trinh",
+    "ky",
+    "nang",
+    "nhu",
+    "the",
+    "nao",
+    "hoi",
+}
+
+
+def _is_vietnamese_text(text: str) -> bool:
+    if _VI_DIACRITICS.search(text):
+        return True
+    words = set(re.findall(r"\b\w+\b", text.lower()))
+    matches = words.intersection(_VI_COMMON_WORDS)
+    return len(matches) >= 2
+
+
 def _determine_language(message: str, locale: str | None = "vi") -> str:
     msg_lower = message.lower()
     if any(
@@ -209,6 +305,7 @@ def _determine_language(message: str, locale: str | None = "vi") -> str:
             "bang tieng anh",
             "use english",
             "respond in english",
+            "reply in english",
         ]
     ):
         return "en"
@@ -219,8 +316,13 @@ def _determine_language(message: str, locale: str | None = "vi") -> str:
             "bang tieng viet",
             "in vietnamese",
             "dùng tiếng việt",
+            "dung tieng viet",
+            "trả lời tiếng việt",
         ]
     ):
+        return "vi"
+    # Even if in English mode, if the user asks in Vietnamese, reply in Vietnamese
+    if _is_vietnamese_text(message):
         return "vi"
     if locale and locale.lower().startswith("en"):
         return "en"
@@ -810,9 +912,16 @@ async def run_mentor_chat(
         # Consent can change while the provider is generating its response.
         _recheck_github(db, user, config.ai_provider, list(packed.values()))
         status = "ok"
-        model_text = result["text"].strip()
-        if model_text.startswith("```json\n") and model_text.endswith("```"):
-            model_text = model_text[8:-3].strip()
+        raw_text = result["text"].strip()
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            model_text = "\n".join(lines).strip()
+        else:
+            model_text = raw_text
         response = _grounded_response(model_text, packed, limits)
         if payload.enable_actions and not any(
             item.code == "invalid_answer" for item in response.limitations
@@ -841,7 +950,14 @@ async def run_mentor_chat(
                 response.answer = (
                     "Hãy xem lại đề xuất và xác nhận nếu bạn muốn thực hiện."
                 )
-            if response.action is None and json.loads(model_text).get("proposal"):
+            try:
+                raw_data = json.loads(model_text, strict=False)
+                raw_proposal = raw_data.get("proposal") or (
+                    raw_data if raw_data.get("tool") else None
+                )
+            except (AttributeError, ValueError):
+                raw_proposal = None
+            if response.action is None and raw_proposal:
                 response.limitations.append(
                     _limit(
                         "action_unavailable",
