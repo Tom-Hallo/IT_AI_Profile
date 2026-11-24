@@ -118,3 +118,24 @@ def test_configuration_and_peer_review_need_independent_evidence():
     )
     assert score([], collab=[review])["collaboration"] is None
     assert score([], collab=[external, review])["collaboration"] == 33
+
+
+def test_structural_architecture_accepts_exact_source_file_not_sibling():
+    path = "backend/app/api/router.py"
+    changed = event(metadata_={"changed_files": [{"path": path, "changes": 3}]})
+    finding = SimpleNamespace(
+        id=11,
+        confidence="high",
+        file_path=path,
+        finding_type="architecture",
+        classification="layered_architecture",
+        evidence_source="directory_structure",
+    )
+    assert score([changed], [finding])["architecture"] == 33
+    finding.file_path = "backend/app/api"
+    assert score([changed], [finding])["architecture"] == 33
+    finding.file_path = "backend/app/api/other.py"
+    assert score([changed], [finding])["architecture"] is None
+    finding.file_path = path
+    changed.is_merge = True
+    assert score([changed], [finding])["architecture"] is None
