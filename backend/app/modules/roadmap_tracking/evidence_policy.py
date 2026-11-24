@@ -62,7 +62,7 @@ def visible_milestone(
 ) -> dict:
     """Do not expose revoked references or keep obsolete verification badges."""
     item = deepcopy(original)
-    required = required_skills or [item.get("skill")]
+    required = required_skills or item.get("required_skills") or [item.get("skill")]
     target = item.get("target_score")
     entries = item.get("evidence", [])
     entries = entries if isinstance(entries, list) else []
@@ -98,8 +98,7 @@ def visible_milestone(
         for a in assessments
         if a.get("confidence") in {"high", "medium"}
         and a.get("score") is not None
-        and target is not None
-        and a["score"] >= target
+        and (target is None or a["score"] >= target)
         for ref in a.get("evidence", [])
         if ref.get("repository_id") in permitted and ref.get("id") is not None
     }
