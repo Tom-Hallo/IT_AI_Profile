@@ -164,6 +164,29 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
                 .order_by(Milestone.id)
             ).all()
 
+    # Synchronize persisted milestones into roadmap JSONB if data.milestones is missing
+    if (
+        milestones
+        and roadmap.data
+        and isinstance(roadmap.data, dict)
+        and not roadmap.data.get("milestones")
+    ):
+        sync_data = deepcopy(roadmap.data)
+        sync_data["milestones"] = [
+            {
+                "skill": m.external_key,
+                "title": m.title,
+                "objective": m.title,
+                "metric": f"Complete: {m.title}",
+                "status": m.status or "pending",
+                "order": idx,
+            }
+            for idx, m in enumerate(milestones, 1)
+        ]
+        roadmap.data = sync_data
+        flag_modified(roadmap, "data")
+        db.commit()
+
     # Match the persisted JSONB array order, independent of row insert IDs.
     # Orphaned legacy tracking rows follow in their original ID order.
     data_items = (
