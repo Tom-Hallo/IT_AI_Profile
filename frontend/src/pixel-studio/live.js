@@ -526,6 +526,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
       data.road = targetRoadmap;
       data.goal = targetRoadmap.goal;
+      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(targetRoadmap.id)); } catch {}
       data.tracking = tracking;
       data.reevaluation = null;
       data.milestone = targetMilestone.id;
@@ -533,14 +534,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       return;
     }
 
-    if (targetId) {
-      data.road = data.roadmaps.find(item => item?.id === targetId) ?? null;
-    } else {
-      const matchingGoal = data.roadmaps.find(item => item?.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? data.roadmaps.find(item => item?.goal === data.goal);
-      data.road = matchingGoal
-        ?? (goalWasChosen ? null : data.roadmaps.find(item => Array.isArray(item?.milestones) && item.milestones.length > 0) ?? data.roadmaps[0] ?? null);
-    }
     if (data.road) {
       data.goal = data.road.goal || data.goal;
       try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
@@ -550,7 +543,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.reevaluation = null;
     data.milestone = data.tracking?.milestones?.some(m => m.id === previousMilestone)
       ? previousMilestone : data.tracking?.milestones?.[0]?.id ?? null;
-    data.milestone = data.tracking?.milestones?.[0]?.id ?? null;
     data.history = [];
   }
 
@@ -1590,7 +1582,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
           'Vui lòng nhập liên kết GitHub Commit hoặc Pull Request hợp lệ (HTTPS).',
           'Invalid link. Enter an official HTTPS GitHub Commit or Pull Request URL.'
         );
-        notice(message);
         if (validationMessage) {
           validationMessage.textContent = message;
           validationMessage.hidden = false;
@@ -1614,8 +1605,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
         await roadHistory();
         notice(res.verification_status === 'verified'
-          ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
-          : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
+          ? copy('Minh chứng đáp ứng tiêu chí của mốc và đã được xác minh.', 'Evidence meets the milestone criteria and is verified.')
+          : copy('Đã lưu liên kết tự khai báo. Hãy phân tích GitHub và đánh giá lại để xác minh năng lực của mốc.', 'Self-reported link saved. Analyze GitHub and re-evaluate to verify milestone skills.')
         );
       });
     },
@@ -1632,7 +1623,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   function change(control) {
     if (control.id === 'repo-switch') { void focusRepo(control.value); return true; }
-    if (control.id === 'road-goal') { data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
+    if (control.id === 'road-goal') { if (data.busy.has('road')) return true; data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
     if (control.id === 'road-select') { void work('road', () => road(Number(control.value))); return true; }
     if (control.dataset.act === 'repo-page-select') { void repos({page: Number(control.value)}); return true; }
     if (control.classList.contains('repo-select-check')) {
