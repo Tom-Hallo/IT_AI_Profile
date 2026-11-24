@@ -292,27 +292,31 @@ function renderMessage(msg,animate) {
       const act = msg.action;
       const targetTitle = act.proposal?.add_milestone?.title || act.proposal?.title || act.proposal?.add_milestone?.skill || '';
       const actionLabel = act.tool === 'update_roadmap'
-        ? (targetTitle ? (isEn ? `➕ Add "${targetTitle}" to Roadmap` : `➕ Thêm "${targetTitle}" vào Lộ trình`) : (isEn ? '➕ Apply to Roadmap' : '➕ Áp dụng vào Lộ trình'))
-        : act.tool === 'create_roadmap' ? (isEn ? '🗺️ Create Roadmap' : '🗺️ Tạo Lộ trình này')
-        : act.tool === 'create_cv' ? (isEn ? '📄 Save to CV Studio' : '📄 Lưu vào CV Studio')
-        : escape(t('mentor.preview'));
+        ? (isEn ? 'Preview roadmap update' : 'Xem đề xuất lộ trình')
+        : act.tool === 'create_roadmap' ? (isEn ? 'Preview roadmap' : 'Xem lộ trình đề xuất')
+        : act.tool === 'create_cv' ? (isEn ? 'Preview CV' : 'Xem CV đề xuất')
+        : t('mentor.preview');
       const headerTitle = isEn ? '⚡ AI Update Proposal:' : '⚡ Đề xuất cập nhật từ AI:';
-      const milestoneLabel = isEn ? 'Milestone:' : 'Cột mốc:';
-      const declineLabel = isEn ? '✕ Decline' : '✕ Từ chối';
+      const milestoneLabel = isEn ? 'Proposed item:' : 'Nội dung đề xuất:';
+      const declineLabel = isEn ? 'Decline' : 'Từ chối';
       const hintText = isEn
-        ? '👉 Click to apply to Roadmap, or decline if not needed'
-        : '👉 Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần';
+        ? 'Review the proposal before confirming, or decline if not needed.'
+        : 'Xem đề xuất trước khi xác nhận, hoặc từ chối nếu không cần.';
       actionHtml = '<div class="chat-action-card">'
         + '<div class="chat-action-toolbar">'
-        + '<div class="chat-action-header">' + escape(headerTitle) + '</div>'
+        + '<div class="chat-action-header chat-action-card-header">'
+        + '<span class="chat-action-kicker">' + escape(headerTitle) + '</span>'
+        + '</div>'
         + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small chat-action-trigger',attr('id',msg.id))
         + '</div>'
-        + '<p class="chat-action-impact">' + escape(act.impact) + '</p>'
-        + (targetTitle ? '<p class="chat-action-impact">' + escape(milestoneLabel) + ' <strong>' + escape(targetTitle) + '</strong></p>' : '')
-        + '<div class="action-row chat-action-secondary">'
-        + btn(escape(declineLabel),'agent-decline','secondary small',attr('id',msg.id))
+        + '<div class="chat-action-card-body">'
+        + '<p class="chat-action-impact">' + escape(act.impact || '') + '</p>'
+        + (targetTitle ? '<div class="chat-action-target"><span class="target-label">' + escape(milestoneLabel) + '</span> <strong class="target-pill chat-action-target-pill">' + escape(targetTitle) + '</strong></div>' : '')
         + '</div>'
-        + '<p class="chat-action-hint">' + escape(hintText) + '</p>'
+        + '<div class="chat-action-buttons-group action-row chat-action-secondary">'
+        + btn(icon('close') + ' ' + escape(declineLabel),'agent-decline','secondary small chat-action-decline-btn',attr('id',msg.id))
+        + '</div>'
+        + '<p class="chat-action-hint">💡 ' + escape(hintText) + '</p>'
         + '</div>';
     }
   }

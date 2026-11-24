@@ -147,7 +147,1500 @@
 .login-top,.share-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .login-top .back-link{margin:0}
 .login-card{background:var(--surface);border-color:var(--accent-border)}
-.cv-paper,.cv-exports,#ats-result{margin-top:9px}
+/* Base Authentic A4 Sheet (210mm x 297mm @ 96 DPI: 794px x 1123px, Ratio = 0.707) */
+.cv-paper {
+  width: 794px !important;
+  min-width: 794px !important;
+  max-width: 794px !important;
+  min-height: 1123px !important;
+  aspect-ratio: 210 / 297;
+  box-sizing: border-box !important;
+  background: #ffffff !important;
+  color: #111111 !important;
+  margin: 0 auto;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  position: relative;
+  /* A4 page boundary indicator at every 1123px */
+  background-image: linear-gradient(to bottom, transparent 1121px, #e2e8f0 1121px, #e2e8f0 1123px, #ffffff 1123px);
+  background-size: 100% 1123px;
+}
+
+/* Plain Template (Cổ điển / Truyền thống) */
+.cv-paper[data-template="plain"] {
+  font-family: Georgia, "Times New Roman", serif;
+  background: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 40px 48px;
+}
+.cv-paper[data-template="plain"] #cv-name {
+  text-align: center;
+  font-family: Georgia, serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: #000000 !important;
+  letter-spacing: 0.02em;
+  margin: 0 0 6px 0;
+}
+.cv-paper[data-template="plain"] #cv-role {
+  text-align: center;
+  font-style: italic;
+  color: #2563eb !important;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+.cv-paper[data-template="plain"] #cv-body {
+  color: #222222 !important;
+  line-height: 1.6;
+}
+
+/* Tech Template (Kỹ thuật / Hiện đại) */
+.cv-paper[data-template="tech"] {
+  font-family: var(--font, system-ui, sans-serif);
+  background: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 6px solid #2563eb !important;
+  padding: 40px 48px;
+}
+.cv-paper[data-template="tech"] #cv-name {
+  font-size: 26px;
+  font-weight: 700;
+  color: #000000 !important;
+  margin: 0 0 6px 0;
+}
+.cv-paper[data-template="tech"] #cv-role {
+  color: #2563eb !important;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #e5e7eb !important;
+}
+.cv-paper[data-template="tech"] #cv-body {
+  color: #222222 !important;
+  line-height: 1.6;
+}
+
+/* Reference Template (Theo mẫu CV gửi kèm - Chuẩn Executive 2 cột) */
+.cv-paper[data-template="reference"] {
+  background: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 36px 44px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.35;
+  font-size: 13px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-header {
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: #000000;
+  margin: 0 0 4px 0;
+  letter-spacing: 0.5px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-role {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #333333;
+  margin: 0 0 4px 0;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-contact {
+  font-size: 12px;
+  color: #222222;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-body {
+  white-space: normal;
+  color: inherit;
+  margin-top: 8px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-section {
+  margin-top: 14px;
+  margin-bottom: 12px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-section-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #000000;
+  border-bottom: 1.5px solid #000000;
+  padding-bottom: 2px;
+  margin: 12px 0 8px 0;
+  text-transform: capitalize;
+  letter-spacing: 0.2px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-entry {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #111111;
+  gap: 14px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-col-date {
+  flex: 0 0 110px;
+  width: 110px;
+  min-width: 100px;
+  font-weight: 700;
+  color: #000000;
+  box-sizing: border-box;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-col-details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-org {
+  font-weight: 700;
+  color: #000000;
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-loc {
+  font-weight: 600;
+  color: #000000;
+  text-align: right;
+  flex: 0 0 auto;
+  white-space: normal;
+  margin-left: 8px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-entry-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 3px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-role-title {
+  font-style: italic;
+  color: #222222;
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-sub-loc {
+  font-size: 12px;
+  color: #333333;
+  text-align: right;
+  flex: 0 0 auto;
+  white-space: normal;
+  margin-left: 8px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-bullets {
+  margin: 3px 0 0 0;
+  padding-left: 18px;
+  list-style-type: disc;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-bullets li {
+  margin-bottom: 2px;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-label-desc {
+  color: #111111;
+  line-height: 1.35;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-sub-bullets {
+  margin-top: 2px;
+}
+
+.cv-paper[data-template="reference"] .cv-ref-text {
+  margin: 0 0 6px 0;
+  color: #111111;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.cv-loading-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(88, 166, 255, 0.15);
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+/* Trực tiếp chỉnh sửa trên mặt giấy CV (WYSIWYG on paper) */
+.cv-paper [contenteditable="true"] {
+  outline: none;
+  cursor: text;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 2px;
+}
+.cv-paper [contenteditable="true"]:hover {
+  background-color: rgba(88, 166, 255, 0.06);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.25);
+}
+.cv-paper[data-template="reference"] [contenteditable="true"]:hover {
+  background-color: rgba(0, 102, 204, 0.04);
+  box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.25);
+}
+.cv-paper [contenteditable="true"]:focus {
+  background-color: rgba(88, 166, 255, 0.1);
+  box-shadow: 0 0 0 2px var(--accent, #388bfd);
+}
+.cv-paper[data-template="reference"] [contenteditable="true"]:focus {
+  background-color: rgba(0, 102, 204, 0.06);
+  box-shadow: 0 0 0 2px #0066cc;
+}
+.cv-direct-edit-tip {
+  font-size: 11.5px;
+  color: var(--accent);
+  margin-left: auto;
+  align-self: center;
+  font-weight: 500;
+  opacity: 0.85;
+}
+.cv-ats-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.cv-ats-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   CV STUDIO 3-PANEL WORKSPACE & REDESIGN
+   ========================================================================== */
+
+.cv-workspace-3col {
+  display: grid;
+  grid-template-columns: minmax(320px, 32%) minmax(460px, 1fr) minmax(300px, 28%);
+  gap: 16px;
+  align-items: start;
+  margin-top: 14px;
+  position: relative;
+}
+
+.cv-workspace-3col.intel-collapsed {
+  grid-template-columns: minmax(340px, 35%) 1fr;
+}
+.cv-workspace-3col.intel-collapsed .cv-panel-intel {
+  display: none !important;
+}
+
+/* Mentor Focus Mode: When AI Mentor is open, keep clean 2-column workspace (Editor ~38% + A4 Preview ~62%) */
+.workspace-body.has-mentor .cv-workspace-3col {
+  grid-template-columns: minmax(320px, 38%) 1fr !important;
+  position: relative;
+}
+.workspace-body.has-mentor .cv-workspace-3col .cv-panel-intel {
+  display: none !important;
+}
+
+/* Slide-over Flyout Drawer: When user explicitly opens tools while AI Chatbot is active */
+.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open {
+  grid-template-columns: minmax(320px, 38%) 1fr !important;
+}
+.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open .cv-panel-intel {
+  display: flex !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 380px !important;
+  max-width: calc(100% - 24px) !important;
+  z-index: 45 !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--accent) !important;
+  border-radius: 12px !important;
+  box-shadow: -10px 0 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(139, 92, 246, 0.25) !important;
+  overflow-y: auto !important;
+  padding: 16px !important;
+  animation: cv-drawer-slide 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open .cv-panel-intel .cv-intel-close-btn {
+  display: inline-flex !important;
+}
+
+@keyframes cv-drawer-slide {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Panel Headers & Sub-tabs */
+.cv-panel-editor, .cv-panel-preview, .cv-panel-intel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cv-intel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cv-intel-close-btn {
+  display: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cv-intel-close-btn:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.cv-mode-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--inset);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.cv-mode-tabs .button {
+  flex: 1;
+  text-align: center;
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cv-mode-tabs .button.active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Responsive Segmented Tabs in Intel Panel (Chống tràn tab) */
+.cv-intel-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--inset, rgba(15, 23, 42, 0.6));
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.cv-intel-tabs .button {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 11.5px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.cv-intel-tabs .button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+.cv-intel-tabs .button.active {
+  background: var(--surface, #1e293b);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--accent, #3b82f6);
+}
+
+/* Structured Sections in Editor (Reactive Resume v6 Accordion Layout) */
+.cv-struct-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cv-basics-card {
+  padding: 10px 12px;
+  background: var(--surface, #18181b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.cv-struct-section {
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  background: var(--surface, #18181b);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.18s ease;
+}
+
+.cv-struct-section[open] {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.cv-struct-head {
+  padding: 10px 14px;
+  background: var(--inset, #121214);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.cv-struct-head:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cv-sec-icon {
+  font-size: 14px;
+}
+
+.cv-sec-title-text {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.cv-sec-count-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 7px;
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+.cv-struct-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface, #18181b);
+}
+
+.cv-struct-entry {
+  padding: 12px;
+  background: var(--inset, #121214);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  transition: border-color 0.15s ease;
+}
+
+.cv-struct-entry:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.cv-struct-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.cv-entry-num {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cv-entry-del-btn {
+  background: transparent;
+  border: none;
+  color: #f85149;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.cv-entry-del-btn:hover {
+  background: rgba(248, 81, 73, 0.15);
+  color: #ff7b72;
+}
+
+.cv-sec-add-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.cv-add-entry-btn {
+  font-size: 11.5px;
+  padding: 4px 10px;
+}
+
+.cv-add-sec-bar {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cv-add-sec-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.cv-drawer-card {
+  margin-top: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: var(--surface, #18181b);
+  overflow: hidden;
+}
+
+.cv-drawer-head {
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  background: var(--inset, #121214);
+}
+
+.cv-drawer-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cv-struct-entry .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.cv-struct-entry input, .cv-struct-entry textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+}
+
+/* Center Panel: Preview & Zoom */
+.cv-preview-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.cv-zoom-controls {
+  display: flex;
+  gap: 2px;
+  background: var(--inset);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.cv-zoom-controls button {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.cv-zoom-controls button.active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.cv-page-indicator {
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--inset);
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.cv-page-indicator.overflow {
+  color: var(--amber);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.cv-preview-viewport {
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 16px 12px;
+  max-height: calc(100vh - 210px);
+  min-height: 580px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: flex;
+  justify-content: safe center;
+  align-items: flex-start;
+}
+
+.cv-preview-viewport.cv-zoom-85 .cv-paper {
+  zoom: 0.85;
+  transform-origin: top center;
+}
+.cv-preview-viewport.cv-zoom-100 .cv-paper {
+  zoom: 1;
+  transform-origin: top center;
+}
+.cv-preview-viewport.cv-zoom-115 .cv-paper {
+  zoom: 1.15;
+  transform-origin: top center;
+}
+.cv-preview-viewport.cv-zoom-fit .cv-paper {
+  zoom: var(--cv-scale, 0.65);
+  transform-origin: top center;
+}
+
+/* Section Navigator & Focused Editor (Reactive Resume v6 Style) */
+.cv-sec-nav-wrap {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cv-sec-nav-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 2px;
+}
+.cv-sec-nav-head h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+.cv-sec-nav-head small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cv-sec-nav-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cv-sec-nav-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.cv-sec-nav-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.cv-sec-nav-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.cv-sec-nav-main .cv-sec-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.cv-sec-nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cv-sec-nav-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-sec-nav-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cv-sec-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cv-sec-nav-actions .button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Focused Section Editor */
+.cv-focused-sec-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 0;
+}
+.cv-focused-sec-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.cv-nav-back-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cv-nav-back-btn:hover {
+  background: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.3);
+}
+.cv-focused-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cv-focused-sec-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Raw Markdown bidirectional sync container in structured editor mode */
+.cv-raw-sync-wrap {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.cv-raw-sync-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.cv-raw-sync-input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* Streamlined export segmented group */
+.cv-export-group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--inset);
+}
+.cv-export-group .button {
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 5px 10px !important;
+  font-size: 11.5px !important;
+  background: transparent !important;
+}
+.cv-export-group .button:not(:last-child) {
+  border-right: 1px solid var(--line) !important;
+}
+.cv-export-group .button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Right Panel: AI & Optimization Hub */
+.cv-intel-content {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Design Tab (Reactive Resume v6 Template Cards) */
+.cv-design-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv-design-section h4 {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.cv-template-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cv-tpl-card {
+  padding: 12px 14px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: var(--surface, #18181b);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+}
+
+.cv-tpl-card:hover {
+  border-color: var(--accent, #3b82f6);
+  background: var(--accent-dim, rgba(59, 130, 246, 0.08));
+  transform: translateY(-1px);
+}
+
+.cv-tpl-card.selected {
+  border-color: var(--accent, #3b82f6);
+  border-width: 1.5px;
+  background: var(--accent-dim, rgba(59, 130, 246, 0.12));
+  box-shadow: 0 0 14px var(--accent-glow, rgba(59, 130, 246, 0.25));
+}
+
+.cv-tpl-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent, #3b82f6);
+  background: var(--accent-dim, rgba(59, 130, 246, 0.18));
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.cv-tpl-card strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.cv-tpl-card p {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.cv-zoom-btn-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cv-zoom-btn-group .button.active {
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+  border-color: var(--accent, #3b82f6);
+}
+
+.cv-evidence-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cv-evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cv-evidence-card {
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.cv-evidence-card:hover {
+  border-color: rgba(var(--accent-rgb, 59, 130, 246), 0.5);
+}
+
+.cv-evidence-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cv-evidence-tech {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cv-score-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb, 59, 130, 246), 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.cv-evidence-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.cv-evidence-repo {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+.cv-evidence-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.cv-intel-empty {
+  text-align: center;
+  padding: 24px 16px;
+  background: var(--inset);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.cv-intel-empty .empty-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.cv-intel-empty h4 {
+  margin: 0 0 6px 0;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.cv-intel-empty p {
+  font-size: 12px;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.cv-ats-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.cv-ats-metric-box {
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.cv-ats-metric-val {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.cv-ats-metric-lbl {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cv-ai-guide-card {
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.cv-ai-guide-card strong {
+  color: var(--ink);
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1240px) {
+  .cv-workspace-3col:not(.intel-collapsed) {
+    grid-template-columns: minmax(320px, 38%) 1fr;
+  }
+  .cv-workspace-3col:not(.intel-collapsed):not(.intel-explicit-open) .cv-panel-intel {
+    grid-column: 1 / -1;
+  }
+  .workspace-body.has-mentor .cv-workspace-3col {
+    grid-template-columns: minmax(280px, 40%) 1fr !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .workspace-body.has-mentor .cv-workspace-3col {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 860px) {
+  .cv-workspace-3col {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@media print {
+  body, html {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+  .sidebar,
+  .workspace-top,
+  .page-heading,
+  .cv-command-bar,
+  .cv-editor,
+  .cv-feedback,
+  .cv-exports,
+  .cv-preview > .panel-head,
+  .cv-preview > .tabs,
+  details,
+  #mentor-panel,
+  #mentor-resize,
+  .toast,
+  button,
+  .button {
+    display: none !important;
+  }
+  .studio,
+  .workspace,
+  .workspace-body,
+  .workspace-content,
+  .main-view,
+  .columns,
+  .cv-preview {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+  .cv-paper {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 8mm 12mm !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+    page-break-after: avoid;
+    zoom: 1 !important;
+    transform: none !important;
+    background-image: none !important;
+  }
+  .cv-paper [contenteditable="true"],
+  .cv-paper [contenteditable="true"]:hover,
+  .cv-paper [contenteditable="true"]:focus {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+  .cv-paper .cv-header {
+    text-align: center !important;
+    margin-bottom: 10pt !important;
+  }
+  .cv-paper .cv-name {
+    color: #000000 !important;
+    font-size: 20pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 3pt !important;
+  }
+  .cv-paper .cv-contact {
+    color: #222222 !important;
+    font-size: 10pt !important;
+    margin: 0 !important;
+  }
+  .cv-paper .cv-section {
+    margin-top: 10pt !important;
+    margin-bottom: 8pt !important;
+  }
+  .cv-paper .cv-section-title {
+    color: #000000 !important;
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    border-bottom: 1.5pt solid #000000 !important;
+    padding-bottom: 2pt !important;
+    margin: 8pt 0 6pt 0 !important;
+  }
+  .cv-paper .cv-entry {
+    display: flex !important;
+    align-items: flex-start !important;
+    margin-bottom: 7pt !important;
+    font-size: 10pt !important;
+    line-height: 1.3 !important;
+    page-break-inside: avoid;
+  }
+  .cv-paper .cv-entry-date,
+  .cv-paper .cv-entry-label {
+    flex: 0 0 130px !important;
+    width: 130px !important;
+    min-width: 130px !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+    padding-right: 10pt !important;
+  }
+  .cv-paper .cv-entry-content {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .cv-paper .cv-entry-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    margin-bottom: 1pt !important;
+  }
+  .cv-paper .cv-org {
+    font-weight: 700 !important;
+    color: #000000 !important;
+  }
+  .cv-paper .cv-loc {
+    font-weight: 600 !important;
+    color: #000000 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+  .cv-paper .cv-entry-sub {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    margin-bottom: 2pt !important;
+  }
+  .cv-paper .cv-role-title {
+    font-style: italic !important;
+    color: #222222 !important;
+  }
+  .cv-paper .cv-sub-loc {
+    font-size: 9.5pt !important;
+    color: #333333 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+  .cv-paper .cv-bullets {
+    margin: 2pt 0 0 0 !important;
+    padding-left: 16pt !important;
+    list-style-type: disc !important;
+  }
+  .cv-paper .cv-bullets li {
+    margin-bottom: 1.5pt !important;
+    line-height: 1.3 !important;
+    color: #111111 !important;
+  }
+  .cv-paper .cv-label-text {
+    color: #111111 !important;
+    line-height: 1.3 !important;
+  }
+  .cv-paper .cv-plain-text {
+    margin: 0 0 4pt 0 !important;
+    color: #111111 !important;
+    line-height: 1.35 !important;
+    white-space: pre-wrap !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-header {
+    text-align: center !important;
+    margin-bottom: 10pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-name {
+    color: #000000 !important;
+    font-size: 20pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 3pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-contact {
+    color: #222222 !important;
+    font-size: 10pt !important;
+    margin: 0 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-section {
+    margin-top: 10pt !important;
+    margin-bottom: 8pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-section-title {
+    color: #000000 !important;
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    border-bottom: 1.5pt solid #000000 !important;
+    padding-bottom: 2pt !important;
+    margin: 8pt 0 6pt 0 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-entry {
+    display: flex !important;
+    align-items: flex-start !important;
+    margin-bottom: 7pt !important;
+    font-size: 10pt !important;
+    line-height: 1.3 !important;
+    page-break-inside: avoid;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-col-date {
+    flex: 0 0 130px !important;
+    width: 130px !important;
+    min-width: 130px !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+    padding-right: 10pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-col-details {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-entry-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    margin-bottom: 1pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-org {
+    font-weight: 700 !important;
+    color: #000000 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-loc {
+    font-weight: 600 !important;
+    color: #000000 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-entry-sub {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    margin-bottom: 2pt !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-role-title {
+    font-style: italic !important;
+    color: #222222 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-sub-loc {
+    font-size: 9.5pt !important;
+    color: #333333 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-bullets {
+    margin: 2pt 0 0 0 !important;
+    padding-left: 16pt !important;
+    list-style-type: disc !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-bullets li {
+    margin-bottom: 1.5pt !important;
+    line-height: 1.3 !important;
+    color: #111111 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-label-desc {
+    color: #111111 !important;
+    line-height: 1.3 !important;
+  }
+  .cv-paper[data-template="reference"] .cv-ref-text {
+    margin: 0 0 4pt 0 !important;
+    color: #111111 !important;
+    line-height: 1.35 !important;
+    white-space: pre-wrap !important;
+  }
+  @page {
+    size: A4;
+    margin: 8mm 10mm;
+  }
+}
+
+body.print-cv .sidebar,
+body.print-cv .workspace-top,
+body.print-cv .page-heading,
+body.print-cv .cv-command-bar,
+body.print-cv .cv-editor,
+body.print-cv .cv-feedback,
+body.print-cv .cv-exports,
+body.print-cv .cv-preview > .panel-head,
+body.print-cv .cv-preview > .tabs,
+body.print-cv details,
+body.print-cv #mentor-panel,
+body.print-cv #mentor-resize,
+body.print-cv .toast,
+body.print-cv button,
+body.print-cv .button {
+  display: none !important;
+}
+
+body.print-cv .cv-paper {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 8mm 12mm !important;
+  border: none !important;
+  background: #ffffff !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+}
 
 .main-view{padding-top:34px}
 .panel .panel-head h2{letter-spacing:-.025em}
@@ -975,21 +2468,50 @@
   background: rgba(88, 166, 255, 0.08);
 }
 
-/* CV Command Bar */
+/* CV Command Bar & Top Toolbar (Reactive Resume v6 Style) */
 .cv-command-bar {
-  margin-bottom: 18px;
-  background: linear-gradient(135deg, rgba(30, 38, 46, 0.95), rgba(22, 27, 34, 0.98));
-  border: 1px solid var(--line-strong);
-  border-left: 4px solid #3fb950;
-  border-radius: 10px;
-  padding: 14px 20px;
+  margin-bottom: 16px;
+  background: var(--surface, #18181b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-left: 4px solid var(--accent, #3b82f6);
+  border-radius: 8px;
+  padding: 10px 18px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 .cv-command-inner {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 12px;
+}
+.cv-toolbar-doc-icon {
+  font-size: 16px;
+}
+.cv-toolbar-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.cv-version-tag {
+  font-size: 11.5px;
+  color: var(--accent, #3b82f6);
+  background: var(--accent-dim, rgba(59, 130, 246, 0.15));
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--accent-dim, rgba(59, 130, 246, 0.3));
+}
+.cv-save-btn {
+  background: var(--accent, #3b82f6) !important;
+  border-color: var(--accent, #3b82f6) !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+.cv-save-btn:hover {
+  background: var(--primary-accent, #2563eb) !important;
+  border-color: var(--primary-accent, #2563eb) !important;
+  box-shadow: 0 0 12px var(--accent-glow, rgba(59, 130, 246, 0.4));
 }
 .cv-command-status {
   display: flex;
@@ -1159,18 +2681,16 @@
 #jd-form textarea[name="jd"] {
   display: block;
   width: 100%;
-  min-height: 90px;
-  max-height: clamp(260px, 42vh, 340px);
-  resize: none;
+  height: 300px;
+  min-height: 300px;
+  max-height: 420px;
+  resize: vertical;
   line-height: 1.5;
   font-size: 13px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   overflow-y: auto;
   box-sizing: border-box;
-  transition: height 160ms ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  #jd-form textarea[name="jd"] { transition: none; }
+  transition: none !important;
 }
 
 .audit-list .evidence-item {
@@ -1567,6 +3087,459 @@
     grid-column: 2;
     white-space: normal;
   }
+}
+/* CV ATS Action Bar */
+.cv-ats-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+.cv-ats-hint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ============================================================
+   UI/UX POLISH & DEFECT FIXES (15-IMAGE AUDIT)
+   ============================================================ */
+
+/* 1. Notices: Green for Success, Red for Error (Ảnh 2) */
+.notice.notice-success,
+.notice.green {
+  background: rgba(34, 197, 94, 0.14) !important;
+  border: 1px solid rgba(34, 197, 94, 0.45) !important;
+  color: #86efac !important;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.1);
+}
+.notice.notice-error,
+.notice.red {
+  background: rgba(239, 68, 68, 0.14) !important;
+  border: 1px solid rgba(239, 68, 68, 0.45) !important;
+  color: #fca5a5 !important;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.1);
+}
+.notice .notice-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* 2. Repository List Height Constraint & Modern Pagination (Ảnh 3) */
+.repo-picker .repo-list {
+  max-height: 480px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 4px;
+  margin-bottom: 12px;
+}
+.repo-pagination-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px 4px 4px;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+.repo-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.repo-page-numbers {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.repo-page-numbers .button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  justify-content: center;
+}
+.repo-page-numbers .button.repo-page-active {
+  background: var(--accent, #3b82f6) !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+.repo-page-dots {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 2px;
+}
+.repo-page-jump {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.repo-page-select-styled {
+  background: var(--surface, #1e293b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  color: var(--ink, #f1f5f9);
+  padding: 3px 24px 3px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+/* 3. Roadmap Selects Dark UI/UX (Ảnh 4) */
+.road-pickers-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.road-pickers-row select,
+#road-goal,
+#road-select {
+  background: var(--surface, #1e293b) !important;
+  color: var(--ink, #f1f5f9) !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15)) !important;
+  border-radius: 8px !important;
+  padding: 8px 36px 8px 12px !important;
+  font-size: 13.5px !important;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.road-pickers-row select:hover,
+#road-goal:hover,
+#road-select:hover {
+  border-color: var(--accent, #3b82f6) !important;
+}
+.road-pickers-row select:focus,
+#road-goal:focus,
+#road-select:focus {
+  outline: none;
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 3px var(--accent-dim, rgba(59, 130, 246, 0.25)) !important;
+}
+.road-pickers-row select option,
+#road-goal option,
+#road-select option {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  padding: 8px 12px;
+}
+
+/* 4. Milestone Evidence Submission Form (Ảnh 5) */
+.road-evidence-form {
+  background: var(--surface, #18181b) !important;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12)) !important;
+  border-radius: 12px !important;
+  padding: 18px 20px !important;
+  margin-top: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.road-evidence-form h4 {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.road-evidence-form .field-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+.road-evidence-form input[name="evidence_url"] {
+  flex: 2 1 240px;
+  background: rgba(15, 23, 42, 0.6) !important;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.15)) !important;
+  border-radius: 8px !important;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.road-evidence-form input[name="evidence_note"] {
+  flex: 1 1 140px;
+  background: rgba(15, 23, 42, 0.6) !important;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.15)) !important;
+  border-radius: 8px !important;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.road-evidence-form button[type="submit"] {
+  padding: 9px 16px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* 5. Dashboard Analyzed Repos Chips & Modal Footer (Ảnh 13) */
+.dashboard-analyzed-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, rgba(255, 255, 255, 0.08));
+}
+.analyzed-chips-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.analyzed-chips-list {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.repo-chip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.evidence-action-row.modal-action-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+
+/* 6. Sidebar User Profile Scaling & Ellipsis (Ảnh 14) */
+.sidebar-foot {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  margin-top: auto !important;
+  padding: 14px 10px 10px 10px !important;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08)) !important;
+  overflow: hidden !important;
+}
+.sidebar-foot .demo-profile {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+}
+.sidebar-foot .demo-profile .profile-avatar {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  border-radius: 50% !important;
+  background: var(--accent, #3b82f6) !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+}
+.sidebar-foot .demo-profile > div {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+.sidebar-foot .demo-profile strong {
+  display: block !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.sidebar-foot .demo-profile small {
+  display: block !important;
+  font-size: 11px !important;
+  color: var(--muted) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.sidebar-foot .button[data-act="logout"] {
+  width: 100% !important;
+  justify-content: flex-start !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  color: var(--muted) !important;
+  border-radius: 6px !important;
+}
+.sidebar-foot .button[data-act="logout"]:hover {
+  color: #fca5a5 !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+/* 7. Toast Notification Modern Bottom-Right Position & 3s Countdown Bar (Ảnh 14) */
+.toast {
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  left: auto !important;
+  z-index: 9999 !important;
+  max-width: min(420px, calc(100vw - 48px)) !important;
+  padding: 12px 18px 16px 18px !important;
+  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.4)) !important;
+  border-radius: 10px !important;
+  background: var(--surface, #1e293b) !important;
+  color: var(--ink, #f8fafc) !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.2) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  overflow: hidden !important;
+  animation: toastSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: default;
+}
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+.toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--accent, #3b82f6);
+  width: 100%;
+  border-radius: 0 0 10px 10px;
+}
+
+/* 8. Crisp Vietnamese Typography on A4 Canvas (Ảnh 15) */
+.cv-paper {
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+}
+.cv-paper[data-template="reference"] {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+.cv-paper[data-template="plain"] {
+  font-family: "Merriweather", "Times New Roman", "Times", Georgia, serif !important;
+}
+
+/* 9. AI Action Proposal Card Redesign (Ảnh 1) */
+.chat-action-card {
+  margin: 12px 0 6px 0;
+  padding: 14px 16px;
+  background: var(--surface, #18181b);
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-action-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-action-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent, #3b82f6);
+}
+.chat-action-target-pill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent, #3b82f6);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.chat-action-card-body h4 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 4px 0;
+  line-height: 1.4;
+}
+.chat-action-card-body p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.45;
+}
+.chat-action-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.chat-action-apply-btn {
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-action-dismiss-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.chat-action-tip {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* Missing GitHub scores stay visibly unscored rather than being drawn as zero. */

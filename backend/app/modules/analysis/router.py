@@ -21,8 +21,17 @@ from app.core.time_range import resolve_range
 from app.db.session import get_session
 from app.modules.analysis import service
 from app.modules.analysis.collaboration_router import collaboration_router
+from app.modules.analysis.dashboard_radar import radar_coverage
 from app.modules.analysis.finding_router import router as finding_router
-from app.modules.analysis.models import AnalysisJobEvent, AnalysisReport
+from app.modules.analysis.models import (
+    AnalysisEvidence,
+    AnalysisJobEvent,
+    AnalysisReport,
+    CollaborationAnalysis,
+    CollaborationEvidence,
+    RepositoryVerification,
+    VerificationEvidence,
+)
 from app.modules.analysis.report_window import ReportWindow
 from app.modules.analysis.schemas import (
     EvidenceListResponse,
@@ -358,6 +367,103 @@ def get_dashboard_report(
         return None
     return DashboardReport(
         id=report.id, commit_sha=report.commit_sha, analyzed_at=report.analyzed_at
+    )
+
+
+@repo_router.get("/{repository_id}/analysis/dashboard-radar")
+def get_dashboard_radar(
+    repository_id: int,
+    report_id: Annotated[int, Query(gt=0)],
+    response: Response,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    window: Annotated[ReportWindow, Depends(ReportWindow)],
+) -> dict:
+    """Read observed, report-bound evidence for the current user only."""
+    repo = verify_repository_access(db, repository_id, user)
+    verify_private_repo_consent(repo, None, db=db, user_id=user.id)
+    response.headers["Cache-Control"] = "no-store"
+    report = db.scalar(
+        select(AnalysisReport).where(
+            AnalysisReport.id == report_id,
+            AnalysisReport.repository_id == repository_id,
+            *window.conditions(AnalysisReport.analyzed_at),
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "Analysis report not found")
+    verification_id = db.scalar(
+        select(RepositoryVerification.id)
+        .where(
+            RepositoryVerification.repository_id == repository_id,
+            RepositoryVerification.report_id == report_id,
+            RepositoryVerification.user_id == user.id,
+        )
+        .order_by(
+            RepositoryVerification.verified_at.desc(),
+            RepositoryVerification.id.desc(),
+        )
+        .limit(1)
+    )
+    collaboration_id = db.scalar(
+        select(CollaborationAnalysis.id)
+        .where(
+            CollaborationAnalysis.repository_id == repository_id,
+            CollaborationAnalysis.report_id == report_id,
+            CollaborationAnalysis.user_id == user.id,
+        )
+        .order_by(
+            CollaborationAnalysis.analyzed_at.desc(),
+            CollaborationAnalysis.id.desc(),
+        )
+        .limit(1)
+    )
+    verification = (
+        db.scalars(
+            select(VerificationEvidence)
+            .where(
+                VerificationEvidence.verification_id == verification_id,
+                VerificationEvidence.repository_id == repository_id,
+                VerificationEvidence.user_id == user.id,
+                VerificationEvidence.recorded_at.is_not(None),
+                *window.conditions(VerificationEvidence.recorded_at),
+            )
+            .order_by(VerificationEvidence.id)
+        ).all()
+        if verification_id is not None
+        else []
+    )
+    collaboration = (
+        db.scalars(
+            select(CollaborationEvidence)
+            .where(
+                CollaborationEvidence.analysis_id == collaboration_id,
+                CollaborationEvidence.repository_id == repository_id,
+                CollaborationEvidence.user_id == user.id,
+                CollaborationEvidence.recorded_at.is_not(None),
+                *window.conditions(CollaborationEvidence.recorded_at),
+            )
+            .order_by(CollaborationEvidence.id)
+        ).all()
+        if collaboration_id is not None
+        else []
+    )
+    findings = db.scalars(
+        select(AnalysisEvidence)
+        .where(
+            AnalysisEvidence.report_id == report_id,
+            AnalysisEvidence.repository_id == repository_id,
+            AnalysisEvidence.commit_sha == report.commit_sha,
+            AnalysisEvidence.finding_type.in_(("architecture", "framework")),
+        )
+        .order_by(AnalysisEvidence.id)
+    ).all()
+    return radar_coverage(
+        verification,
+        findings,
+        collaboration,
+        repository_id=repository_id,
+        report_id=report_id,
     )
 
 

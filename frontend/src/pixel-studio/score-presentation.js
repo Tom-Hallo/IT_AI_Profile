@@ -23,3 +23,18 @@ export function reportBackedSkillScore(item) {
   );
   return linked ? value : null;
 }
+
+/** CV insertion must use the same provenance checks as the Dashboard. */
+export function verifiedCVSkills(items = []) {
+  return (Array.isArray(items) ? items : []).filter(item =>
+    reportBackedSkillScore(item) !== null &&
+    Number.isSafeInteger(item.report_id) && item.report_id > 0 &&
+    Number.isSafeInteger(item.repo?.id) && item.repo.id > 0 &&
+    Boolean(item.repo.full_name || item.repo.name) &&
+    typeof item.technology === 'string' && item.technology.length > 0
+  );
+}
+
+export function cvSkillKey(item) {
+  return JSON.stringify([item.repo.id,item.report_id,item.kind,item.technology]);
+}

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -93,6 +94,8 @@ class EditCV(CVText):
 class CVPreview(BaseModel):
     text: str
     receipt: str
+    name: str | None = None
+    role: str | None = None
 
 
 class CVListItem(BaseModel):
@@ -157,8 +160,18 @@ async def preview_cv(
             raise error(415, "Nội dung tệp không khớp định dạng PDF hoặc DOCX.")
         codec = receipt_codec()
         text = await run_in_threadpool(parse_upload, data, media_type)
+        first_lines = [line.strip() for line in text.splitlines() if line.strip()]
+        detected_name = None
+        if first_lines and len(first_lines[0]) < 80:
+            first = first_lines[0]
+            if not re.match(
+                r"^(Education|Work|Experience|Học vấn|Kinh nghiệm|CV|Bản nháp|Tóm tắt)",
+                first,
+                re.IGNORECASE,
+            ):
+                detected_name = first
         receipt = codec.encrypt(f"{user.id}:{uuid4().hex}".encode()).decode()
-        return CVPreview(text=text, receipt=receipt)
+        return CVPreview(text=text, receipt=receipt, name=detected_name)
     finally:
         UPLOAD_SLOTS.release()
 
