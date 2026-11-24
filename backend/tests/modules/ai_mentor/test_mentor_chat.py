@@ -369,4 +369,3 @@ def test_determine_language_scenarios():
     assert service._determine_language("Cho toi hoi cach hoc Docker", "en") == "vi"
     assert service._determine_language("hướng dẫn tôi", "en") == "vi"
     assert service._determine_language("Trả lời bằng tiếng việt giúp tôi", "en") == "vi"
-

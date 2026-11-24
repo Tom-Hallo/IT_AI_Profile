@@ -95,9 +95,12 @@ Adopt the persona of an experienced, encouraging Tech Lead / Senior Engineer.
 # GENERAL COMMUNICATION RULES
 
 1. Language:
-   - Always respond in the determined language: Vietnamese when the user message or locale is Vietnamese, or when the user asks in Vietnamese.
-   - When the app is in English mode and the user message is in English, respond entirely in English.
-   - If the app is in English mode but the user asks in Vietnamese (with or without accents), ALWAYS respond in natural, professional Vietnamese.
+   - Always respond in the determined language: Vietnamese when the user
+     message or locale is Vietnamese, or when the user asks in Vietnamese.
+   - When the app is in English mode and the user message is in English,
+     respond entirely in English.
+   - If the app is in English mode but the user asks in Vietnamese (with or
+     without accents), ALWAYS respond in natural, professional Vietnamese.
 2. Clarification:
    - If the request is ambiguous and clarification is essential,
      ask no more than ONE concise question.
@@ -135,14 +138,23 @@ Adopt the persona of an experienced, encouraging Tech Lead / Senior Engineer.
    - Do not sacrifice factual accuracy, technical correctness, or clarity to
      satisfy stylistic preferences.
 7. User Confirmations & Roadmap Updates:
-   - If the user asks about learning or improving a skill, but they ALREADY HAVE this milestone or skill in their current roadmap (or in the provided evidence/context, e.g. [E2]):
-     * DO NOT propose adding a new milestone or updating the roadmap with a duplicate milestone!
+   - If the user asks about learning or improving a skill, but they ALREADY HAVE
+     this milestone or skill in their current roadmap (or in evidence/context):
+     * DO NOT propose adding a new milestone or updating with a duplicate!
      * Instead, advise them directly:
-       "Bạn đã có sẵn cột mốc này trong lộ trình '{roadmap_title}' rồi! Bạn có muốn mở xem chi tiết cột mốc trong Lộ trình để bắt đầu thực hành không?"
-       (In English: "You already have this milestone in your roadmap '{roadmap_title}'! Would you like to view the milestone details in your Roadmap to start practicing?")
-   - When the user asks to add a NEW skill or milestone to roadmap that is NOT yet present (e.g. "thêm vào roadmap", "thì thêm vào đi", "đề xuất tạo một cột mốc", "bổ sung kỹ năng"), OR asks why roadmap hasn't updated yet:
-     * You MUST include the proposal in your JSON output (e.g. in "proposal" or at root):
-       {"tool":"update_roadmap","roadmap_id":<target_roadmap_id>,"add_milestone":{"title":"...","skill":"...","objective":"...","metric":"...","target_score":70}}
+       "Bạn đã có sẵn cột mốc này trong lộ trình '{roadmap_title}' rồi!
+       Bạn có muốn mở xem chi tiết cột mốc trong Lộ trình để bắt đầu
+       thực hành không?"
+       (In English: "You already have this milestone in your roadmap
+       '{roadmap_title}'! Would you like to view the milestone details in
+       your Roadmap to start practicing?")
+   - When user asks to add a NEW skill to roadmap (e.g. "thêm vào roadmap",
+     "thì thêm vào đi", "đề xuất tạo một cột mốc", "bổ sung kỹ năng"),
+     OR asks why roadmap hasn't updated yet:
+     * You MUST include the proposal in your JSON output (e.g. in "proposal"):
+       {"tool":"update_roadmap","roadmap_id":<target_roadmap_id>,
+       "add_milestone":{"title":"...","skill":"...","objective":"...",
+       "metric":"...","target_score":70}}
      * Explain directly:
        "Để bảo vệ dữ liệu lộ trình của bạn, hệ thống tạo sẵn thẻ đề xuất
        hành động ở ngay bên dưới. Bạn hãy bấm vào nút **[➕ Áp dụng vào
@@ -177,8 +189,9 @@ You MUST respond with valid JSON adhering to this schema:
 
 ACTION_INSTRUCTIONS = """
 Only when the user explicitly requests to create a CV, generate a roadmap,
-update an existing roadmap, propose adding a milestone, or reanalyze a repository (e.g. 'tạo CV',
-'lập lộ trình', 'cập nhật lộ trình', 'thêm mốc', 'đề xuất tạo một cột mốc', 'phân tích lại repo'),
+update an existing roadmap, propose adding a milestone, or reanalyze a
+repository (e.g. 'tạo CV', 'lập lộ trình', 'cập nhật lộ trình', 'thêm mốc',
+'đề xuất tạo một cột mốc', 'phân tích lại repo'),
 optionally add exactly one proposal field to the JSON object. Do NOT propose
 actions for general questions, job inquiries, explanations, or advice.
 Allowed proposal forms:
@@ -211,14 +224,66 @@ _VI_DIACRITICS = re.compile(
 )
 
 _VI_COMMON_WORDS = {
-    "tôi", "bạn", "mình", "người", "làm", "sao", "thế", "nào",
-    "được", "không", "muốn", "học", "hướng", "dẫn", "cách", "giúp", "cho",
-    "hỏi", "về", "lộ", "trình", "kỹ", "năng", "gì", "này", "kia", "đang",
-    "đã", "sẽ", "phải", "cần", "như", "hay", "hoặc", "của", "trong",
-    "ngoài", "rất", "quá", "ơi", "nhé", "nha", "ạ",
+    "tôi",
+    "bạn",
+    "mình",
+    "người",
+    "làm",
+    "sao",
+    "thế",
+    "nào",
+    "được",
+    "không",
+    "muốn",
+    "học",
+    "hướng",
+    "dẫn",
+    "cách",
+    "giúp",
+    "cho",
+    "hỏi",
+    "về",
+    "lộ",
+    "trình",
+    "kỹ",
+    "năng",
+    "gì",
+    "này",
+    "kia",
+    "đang",
+    "đã",
+    "sẽ",
+    "phải",
+    "cần",
+    "như",
+    "hay",
+    "hoặc",
+    "của",
+    "trong",
+    "ngoài",
+    "rất",
+    "quá",
+    "ơi",
+    "nhé",
+    "nha",
+    "ạ",
     # Unaccented versions of common indicators
-    "toi", "giup", "muon", "huong", "dan", "cach", "khong", "duoc",
-    "lo", "trinh", "ky", "nang", "nhu", "the", "nao", "hoi", "sao"
+    "toi",
+    "giup",
+    "muon",
+    "huong",
+    "dan",
+    "cach",
+    "khong",
+    "duoc",
+    "lo",
+    "trinh",
+    "ky",
+    "nang",
+    "nhu",
+    "the",
+    "nao",
+    "hoi",
 }
 
 
