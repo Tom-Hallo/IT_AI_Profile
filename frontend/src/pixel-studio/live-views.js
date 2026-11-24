@@ -26,55 +26,112 @@ function feedback(data, ...keys) {
       : data.busy.has(key) ? '<p class="ita-loading-status" role="status"><span class="ita-loading-spinner" aria-hidden="true"></span><span>' + escape(copy('Đang tải…', 'Loading…')) + '</span></p>' : '').join('');
 }
 
-function formatEvidenceItem(item, data) {
-  const sha = item.commit_sha || (typeof item.evidence_id === 'string' && item.evidence_id.startsWith('verification-commit:') ? item.evidence_id.split(':').pop() : '');
-  const repoName = item.repository_full_name || item.repository_name || (data?.repos?.find(r => r.id === item.repository_id)?.full_name) || (data?.repos?.find(r => r.id === item.repository_id)?.name) || '';
-  const commitUrl = item.commit_url || (repoName && sha ? ('https://github.com/' + repoName + '/commit/' + sha) : '');
+function formatEvidenceItem(item, data, contextRepoName = '') {
+  if (!item) return '';
 
-  const repoBadge = repoName
-    ? '<span class="evidence-repo" title="' + escape(copy('Kho lưu trữ GitHub', 'GitHub repository')) + '">' + icon('branch') + ' <strong>' + escape(repoName) + '</strong></span>'
-    : '';
+  const repoName = item.repository_full_name
+    || item.repository_name
+    || contextRepoName
+    || (data?.repos?.find(r => r.id === item.repository_id)?.full_name)
+    || (data?.repos?.find(r => r.id === item.repository_id)?.name)
+    || '';
 
-  const fileBadge = item.file_path
-    ? '<span class="evidence-file" title="' + escape(copy('File mã nguồn', 'Source file')) + '">' + icon('file') + ' ' + escape(item.file_path) + '</span>'
-    : '';
+  const evType = item.evidence_type
+    || (item.check_name ? 'check_run' : item.pr_number ? 'pull_request' : (item.commit_sha || (typeof item.target_identifier === 'string' && item.target_identifier.length >= 7 && !item.target_identifier.includes(' ') && !item.target_identifier.includes('#'))) ? 'commit' : 'general');
 
-  let commitBadge = '';
-  if (sha) {
-    const shortSha = sha.slice(0, 7);
+  // Trích xuất SHA commit nếu có
+  const rawSha = item.commit_sha
+    || (typeof item.target_identifier === 'string' && /^[0-9a-f]{7,40}$/i.test(item.target_identifier) ? item.target_identifier : '')
+    || (typeof item.evidence_id === 'string' && item.evidence_id.startsWith('verification-commit:') ? item.evidence_id.split(':').pop() : '');
+  const shortSha = rawSha ? rawSha.slice(0, 7) : '';
+  const commitUrl = item.commit_url || item.html_url || (repoName && rawSha ? ('https://github.com/' + repoName + '/commit/' + rawSha) : '');
+
+  // Trích xuất PR info
+  const prNum = Number(item.pr_number) || (typeof item.target_identifier === 'string' && item.target_identifier.startsWith('PR #') ? Number(item.target_identifier.replace('PR #', '')) : null);
+  const prUrl = item.html_url || (repoName && prNum ? ('https://github.com/' + repoName + '/pull/' + prNum) : '');
+  const prState = (item.pr_state || item.state || '').toLowerCase();
+  const prMerged = item.pr_merged != null ? item.pr_merged : prState === 'merged';
+
+  let typeBadge = '';
+  let mainTitle = '';
+  const subInfo = [];
+  let actionLink = '';
+
+  if (evType === 'pull_request' || (prNum && !item.check_name && evType !== 'review')) {
+    typeBadge = '<span class="ev-badge pr">🔀 PR #' + (prNum || '') + '</span>';
+    mainTitle = item.title_or_message || item.rationale || ('Pull Request #' + prNum);
+    if (prMerged) subInfo.push('<span class="badge green mini">✓ ' + copy('Đã merge', 'Merged') + '</span>');
+    else if (prState === 'open') subInfo.push('<span class="badge blue mini">● ' + copy('Đang mở', 'Open') + '</span>');
+    else if (prState) subInfo.push('<span class="badge grey mini">✕ ' + copy('Đã đóng', 'Closed') + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.recorded_at) subInfo.push('<span class="ev-date">' + formattedDate(item.recorded_at) + '</span>');
+    if (prUrl) {
+      actionLink = '<a href="' + escape(prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Mở PR', 'Open PR') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else if (evType === 'review') {
+    const revState = (item.state || '').toUpperCase();
+    typeBadge = '<span class="ev-badge review">💬 Review</span>';
+    mainTitle = item.target_identifier || (prNum ? 'Review PR #' + prNum : 'Review');
+    if (revState === 'APPROVED') subInfo.push('<span class="badge green mini">✓ ' + copy('Phê duyệt (APPROVED)', 'Approved') + '</span>');
+    else if (revState === 'CHANGES_REQUESTED') subInfo.push('<span class="badge amber mini">⚠ ' + copy('Yêu cầu sửa đổi', 'Changes Requested') + '</span>');
+    else if (revState === 'COMMENTED') subInfo.push('<span class="badge blue mini">💬 ' + copy('Nhận xét', 'Commented') + '</span>');
+    else if (revState) subInfo.push('<span class="badge grey mini">' + escape(revState) + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.title_or_message) subInfo.push('<span class="ev-quote">"' + escape(item.title_or_message.slice(0, 100)) + '"</span>');
+    if (item.html_url || prUrl) {
+      actionLink = '<a href="' + escape(item.html_url || prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Mở review', 'Open review') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else if (evType === 'check_run' || evType === 'commit_status') {
+    const checkName = item.check_name || item.target_identifier || 'CI Check';
+    const conclusion = (item.conclusion || item.state || '').toLowerCase();
+    typeBadge = '<span class="ev-badge ci">⚡ CI Check</span>';
+    mainTitle = escape(checkName);
+    if (conclusion === 'success') subInfo.push('<span class="badge green mini">✓ ' + copy('Thành công', 'Success') + '</span>');
+    else if (conclusion === 'failure' || conclusion === 'error') subInfo.push('<span class="badge red mini">✕ ' + copy('Thất bại', 'Failed') + '</span>');
+    else if (conclusion === 'pending' || conclusion === 'in_progress') subInfo.push('<span class="badge amber mini">● ' + copy('Đang chạy', 'Running') + '</span>');
+    else if (conclusion) subInfo.push('<span class="badge grey mini">' + escape(conclusion) + '</span>');
+    if (shortSha) subInfo.push('<span class="ev-commit-ref">Commit: <code>' + escape(shortSha) + '</code></span>');
+    if (item.title_or_message && item.title_or_message !== checkName) subInfo.push('<span class="ev-quote">' + escape(item.title_or_message.slice(0, 100)) + '</span>');
+    if (item.html_url) {
+      actionLink = '<a href="' + escape(item.html_url) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Xem CI', 'View CI') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else {
+    // Commit hoặc File mã nguồn
+    const fileBadge = item.file_path ? '<span class="evidence-file">' + icon('file') + ' ' + escape(item.file_path) + '</span>' : '';
+    typeBadge = '<span class="ev-badge commit">💻 Commit</span>';
+    mainTitle = item.title_or_message || item.rationale || fileBadge || (shortSha ? ('Commit <code>' + escape(shortSha) + '</code>') : copy('Minh chứng đóng góp', 'Contribution Evidence'));
+    if (item.verification_status === 'verified') subInfo.push('<span class="badge green mini">✓ ' + copy('Đã xác minh', 'Verified') + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.additions != null || item.deletions != null) {
+      subInfo.push('<span class="ev-churn"><span class="add">+' + (item.additions || 0).toLocaleString() + '</span> <span class="del">−' + (item.deletions || 0).toLocaleString() + '</span></span>');
+    }
+    if (item.recorded_at) subInfo.push('<span class="ev-date">' + formattedDate(item.recorded_at) + '</span>');
     if (commitUrl) {
-      commitBadge = '<a href="' + escape(commitUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link" title="'
-        + escape(copy('Mở commit ' + sha + ' trên GitHub', 'Open commit ' + sha + ' on GitHub')) + '">'
-        + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code> <span class="ext-icon" aria-hidden="true">↗</span></a>';
-    } else {
-      commitBadge = '<span class="evidence-commit-label">' + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code></span>';
+      actionLink = '<a href="' + escape(commitUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link" title="'
+        + escape(copy('Mở commit trên GitHub', 'Open commit on GitHub')) + '">'
+        + (shortSha ? '<code>' + escape(shortSha) + '</code> ' : '') + '<span class="ext-icon" aria-hidden="true">↗</span></a>';
+    } else if (shortSha) {
+      actionLink = '<span class="evidence-commit-label"><code>' + escape(shortSha) + '</code></span>';
     }
   }
 
-  const prNumber = Number(item.pr_number);
-  const safeRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoName);
-  const prUrl = safeRepo && Number.isSafeInteger(prNumber) && prNumber > 0
-    ? 'https://github.com/' + repoName + '/pull/' + prNumber : '';
-  const prBadge = prUrl
-    ? '<a href="' + escape(prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
-      + icon('branch') + ' PR #' + prNumber + ' <span class="ext-icon" aria-hidden="true">↗</span></a>'
-    : '';
-
-  const label = item.label || item.target_identifier || item.evidence_id || '';
-  const generalBadge = (!repoBadge && !fileBadge && !commitBadge && label)
-    ? '<span class="evidence-general">' + icon('check') + ' ' + escape(label) + '</span>'
-    : '';
-
-  const infoRow = [repoBadge, fileBadge].filter(Boolean).join(' · ');
-
-  return '<li class="evidence-item">'
-    + '<div class="evidence-info">' + (infoRow || generalBadge || '<span class="evidence-general">' + icon('check') + ' ' + escape(copy('Minh chứng mã nguồn GitHub', 'GitHub source evidence')) + '</span>') + '</div>'
-    + (commitBadge || prBadge ? '<div class="evidence-action">' + (commitBadge || prBadge) + '</div>' : '')
+  return '<li class="evidence-item enhanced">'
+    + '<div class="evidence-main">'
+    + '<div class="evidence-head">' + typeBadge + '<strong class="evidence-title">' + mainTitle + '</strong></div>'
+    + (subInfo.length ? '<div class="evidence-sub">' + subInfo.join(' · ') + '</div>' : '')
+    + '</div>'
+    + (actionLink ? '<div class="evidence-action">' + actionLink + '</div>' : '')
     + '</li>';
 }
 
-function refs(items = [], data = null) {
-  return items.length ? '<ul class="audit-list evidence-list">' + items.slice(0, 20).map(item => formatEvidenceItem(item, data)).join('') + '</ul>' : '';
+function refs(items = [], data = null, contextRepoName = '') {
+  if (!items || !items.length) return '';
+  return '<ul class="audit-list evidence-list">'
+    + items.slice(0, 30).map(item => formatEvidenceItem(item, data, contextRepoName)).join('')
+    + '</ul>';
 }
 
 export function orderedTrackingMilestones(data) {
@@ -453,20 +510,86 @@ function reportContent(report, info, tab, data) {
     const ownershipAttr = isOwnershipBusy ? 'disabled aria-busy="true"' : '';
 
     const v = info.verification;
-    return (v ? details([
-      ['Trạng thái xác minh', escape(v.verification_status)],
-      ['Quyền sở hữu', escape(v.ownership_status)],
-      ['Loại nguồn gốc', escape(v.provenance_type) + (v.is_fork ? ' (Fork từ ' + escape(v.parent_repo_name || 'gốc') + ')' : ' (Repository gốc)')],
-      ['Commits đã xác minh', escape(v.verified_commits_count)],
-      ['Commits chưa xác minh', escape(v.unverified_commits_count ?? 0)],
-      ['PR đã xác minh', escape(v.verified_prs_count)],
-      ['PR chưa xác minh', escape(v.unverified_prs_count ?? 0)],
-      ['Dòng thêm (Additions)', '+' + escape(v.verified_additions ?? 0)],
-      ['Dòng xóa (Deletions)', '−' + escape(v.verified_deletions ?? 0)],
-      ['Cờ chống thổi phồng', v.anti_inflation_flag ? copy('Đã phát hiện bất thường', 'Inflation detected') : copy('Bình thường', 'Normal')],
-      ['Độ tin cậy', escape(v.confidence ?? '—')]
-    ]) + refs(v.evidence) : muted(copy('Chưa có kết quả xác minh.', 'No verification yet.')))
-      + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr);
+    if (!v) {
+      return muted(copy('Chưa có kết quả xác minh.', 'No verification yet.'))
+        + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr);
+    }
+
+    const repoFullName = v.repository_full_name
+      || report?.repository_full_name
+      || (data?.repos?.find(r => r.id === (v.repository_id || report?.repository_id))?.full_name)
+      || '';
+
+    const totalCommits = (v.verified_commits_count || 0) + (v.unverified_commits_count || 0);
+    const commitPct = totalCommits > 0 ? Math.round(((v.verified_commits_count || 0) / totalCommits) * 100) : 0;
+    const totalPRs = (v.verified_prs_count || 0) + (v.unverified_prs_count || 0);
+    const prPct = totalPRs > 0 ? Math.round(((v.verified_prs_count || 0) / totalPRs) * 100) : 0;
+
+    const statusBadge = v.verification_status === 'verified'
+      ? '<span class="badge green bold"><span class="badge-dot"></span> ' + copy('Đã xác minh năng lực', 'Verified Contributor') + '</span>'
+      : v.verification_status === 'unverified'
+        ? '<span class="badge amber bold">' + copy('Chưa xác minh', 'Unverified') + '</span>'
+        : '<span class="badge grey bold">' + copy('Chưa xác định', 'Unknown') + '</span>';
+
+    const ownerBadge = (v.ownership_status === 'owner' || v.ownership_status === 'fork_owner')
+      ? '<span class="badge purple">👑 ' + copy('Chủ sở hữu (Owner)', 'Owner') + '</span>'
+      : '<span class="badge blue">🤝 ' + copy('Cộng tác viên (Collaborator)', 'Collaborator') + '</span>';
+
+    const provBadge = v.is_fork
+      ? '<span class="badge amber">🍴 ' + copy('Fork từ ', 'Forked from ') + escape(v.parent_repo_name || 'gốc') + '</span>'
+      : '<span class="badge grey">📦 ' + copy('Repository gốc', 'Original Repository') + '</span>';
+
+    const confBadge = '<span class="badge info">🎯 ' + copy('Độ tin cậy: ', 'Confidence: ')
+      + (v.confidence === 'high' ? copy('Cao', 'High') : copy('Vừa', 'Medium')) + '</span>';
+
+    const inflationBadge = v.anti_inflation_flag
+      ? '<span class="badge red">⚠ ' + copy('Cờ cảnh báo thổi phồng', 'Inflation detected') + '</span>'
+      : '<span class="badge green">✓ ' + copy('Chỉ số chuẩn', 'Anti-inflation Normal') + '</span>';
+
+    const headerBar = '<div class="ownership-header-bar">'
+      + '<div class="ownership-badges">' + statusBadge + ownerBadge + provBadge + confBadge + inflationBadge + '</div>'
+      + '</div>';
+
+    const cardsGrid = '<div class="ownership-kpi-grid">'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">💻</span> <span class="kpi-title">' + copy('Commits đóng góp', 'Contributed Commits') + '</span></div>'
+      + '<div class="kpi-num">' + (v.verified_commits_count || 0) + ' <small>/ ' + totalCommits + ' (' + commitPct + '%)</small></div>'
+      + '<div class="kpi-bar"><div class="kpi-bar-fill" style="width:' + commitPct + '%"></div></div>'
+      + '<div class="kpi-sub">' + (v.unverified_commits_count ? copy(v.unverified_commits_count + ' commits chưa xác minh tác giả', v.unverified_commits_count + ' unverified commits') : copy('100% commits đã được xác minh', '100% commits verified')) + '</div>'
+      + '</div>'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">🔀</span> <span class="kpi-title">' + copy('Pull Requests', 'Pull Requests') + '</span></div>'
+      + '<div class="kpi-num">' + (v.verified_prs_count || 0) + ' <small>/ ' + totalPRs + ' (' + prPct + '%)</small></div>'
+      + '<div class="kpi-bar"><div class="kpi-bar-fill green" style="width:' + prPct + '%"></div></div>'
+      + '<div class="kpi-sub">' + copy(v.verified_prs_count + ' PR cá nhân đã xác minh', v.verified_prs_count + ' personal verified PRs') + '</div>'
+      + '</div>'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">📊</span> <span class="kpi-title">' + copy('Khối lượng mã nguồn (Code Churn)', 'Code Volume (Churn)') + '</span></div>'
+      + '<div class="kpi-churn-row">'
+      + '<span class="churn-add">+' + (v.verified_additions || 0).toLocaleString() + ' <small>' + copy('dòng thêm', 'additions') + '</small></span>'
+      + '<span class="churn-del">−' + (v.verified_deletions || 0).toLocaleString() + ' <small>' + copy('dòng xóa', 'deletions') + '</small></span>'
+      + '</div>'
+      + '<div class="kpi-sub">' + copy('Đóng góp trực tiếp vào nhánh chính', 'Direct contributions to primary branch') + '</div>'
+      + '</div>'
+      + '</div>';
+
+    const evidenceSection = v.evidence?.length ? (
+      '<div class="evidence-section">'
+      + '<div class="evidence-section-header">'
+      + '<h4>' + icon('award') + ' ' + copy('Minh chứng xác minh đóng góp', 'Verified Contribution Evidence')
+      + ' <span class="ev-count">(' + v.evidence.length + ')</span></h4>'
+      + '</div>'
+      + refs(v.evidence, data, repoFullName)
+      + '</div>'
+    ) : '';
+
+    return '<div class="ownership-dashboard">'
+      + headerBar
+      + cardsGrid
+      + evidenceSection
+      + '<div class="ownership-actions">'
+      + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr)
+      + '</div></div>';
   }
   if (tab === 'collab') {
     const isCollabBusy = data?.repoTabBusy === 'collab';
@@ -484,48 +607,99 @@ function reportContent(report, info, tab, data) {
       return muted(copy('Chưa có kết quả PR, Review và CI.', 'No PR, review or CI results yet.'))
         + namedButton(collabLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr);
     }
-    const prDetails = details([
-      ['Tổng PR phân tích', escape(c.total_prs_analyzed)],
-      ['PR đã merge', escape(c.merged_prs_count)],
-      ['PR đang mở', escape(c.open_prs_count)],
-      ['PR đã đóng (chưa merge)', escape(c.closed_unmerged_prs_count)],
-      ['PR do user tạo', escape(c.user_prs_count)],
-      ['PR từ bên ngoài', escape(c.external_prs_count)]
-    ]);
-    const reviewDetails = details([
-      ['Tổng review phân tích', escape(c.total_reviews_analyzed)],
-      ['Review đã approve', escape(c.approved_reviews_count)],
-      ['Review yêu cầu sửa đổi', escape(c.changes_requested_count)],
-      ['Review đóng góp nhận xét', escape(c.commented_reviews_count)],
-      ['Review bị bác bỏ', escape(c.dismissed_reviews_count)],
-      ['Review do user thực hiện', escape(c.user_reviews_conducted_count)],
-      ['Review user nhận được', escape(c.user_reviews_received_count)]
-    ]);
-    const ciDetails = details([
-      ['Tổng kiểm tra CI', escape(c.total_checks_analyzed)],
-      ['CI thành công', escape(c.successful_checks_count)],
-      ['CI thất bại', escape(c.failed_checks_count)],
-      ['CI đang chạy/chờ', escape(c.pending_checks_count)],
-      ['CI trạng thái khác', escape(c.other_checks_count)],
-      ['Chu kỳ giải quyết vấn đề', escape(c.problem_solving_sequences_count)]
-    ]);
+    const repoFullName = c.repository_full_name
+      || report?.repository_full_name
+      || (data?.repos?.find(r => r.id === (c.repository_id || report?.repository_id))?.full_name)
+      || '';
+
+    const prCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">🔀</span> ' + copy('Pull Requests', 'Pull Requests') + ' <strong class="collab-total">' + (c.total_prs_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + (c.merged_prs_count || 0) + '</span><span class="chip-label">' + copy('Đã merge', 'Merged') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + (c.open_prs_count || 0) + '</span><span class="chip-label">' + copy('Đang mở', 'Open') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + (c.closed_unmerged_prs_count || 0) + '</span><span class="chip-label">' + copy('Đã đóng', 'Closed') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>👤 ' + copy('Cá nhân:', 'Author:') + ' <strong>' + (c.user_prs_count || 0) + '</strong></span> · '
+      + '<span>👥 ' + copy('Cộng sự / Ngoài:', 'External:') + ' <strong>' + (c.external_prs_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const reviewCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">💬</span> ' + copy('Code Reviews', 'Code Reviews') + ' <strong class="collab-total">' + (c.total_reviews_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + (c.approved_reviews_count || 0) + '</span><span class="chip-label">' + copy('Phê duyệt', 'Approved') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + (c.changes_requested_count || 0) + '</span><span class="chip-label">' + copy('Yêu cầu sửa', 'Changes') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + (c.commented_reviews_count || 0) + '</span><span class="chip-label">' + copy('Nhận xét', 'Comments') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + (c.dismissed_reviews_count || 0) + '</span><span class="chip-label">' + copy('Bãi miễn', 'Dismissed') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>🔍 ' + copy('Bạn thực hiện:', 'Conducted:') + ' <strong>' + (c.user_reviews_conducted_count || 0) + '</strong></span> · '
+      + '<span>📥 ' + copy('Bạn nhận được:', 'Received:') + ' <strong>' + (c.user_reviews_received_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const ciSuccessPct = c.total_checks_analyzed > 0 ? Math.round(((c.successful_checks_count || 0) / c.total_checks_analyzed) * 100) : 0;
+    const ciCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">⚡</span> ' + copy('CI Checks & Tự động hoá', 'CI Checks & Automation') + ' <strong class="collab-total">' + (c.total_checks_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + (c.successful_checks_count || 0) + '</span><span class="chip-label">' + copy('Thành công (' + ciSuccessPct + '%)', 'Passed (' + ciSuccessPct + '%)') + '</span></div>'
+      + '<div class="collab-chip red"><span class="chip-val">' + (c.failed_checks_count || 0) + '</span><span class="chip-label">' + copy('Thất bại', 'Failed') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + (c.pending_checks_count || 0) + '</span><span class="chip-label">' + copy('Đang chờ', 'Pending') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>🔄 ' + copy('Chu kỳ giải quyết sự cố:', 'Problem-solving cycles:') + ' <strong>' + (c.problem_solving_sequences_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const collabGrid = '<div class="collab-dashboard-grid">' + prCard + reviewCard + ciCard + '</div>';
+
     const seqs = (c.problem_solving_sequences ?? []).map(s =>
-      '<div class="observation-card"><strong>' + icon('pulse') + ' ' + escape(s.explanation) + '</strong>'
-      + '<small>' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + (s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' phút' : 'N/A') + '</small></div>'
+      '<div class="observation-card seq-card">'
+      + '<div class="obs-card-header">'
+      + '<span class="obs-badge seq"><span class="obs-icon">⚡</span> ' + copy('Chuỗi giải quyết sự cố', 'Problem Solving Sequence') + '</span>'
+      + '<span class="obs-duration">' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + (s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' ' + copy('phút', 'min') : 'N/A') + '</span>'
+      + '</div>'
+      + '<p class="obs-desc">' + escape(s.explanation) + '</p>'
+      + '</div>'
     ).join('');
-    const obs = (c.collaboration_observations ?? []).map(o =>
-      '<div class="observation-card"><strong>' + icon('check') + ' ' + escape(o.title) + '</strong><p>' + escape(o.description) + '</p></div>'
-    ).join('');
+
+    const obs = (c.collaboration_observations ?? []).map(o => {
+      const categoryIcon = o.category === 'ci_check' ? '⚡' : o.category === 'review' ? '💬' : o.category === 'problem_solving' ? '💡' : '🔀';
+      const categoryLabel = o.category === 'ci_check' ? copy('CI/CD & Fail-Fast', 'CI/CD & Fail-Fast')
+        : o.category === 'review' ? copy('Phản biện mã nguồn', 'Code Review')
+        : o.category === 'problem_solving' ? copy('Giải quyết sự cố', 'Problem Solving')
+        : copy('Quy trình PR', 'Pull Request Workflow');
+      const catClass = o.category ? 'cat-' + o.category : 'cat-general';
+      return '<div class="observation-card ' + catClass + '">'
+        + '<div class="obs-card-header">'
+        + '<span class="obs-badge ' + catClass + '"><span class="obs-icon">' + categoryIcon + '</span> ' + escape(categoryLabel) + '</span>'
+        + '</div>'
+        + '<h5 class="obs-title">' + escape(o.title) + '</h5>'
+        + '<p class="obs-desc">' + escape(o.description) + '</p>'
+        + '</div>';
+    }).join('');
+
+    const evidenceSection = c.evidence?.length ? (
+      '<div class="evidence-section">'
+      + '<div class="evidence-section-header">'
+      + '<h4>' + icon('award') + ' ' + copy('Minh chứng cộng tác chi tiết', 'Detailed Collaboration Evidence')
+      + ' <span class="ev-count">(' + c.evidence.length + ')</span></h4>'
+      + '</div>'
+      + refs(c.evidence, data, repoFullName)
+      + '</div>'
+    ) : '';
+
     return '<div class="collab-breakdown">'
-      + '<h4>' + copy('Phân tích Pull Requests', 'Pull Request Metrics') + '</h4>' + prDetails
-      + '<h4>' + copy('Phân tích Code Reviews', 'Code Review Metrics') + '</h4>' + reviewDetails
-      + '<h4>' + copy('Phân tích CI Checks & Tự động hóa', 'CI Checks & Automation') + '</h4>' + ciDetails
-      + (seqs ? '<h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs : '')
-      + (obs ? '<h4>' + copy('Quan sát cộng tác (Observations)', 'Collaboration Observations') + '</h4>' + obs : '')
+      + collabGrid
+      + (seqs ? '<div class="obs-section"><h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs + '</div>' : '')
+      + (obs ? '<div class="obs-section"><h4>' + copy('Quan sát cộng tác (Observations)', 'Collaboration Observations') + '</h4>' + obs + '</div>' : '')
       + (c.limitations ?? []).map(muted).join('')
       + '</div>'
-      + refs(c.evidence)
-      + namedButton(collabReLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr);
+      + evidenceSection
+      + '<div class="collab-actions">'
+      + namedButton(collabReLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr)
+      + '</div>';
   }
   const list = (title, items, key) => '<h3>' + escape(title) + '</h3>' + tags(items.map(item => item[key]).filter(Boolean));
   const snippet = info.evidence?.find(item => typeof item.matched_content === 'string' && item.matched_content.trim());
@@ -1344,7 +1518,7 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
       }
     }).join('');
 
-    return '<div class="cv-focused-sec-editor cv-struct-container">'
+    return '<div class="cv-focused-sec-editor cv-struct-container cv-section-card">'
       + '<div class="cv-focused-sec-nav-bar">'
       + '<button type="button" class="button quiet small cv-nav-back-btn" data-act="cv-nav-back">'
       + '← ' + escape(copy('Quay lại danh sách mục', 'All Sections'))
@@ -1375,15 +1549,14 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
     + '<div class="cv-sec-nav-container">'
     + structured.sections.map((sec, sIdx) => {
       const secIcon = getSectionIcon(sec.title);
-      return '<div class="cv-struct-section cv-sec-nav-card" data-act="cv-open-sec" data-sec="' + sIdx + '">'
+      return '<div class="cv-struct-section cv-sec-nav-card cv-section-card" data-act="cv-open-sec" data-sec="' + sIdx + '">'
         + '<div class="cv-sec-nav-main">'
         + '<span class="cv-sec-icon">' + secIcon + '</span>'
         + '<div class="cv-sec-nav-text">'
-        + '<strong class="cv-sec-nav-title">' + escape(sec.title || copy('Mục nội dung', 'Section')) + '</strong>'
+        + '<strong class="cv-sec-nav-title" title="' + escape(sec.title || '') + '">' + escape(sec.title || copy('Mục nội dung', 'Section')) + '</strong>'
         + '<span class="cv-sec-nav-meta">' + (sec.entries?.length || 0) + ' ' + copy('mục', 'items') + '</span>'
         + '</div></div>'
         + '<div class="cv-sec-nav-actions">'
-        + '<button type="button" class="button secondary small cv-add-entry-btn" data-act="cv-add-entry" data-sec="' + sIdx + '" title="' + escape(copy('Thêm mục vào phần này', 'Add item')) + '">+ ' + copy('Thêm mục', 'Add item') + '</button>'
         + '<button type="button" class="button quiet small cv-open-sec-btn" data-act="cv-open-sec" data-sec="' + sIdx + '">' + copy('Sửa →', 'Edit →') + '</button>'
         + '<button type="button" class="button quiet small cv-del-sec-btn" data-act="cv-del-section" data-sec="' + sIdx + '" title="' + escape(copy('Xóa phần này khỏi CV', 'Delete section')) + '">✕</button>'
         + '</div></div>';
@@ -1450,8 +1623,9 @@ export function liveCV(state, runtime, data) {
     + btn(icon('bot') + ' ' + escape(copy('Tạo bằng AI', 'AI Generate')), 'cv-generate', 'secondary small', 'title="' + escape(copy('Tạo CV tối ưu theo JD từ dữ kiện thực tế', 'Generate CV matching JD with verified facts')) + '"')
     + '<button type="button" class="button secondary small cv-focus-btn' + (isFocusMode ? ' active' : '') + '" data-act="cv-toggle-focus" title="' + escape(copy('Bật/tắt chế độ tập trung (Esc)', 'Toggle Focus mode (Esc)')) + '">'
     + icon('grid') + ' ' + copy(isFocusMode ? 'Thoát tập trung' : 'Tập trung', isFocusMode ? 'Exit focus' : 'Focus mode') + '</button>'
-    + btn(icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')), 'cv-save-bar', 'primary small cv-save-btn', 'title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '"')
-    + '<button type="button" class="button secondary small cv-print-btn" data-act="cv-print" title="' + escape(copy('In hoặc lưu tệp PDF chuẩn A4', 'Print or export A4 PDF')) + '">'
+    + '<button type="button" class="button primary small cv-save-btn" data-act="cv-save-bar" data-act-alias="cv-save" title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '">'
+    + icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')) + '</button>'
+    + '<button type="button" class="button secondary small cv-print-btn" data-act="cv-print" data-act-alias="cv-export-pdf" title="' + escape(copy('In hoặc lưu tệp PDF chuẩn A4', 'Print or export A4 PDF')) + '">'
     + icon('file') + ' ' + copy('In / Xuất PDF', 'Print / PDF') + '</button>'
     + '<button type="button" class="button secondary small cv-toggle-intel-btn' + (!intelCollapsed ? ' active' : '') + '" data-act="cv-toggle-intel" title="' + escape(copy('Bật/tắt Bảng thiết kế & công cụ', 'Toggle design & tools hub')) + '">'
     + icon('settings') + ' ' + escape(copy(intelCollapsed ? 'Công cụ' : 'Thu gọn', intelCollapsed ? 'Tools' : 'Collapse')) + '</button>'
@@ -1588,16 +1762,16 @@ export function liveCV(state, runtime, data) {
       + '<div class="cv-design-section">'
       + '<h4>' + copy('Chọn mẫu giao diện CV', 'Select Resume Template') + '</h4>'
       + '<div class="cv-template-cards">'
-      + '<div class="cv-tpl-card' + (state.template === 'reference' ? ' selected' : '') + '" data-act="cv-template" data-id="reference">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'reference' ? ' selected' : '') + '" data-act="cv-template" data-id="reference">'
       + '<div class="cv-tpl-badge">★ Recommended</div>'
       + '<strong>' + copy('Theo mẫu (Executive 2 Cột)', 'Executive 2-Column') + '</strong>'
       + '<p>' + copy('Chuẩn Executive quốc tế, chia cột thời gian & công ty tinh gọn, chống tràn trang khi xuất PDF.', 'Modern 2-column layout, clear timeline, prevents page overflow.') + '</p>'
       + '</div>'
-      + '<div class="cv-tpl-card' + (state.template === 'tech' ? ' selected' : '') + '" data-act="cv-template" data-id="tech">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'tech' ? ' selected' : '') + '" data-act="cv-template" data-id="tech">'
       + '<strong>' + copy('Kỹ thuật (Tech Modern)', 'Tech Modern') + '</strong>'
       + '<p>' + copy('Điểm nhấn hiện đại, font sans-serif & monospace dành cho lập trình viên.', 'Modern border accent, mono labels, designed for software engineers.') + '</p>'
       + '</div>'
-      + '<div class="cv-tpl-card' + (state.template === 'plain' ? ' selected' : '') + '" data-act="cv-template" data-id="plain">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'plain' ? ' selected' : '') + '" data-act="cv-template" data-id="plain">'
       + '<strong>' + copy('Tối giản (Classic Plain)', 'Classic Plain') + '</strong>'
       + '<p>' + copy('Phong cách truyền thống, font có chân (Serif), chuẩn mực và trang nhã.', 'Traditional serif typography, clean and elegant.') + '</p>'
       + '</div>'

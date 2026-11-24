@@ -1263,7 +1263,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       render();
       notice(copy(`Đã chèn kỹ năng ${formatSkillName(tech)} vào CV.`, `Inserted skill ${formatSkillName(tech)} into CV.`));
     },
+    'cv-save':() => cvSave(),
     'cv-save-bar':() => cvSave(),
+    'cv-insert-all-skills': async () => actions['cv-insert-github'](),
     'cv-print':() => {
       document.body.classList.add('print-cv');
       window.print();
@@ -1817,6 +1819,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     return false;
   }
 
-  return {data,active,session,loadPublic,actions,forms,change,send,clearChat,loadMentor,
+  return {data,active,session,loadPublic,actions,forms,change,send,clearChat,loadMentor,render,updateCVFitScale,
     loadPage:page => loads[page === 'roadmap' ? 'road' : page]?.()};
 }

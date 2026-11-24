@@ -456,6 +456,10 @@ function renderMentorPanel() {
   const splitter = $('#mentor-resize');
   $('#mentor-toggle').setAttribute('aria-expanded',String(open));
   body.classList.toggle('has-mentor',open);
+  document.querySelector('.studio')?.classList.toggle('mentor-open', open);
+  document.querySelector('.studio')?.classList.toggle('has-mentor', open);
+  document.body.classList.toggle('mentor-open', open);
+  document.body.classList.toggle('has-mentor', open);
   if (open) {
     clearTimeout(mentorCloseTimer);
     mentorCloseTimer = undefined;
@@ -1638,7 +1642,7 @@ document.addEventListener('keydown',event => {
     const cvForm = document.getElementById('cv-form');
     if (cvForm) {
       event.preventDefault();
-      document.querySelector('[data-act="cv-save-bar"]')?.click();
+      document.querySelector('[data-act="cv-save"], [data-act="cv-save-bar"]')?.click();
       return;
     }
   }
@@ -1648,8 +1652,8 @@ document.addEventListener('keydown',event => {
     if (live.data.previewOnly) {
       event.preventDefault();
       live.data.previewOnly = false;
-      live.render();
-      setTimeout(live.updateCVFitScale, 50);
+      updateStudio();
+      setTimeout(updateCVFitScale, 50);
       return;
     }
     if (live.data.focusMode) {
@@ -1659,8 +1663,8 @@ document.addEventListener('keydown',event => {
       try { localStorage.setItem('cv_focus_mode', '0'); } catch (_) {}
       document.querySelector('.studio')?.classList.remove('cv-focus-mode');
       document.body.classList.remove('cv-focus-mode');
-      live.render();
-      setTimeout(live.updateCVFitScale, 50);
+      updateStudio();
+      setTimeout(updateCVFitScale, 50);
       return;
     }
   }

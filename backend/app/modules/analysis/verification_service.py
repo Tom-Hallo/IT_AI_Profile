@@ -160,7 +160,6 @@ async def verify_repository_contributions(
         await api_client.__aenter__()
 
     try:
-
         try:
             if token or client:
                 user_profile = await api_client.get_authenticated_user()
@@ -308,7 +307,9 @@ async def verify_repository_contributions(
                         else None
                     )
                     author_login = (
-                        author_obj.get("login") if isinstance(author_obj, dict) else None
+                        author_obj.get("login")
+                        if isinstance(author_obj, dict)
+                        else None
                     )
                     author_type = (
                         author_obj.get("type", "User")
@@ -406,7 +407,9 @@ async def verify_repository_contributions(
                 if (
                     isinstance(c_stats, dict)
                     and "additions" in c_stats
-                    and not (collect_score_files and is_author_verified and not is_merge)
+                    and not (
+                        collect_score_files and is_author_verified and not is_merge
+                    )
                 ):
                     additions = int(c_stats.get("additions", 0))
                     deletions = int(c_stats.get("deletions", 0))
@@ -428,7 +431,11 @@ async def verify_repository_contributions(
                             details = await api_client.get_commit_details(
                                 owner, repo_name, sha
                             )
-                            if collect_score_files and is_author_verified and not is_merge:
+                            if (
+                                collect_score_files
+                                and is_author_verified
+                                and not is_merge
+                            ):
                                 files = details.get("files")
                                 changed_files = _scoring_files(files)
                                 if not isinstance(files, list) or len(files) > 300:
@@ -525,7 +532,9 @@ async def verify_repository_contributions(
                     metadata={
                         "sha": sha,
                         "parents_count": len(c.get("parents", [])),
-                        "changed_files": changed_files if v_status == "verified" else [],
+                        "changed_files": changed_files
+                        if v_status == "verified"
+                        else [],
                     },
                 )
 
@@ -603,7 +612,8 @@ async def verify_repository_contributions(
                             continue
                 filtered_prs.append(pr)
 
-            # Pre-determine which PRs get files fetched to respect MAX_PR_FILE_REQUESTS cleanly
+            # Pre-determine which PRs get files fetched to respect
+            # MAX_PR_FILE_REQUESTS cleanly
             prs_to_fetch_files: set[int] = set()
             if collect_score_files:
                 for pr in filtered_prs:

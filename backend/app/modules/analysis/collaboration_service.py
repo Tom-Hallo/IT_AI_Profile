@@ -171,7 +171,6 @@ async def analyze_repository_collaboration(
         await client.__aenter__()
 
     try:
-
         try:
             gh_user = await client.get_authenticated_user()
             auth_github_login = gh_user.get("login")
@@ -411,10 +410,21 @@ async def analyze_repository_collaboration(
                     return_exceptions=True,
                 )
 
-        async def _inspect_pr_ctx(pr_ctx: dict[str, Any]) -> list[CollaborationEvidenceItem]:
-            nonlocal total_reviews_analyzed, approved_reviews_count, changes_requested_count
-            nonlocal commented_reviews_count, dismissed_reviews_count, user_reviews_conducted_count
-            nonlocal user_reviews_received_count, total_checks_analyzed, successful_checks_count
+        async def _inspect_pr_ctx(
+            pr_ctx: dict[str, Any],
+        ) -> list[CollaborationEvidenceItem]:
+            nonlocal \
+                total_reviews_analyzed, \
+                approved_reviews_count, \
+                changes_requested_count
+            nonlocal \
+                commented_reviews_count, \
+                dismissed_reviews_count, \
+                user_reviews_conducted_count
+            nonlocal \
+                user_reviews_received_count, \
+                total_checks_analyzed, \
+                successful_checks_count
             nonlocal failed_checks_count, pending_checks_count, other_checks_count
             nonlocal coverage_status, confidence
 
@@ -436,7 +446,9 @@ async def analyze_repository_collaboration(
             if head_sha:
                 async with ci_lock:
                     if head_sha not in ci_tasks:
-                        ci_tasks[head_sha] = asyncio.create_task(_fetch_ci_for_sha(head_sha))
+                        ci_tasks[head_sha] = asyncio.create_task(
+                            _fetch_ci_for_sha(head_sha)
+                        )
                     ci_task = ci_tasks[head_sha]
 
             async with sem_collab:
@@ -481,8 +493,8 @@ async def analyze_repository_collaboration(
                     if rev_state == "APPROVED":
                         approved_reviews_count += 1
                         rev_rationale = (
-                            f"Review #{rev_id} trên PR #{pr_num} đã phê duyệt (APPROVED) "
-                            "mã nguồn."
+                            f"Review #{rev_id} trên PR #{pr_num} "
+                            "đã phê duyệt (APPROVED) mã nguồn."
                         )
                     elif rev_state == "CHANGES_REQUESTED":
                         changes_requested_count += 1
@@ -506,7 +518,8 @@ async def analyze_repository_collaboration(
                         )
                     else:
                         rev_rationale = (
-                            f"Review #{rev_id} trên PR #{pr_num} ở trạng thái {rev_state}."
+                            f"Review #{rev_id} trên PR #{pr_num} "
+                            f"ở trạng thái {rev_state}."
                         )
 
                     if is_rev_owner:
@@ -560,7 +573,9 @@ async def analyze_repository_collaboration(
             except (GitHubEmptyRepositoryError, GitHubNotFoundError):
                 coverage_status = "partial"
                 confidence = "uncertain"
-                limitations.append(f"Không thể xác minh đầy đủ reviews của PR #{pr_num}.")
+                limitations.append(
+                    f"Không thể xác minh đầy đủ reviews của PR #{pr_num}."
+                )
             except (GitHubApiError, GitHubServerError) as exc:
                 coverage_status = "partial"
                 confidence = "uncertain"
@@ -579,7 +594,9 @@ async def analyze_repository_collaboration(
                         run_name = run.get("name", "check")
                         run_status = run.get("status", "completed")
                         run_conclusion = run.get("conclusion")
-                        run_completed_at = run.get("completed_at") or run.get("started_at")
+                        run_completed_at = run.get("completed_at") or run.get(
+                            "started_at"
+                        )
 
                         if not in_window(run_completed_at):
                             continue
@@ -590,7 +607,11 @@ async def analyze_repository_collaboration(
                                 f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
                                 "thành công."
                             )
-                        elif run_conclusion in ("failure", "timed_out", "action_required"):
+                        elif run_conclusion in (
+                            "failure",
+                            "timed_out",
+                            "action_required",
+                        ):
                             failed_checks_count += int(count_ci)
                             check_rationale = (
                                 f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
@@ -601,7 +622,8 @@ async def analyze_repository_collaboration(
                         elif run_status in ("queued", "in_progress", "waiting"):
                             pending_checks_count += int(count_ci)
                             check_rationale = (
-                                f"Kiểm tra CI '{run_name}' đang thực thi ({run_status})."
+                                f"Kiểm tra CI '{run_name}' đang thực thi "
+                                f"({run_status})."
                             )
                         else:
                             other_checks_count += int(count_ci)
@@ -688,19 +710,22 @@ async def analyze_repository_collaboration(
                         if st_state == "success":
                             successful_checks_count += int(count_ci)
                             st_rationale = (
-                                f"Commit status '{st_context}' cho commit {head_sha[:7]} "
-                                "thành công."
+                                f"Commit status '{st_context}' cho "
+                                f"commit {head_sha[:7]} thành công."
                             )
                         elif st_state in ("failure", "error"):
                             failed_checks_count += int(count_ci)
                             st_rationale = (
-                                f"Commit status '{st_context}' cho commit {head_sha[:7]} "
-                                f"báo lỗi ({st_state}). Cảnh báo kiểm thử commit giúp "
-                                "ngăn ngừa lỗi, không phản ánh năng lực kém."
+                                f"Commit status '{st_context}' cho "
+                                f"commit {head_sha[:7]} báo lỗi ({st_state}). "
+                                "Cảnh báo kiểm thử commit giúp ngăn ngừa lỗi, "
+                                "không phản ánh năng lực kém."
                             )
                         elif st_state == "pending":
                             pending_checks_count += int(count_ci)
-                            st_rationale = f"Commit status '{st_context}' đang chờ xử lý."
+                            st_rationale = (
+                                f"Commit status '{st_context}' đang chờ xử lý."
+                            )
                         else:
                             other_checks_count += int(count_ci)
                             st_rationale = (

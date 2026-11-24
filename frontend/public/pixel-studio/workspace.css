@@ -4396,3 +4396,444 @@ body.print-cv .cv-paper {
     var(--inset)
   );
 }
+
+/* ==========================================================================
+   ENHANCED REPOSITORY DASHBOARD & EVIDENCE STYLING (PBI-013 & PBI-014)
+   ========================================================================== */
+
+/* Ownership Dashboard & KPI Grid */
+.ownership-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.ownership-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--surface-1, #1a2024);
+  border: 1px solid var(--line, #2d383e);
+  border-radius: 8px;
+}
+
+.ownership-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ownership-kpi-grid,
+.collab-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.kpi-card,
+.collab-kpi-card {
+  background: var(--surface-1, #1e252b);
+  border: 1px solid var(--line, #2d383e);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: border-color 0.15s ease;
+}
+
+.kpi-card:hover,
+.collab-kpi-card:hover {
+  border-color: var(--accent, #a5dec3);
+}
+
+.kpi-card-header,
+.collab-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #e6edf3);
+}
+
+.kpi-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.kpi-num small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted, #9ba8a6);
+}
+
+.kpi-bar {
+  height: 6px;
+  background: var(--surface-2, #2a343b);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.kpi-bar-fill {
+  height: 100%;
+  background: var(--accent, #a5dec3);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.kpi-bar-fill.green {
+  background: #4ade80;
+}
+
+.kpi-sub {
+  font-size: 11.5px;
+  color: var(--muted, #9ba8a6);
+  line-height: 1.4;
+}
+
+.kpi-churn-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.churn-add {
+  color: #4ade80;
+}
+
+.churn-del {
+  color: #f87171;
+}
+
+.kpi-churn-row small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted, #9ba8a6);
+}
+
+.ownership-actions,
+.collab-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+/* Collab Dashboard Grid & Stat Chips */
+.collab-total {
+  margin-left: auto;
+  font-size: 16px;
+  color: var(--accent, #a5dec3);
+}
+
+.collab-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collab-chip {
+  flex: 1 1 calc(50% - 8px);
+  min-width: 90px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--surface-2, #252e35);
+  border-radius: 6px;
+  border-left: 3px solid #576574;
+}
+
+.collab-chip.green {
+  border-left-color: #4ade80;
+}
+
+.collab-chip.blue {
+  border-left-color: #60a5fa;
+}
+
+.collab-chip.amber {
+  border-left-color: #fbbf24;
+}
+
+.collab-chip.red {
+  border-left-color: #f87171;
+}
+
+.collab-chip.grey {
+  border-left-color: #94a3b8;
+}
+
+.chip-val {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.chip-label {
+  font-size: 11px;
+  color: var(--muted, #9ba8a6);
+}
+
+.collab-breakdown-sub {
+  font-size: 11.5px;
+  color: var(--muted, #9ba8a6);
+  padding-top: 4px;
+  border-top: 1px dashed var(--line, #2d383e);
+}
+
+.collab-breakdown-sub strong {
+  color: var(--fg, #e6edf3);
+}
+
+/* Observation & Problem Solving Cards */
+.obs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.obs-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg, #e6edf3);
+  margin-bottom: 4px;
+}
+
+.observation-card {
+  background: var(--surface-1, #1e252b);
+  border: 1px solid var(--line, #2d383e);
+  border-left: 4px solid var(--accent, #a5dec3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.observation-card.seq-card {
+  border-left-color: #fbbf24;
+}
+
+.observation-card.cat-ci_check {
+  border-left-color: #60a5fa;
+}
+
+.observation-card.cat-review {
+  border-left-color: #4ade80;
+}
+
+.observation-card.cat-problem_solving {
+  border-left-color: #f59e0b;
+}
+
+.obs-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.obs-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2, #29333a);
+  color: var(--accent, #a5dec3);
+}
+
+.obs-badge.cat-ci_check {
+  color: #60a5fa;
+}
+
+.obs-badge.cat-review {
+  color: #4ade80;
+}
+
+.obs-badge.cat-problem_solving,
+.obs-badge.seq {
+  color: #fbbf24;
+}
+
+.obs-duration {
+  font-size: 11px;
+  color: var(--muted, #9ba8a6);
+  font-family: var(--mono);
+}
+
+.obs-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.obs-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted, #9ba8a6);
+  line-height: 1.5;
+}
+
+/* Evidence Section & Enhanced Evidence Items */
+.evidence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.evidence-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line, #2d383e);
+}
+
+.evidence-section-header h4 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg, #e6edf3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.ev-count {
+  font-size: 12px;
+  color: var(--muted, #9ba8a6);
+  font-weight: 400;
+}
+
+.evidence-item.enhanced {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 10px 14px !important;
+  background: var(--surface-1, #1a2024);
+  border: 1px solid var(--line, #2a343b) !important;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  gap: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.evidence-item.enhanced:hover {
+  background: var(--surface-2, #21292f);
+  border-color: #3e4b52 !important;
+}
+
+.evidence-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.evidence-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--surface-2, #2a343b);
+  color: var(--muted, #9ba8a6);
+  white-space: nowrap;
+}
+
+.ev-badge.pr {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.ev-badge.review {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.ev-badge.ci {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ev-badge.commit {
+  color: var(--accent, #a5dec3);
+  background: rgba(165, 222, 195, 0.12);
+}
+
+.evidence-title {
+  font-size: 12.5px;
+  color: var(--fg, #e6edf3);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.evidence-sub {
+  font-size: 11.5px;
+  color: var(--muted, #9ba8a6);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ev-actor {
+  color: var(--accent, #a5dec3);
+  font-family: var(--mono);
+}
+
+.ev-churn {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.ev-churn .add {
+  color: #4ade80;
+}
+
+.ev-churn .del {
+  color: #f87171;
+}
+
+.ev-quote {
+  font-style: italic;
+  color: #c9d1d9;
+}
+
+.ev-commit-ref code {
+  font-family: var(--mono);
+  color: var(--accent, #a5dec3);
+  background: transparent;
+  padding: 0;
+}
