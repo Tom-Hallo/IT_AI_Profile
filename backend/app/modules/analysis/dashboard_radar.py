@@ -176,10 +176,10 @@ def radar_coverage(
             and finding.evidence_source == "source_code"
         ):
             record("framework_source", event, "verification", path, finding.id)
-        elif (
-            finding.finding_type == "architecture"
-            and finding.evidence_source in {"source_code", "configuration"}
-        ):
+        elif finding.finding_type == "architecture" and finding.evidence_source in {
+            "source_code",
+            "configuration",
+        }:
             groups = {
                 "api_service": "service_design",
                 "background_workers": "service_design",
@@ -203,9 +203,7 @@ def radar_coverage(
                 continue
             for path, event in changes.items():
                 if _is_source(path) and path.startswith(prefix + "/"):
-                    record(
-                        "structure_design", event, "verification", path, finding.id
-                    )
+                    record("structure_design", event, "verification", path, finding.id)
                     break
 
     collab = list(collaboration)
