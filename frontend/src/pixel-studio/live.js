@@ -201,7 +201,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const jobs = [
       ['consent',repo.private ? request(path + '/consents') : null],
       ['evidence',report?.report_id ? request(path + '/analysis/evidence?report_id=' + report.report_id) : null],
-      ['collaboration',report?.report_id ? request(path + '/collaboration') : null]
+      ['collaboration',report?.report_id ? request(path + '/collaboration?' + query({report_id:report.report_id})) : null]
     ];
     await Promise.all(jobs.map(async ([key,task]) => {
       if (!task) return;
@@ -364,7 +364,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         report_id:report.report_id,scope:repo.private ? 'private' : 'public',
         mode:'custom',...period(state.range),timezone:'UTC'
       },65000);
-      if (active()?.id === repo.id) data.repoData[repo.id][endpoint] = result;
+      if (active()?.id === repo.id && currentReport()?.report?.report_id === report.report_id) {
+        data.repoData[repo.id][endpoint] = result;
+      }
     });
   }
 

@@ -62,6 +62,7 @@ async def trigger_collaboration(
 )
 def get_collaboration(
     repository_id: int,
+    report_id: int | None = Query(default=None, gt=0),
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_session),  # noqa: B008
 ) -> CollaborationAnalysisResponse:
@@ -70,6 +71,7 @@ def get_collaboration(
         db=db,
         repository_id=repository_id,
         user=current_user,
+        report_id=report_id,
     )
     if result is None:
         raise HTTPException(
