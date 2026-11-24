@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {numericScore, reportBackedSkillScore, verifiedSkillScore} from '../src/pixel-studio/score-presentation.js';
+import {verifiedCVSkills,cvSkillKey} from '../src/pixel-studio/score-presentation.js';
 
 test('insufficient or unknown evidence must not appear as zero out of 100', () => {
   assert.equal(verifiedSkillScore(null, 'Insufficient'), null);
@@ -29,4 +30,16 @@ test('a profile skill is scored only with genuine report-bound verification IDs'
   assert.equal(reportBackedSkillScore({...item,score:0,breakdown:[
     {evidence_kind:'verification',evidence_ids:[18]}
   ]}), 0);
+});
+
+
+test('CV only inserts report-backed personally verified skills', () => {
+  const good = {status:'Scored',score:75,kind:'language',technology:'Python',
+    report_id:4,repo:{id:7,full_name:'owner/repo'},
+    breakdown:[{evidence_kind:'verification',evidence_ids:[11]}]};
+  const other = {...good,repo:{id:8,full_name:'owner/other'}};
+  assert.deepEqual(verifiedCVSkills([good,other,{...good,report_id:null},
+    {...good,status:'Insufficient'}, {...good,breakdown:[{evidence_kind:'manifest',evidence_ids:[11]}]}]),[good,other]);
+  assert.notEqual(cvSkillKey(good),cvSkillKey(other));
+  assert.deepEqual(verifiedCVSkills(null),[]);
 });

@@ -4,6 +4,7 @@ import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
 import {parseCVForReference, serializeCVFromSections} from './cv-renderer.js';
+import {verifiedCVSkills, cvSkillKey} from './score-presentation.js';
 import {updateCVFitScale} from './live-views.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
@@ -677,7 +678,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }
     await work('cv',async () => {
       data.ats = await post('/ats-reviews/preview',{
-        cv_id: data.cv?.id || null,
+        cv_id: text ? null : (data.cv?.id || null),
         text: text || null,
         jd_text: data.atsJD?.trim() || null
       });
@@ -1075,7 +1076,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         const type = firstEntry ? firstEntry.type : 'dated';
         let newEntry = { type, bullets: [] };
         if (type === 'dated') {
-          newEntry = { type: 'dated', date: copy('2023 - Nay', '2023 - Present'), org: copy('Tên công ty / Trường', 'Company / School'), role: copy('Vị trí công việc', 'Job Title'), loc: copy('Địa điểm', 'Location'), bullets: [copy('Mô tả kết quả đạt được...', 'Key achievement...')] };
+          newEntry = { type: 'dated', date: '', org: copy('Tên công ty / Trường', 'Company / School'), role: copy('Vị trí công việc', 'Job Title'), loc: copy('Địa điểm', 'Location'), bullets: [copy('Mô tả kết quả đạt được...', 'Key achievement...')] };
         } else if (type === 'labeled') {
           newEntry = { type: 'labeled', label: copy('Kỹ năng mới:', 'New Skill:'), content: copy('Công nghệ 1, 2...', 'Tech 1, 2...'), bullets: [] };
         } else {
@@ -1097,16 +1098,16 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       let entry = { type: 'dated', bullets: [] };
       if (type === 'Experience') {
         title = copy('KINH NGHIỆM LÀM VIỆC', 'WORK EXPERIENCE');
-        entry = { type: 'dated', date: copy('2023 - Nay', '2023 - Present'), org: copy('Tên công ty', 'Company Name'), role: copy('Kỹ sư phần mềm', 'Software Engineer'), loc: 'TP. Hồ Chí Minh', bullets: [copy('Phát triển hệ thống...', 'Engineered system...')] };
+        entry = { type: 'dated', date: '', org: copy('Tên công ty', 'Company Name'), role: copy('Vị trí công việc', 'Job title'), loc: '', bullets: [] };
       } else if (type === 'Projects') {
         title = copy('DỰ ÁN TIÊU BIỂU', 'KEY PROJECTS');
-        entry = { type: 'dated', date: '2023', org: copy('Dự án AI Profile', 'AI Profile Project'), role: copy('Lập trình viên chính', 'Lead Developer'), loc: 'GitHub', bullets: [copy('Xây dựng nền tảng phân tích...', 'Built code intelligence platform...')] };
+        entry = { type: 'dated', date: '', org: copy('Tên dự án', 'Project name'), role: copy('Vai trò của bạn', 'Your role'), loc: 'GitHub', bullets: [] };
       } else if (type === 'Skills') {
         title = copy('KỸ NĂNG CHUYÊN MÔN', 'TECHNICAL SKILLS');
-        entry = { type: 'labeled', label: copy('Ngôn ngữ & Framework:', 'Languages & Frameworks:'), content: 'Python, FastAPI, TypeScript, React', bullets: [] };
+        entry = { type: 'labeled', label: copy('Ngôn ngữ & Framework:', 'Languages & Frameworks:'), content: '', bullets: [] };
       } else if (type === 'Education') {
         title = copy('HỌC VẤN & BẰNG CẤP', 'EDUCATION');
-        entry = { type: 'dated', date: '2019 - 2023', org: copy('Đại học', 'University'), role: copy('Cử nhân CNTT', 'B.S. Computer Science'), loc: 'Việt Nam', bullets: [] };
+        entry = { type: 'dated', date: '', org: copy('Đại học', 'University'), role: copy('Tên bằng cấp', 'Degree'), loc: '', bullets: [] };
       } else {
         entry = { type: 'text', text: copy('Nội dung chi tiết...', 'Section details...'), bullets: [] };
       }
@@ -1118,11 +1119,14 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       setTimeout(updateCVFitScale, 0);
     },
     'cv-insert-single-skill': button => {
-      const tech = button.dataset.id;
-      const scoreItem = (data.scores || []).find(s => s.technology === tech);
-      const repoName = scoreItem?.repo?.full_name || scoreItem?.repo?.name || 'GitHub';
-      const scoreVal = scoreItem ? `${scoreItem.score}/100` : '';
-      const line = `- ${formatSkillName(tech)}${scoreVal ? ': ' + scoreVal : ''} (${repoName})`;
+      const scoreItem = verifiedCVSkills(data.scores).find(item => cvSkillKey(item) === button.dataset.id);
+      if (!scoreItem) {
+        notice(copy('Kỹ năng chưa đủ bằng chứng hoặc dữ liệu đã thay đổi.', 'Skill lacks verified evidence or data has changed.'));
+        return;
+      }
+      const tech = scoreItem.technology;
+      const repoName = scoreItem.repo.full_name || scoreItem.repo.name;
+      const line = `- ${formatSkillName(tech)}: ${scoreItem.score}/100 (${repoName})`;
       runtime.cvDraft.body = (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + '\n' : '') + line + '\n';
       runtime.cvEdited = true;
       render();
@@ -1250,25 +1254,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
           await dashboard();
         });
       }
-      let verifiedScores = (data.scores || []).filter(
-        (item) =>
-          item.status === "Scored" &&
-          Number.isFinite(item.score) &&
-          item.report_id != null &&
-          item.repo?.id &&
-          Array.isArray(item.breakdown) &&
-          item.breakdown.length > 0 &&
-          item.breakdown.every(
-            (metric) =>
-              Array.isArray(metric.evidence_ids) &&
-              metric.evidence_ids.length > 0,
-          ),
-      );
-      if (!verifiedScores.length && data.scores?.length) {
-        verifiedScores = data.scores.filter(
-          (item) => item.score > 0 && item.repo,
-        );
-      }
+      const verifiedScores = verifiedCVSkills(data.scores);
 
       if (!verifiedScores.length) {
         notice(
@@ -1314,17 +1300,16 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       
       if (reposMap.size > 0) {
         snippet += 'DỰ ÁN XÁC MINH TỪ GITHUB\n';
-        const curYear = new Date().getFullYear();
         reposMap.forEach((techs, rName) => {
-          snippet += `${curYear} | ${rName} | GitHub\n`;
-          snippet += `Lập trình viên chính\n`;
-          snippet += `- Đóng góp mã nguồn và phát triển hệ thống với ${techs.slice(0, 4).join(', ')}, xác thực từ lịch sử commit và pull request trên GitHub.\n\n`;
+          snippet += `${rName}\n`;
+          snippet += `- Kỹ năng có bằng chứng GitHub: ${[...new Set(techs)].join(', ')}.\n\n`;
         });
       }
 
       runtime.cvDraft.body =
         (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + "\n\n" : "") +
         snippet.trim();
+      runtime.cvEdited = true;
 
       render();
 

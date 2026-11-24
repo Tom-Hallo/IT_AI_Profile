@@ -4,7 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, reportBackedSkillScore} from './score-presentation.js';
+import {numericScore, reportBackedSkillScore, verifiedCVSkills, cvSkillKey} from './score-presentation.js';
 import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metrics.js';
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
@@ -345,7 +345,7 @@ export function liveDashboard(state, runtime, data) {
     + '<span class="scope-tag highlight">' + icon('check') + ' ' + copy('Tổng hợp từ ', 'Aggregated from ') + analyzedCount + copy(' repository đã phân tích', ' analyzed repositories') + '</span>'
     + '</div>'
     + (radar.analyzedRepos?.length > 0 ? '<div class="dashboard-analyzed-chips">'
-      + '<span class="analyzed-chips-label">' + icon('repo') + ' ' + copy('Repository đóng góp điểm năng lực:', 'Contributing analyzed repositories:') + '</span>'
+      + '<span class="analyzed-chips-label">' + icon('repo') + ' ' + copy('Repository đã phân tích:', 'Analyzed repositories:') + '</span>'
       + '<div class="analyzed-chips-list">'
       + radar.analyzedRepos.map(r => '<span class="repo-chip-badge" title="' + escape(r.full_name || r.name) + '">' + icon('branch') + ' ' + escape(r.full_name || r.name) + '</span>').join('')
       + '</div></div>' : '')
@@ -1386,25 +1386,24 @@ export function liveCV(state, runtime, data) {
       + '</div>'
       + '</div>';
   } else if (intelTab === 'github') {
-    const verifiedScores = (data.scores || []).filter(item => item.score > 0);
+    const verifiedScores = verifiedCVSkills(data.scores);
     intelBody = '<div class="cv-intel-content">'
       + '<div class="cv-evidence-header">'
-      + '<span><strong>' + verifiedScores.length + '</strong> ' + copy('kỹ năng đã phát hiện', 'skills detected') + '</span>'
+      + '<span><strong>' + verifiedScores.length + '</strong> ' + copy('kỹ năng có minh chứng', 'evidence-backed skills') + '</span>'
       + btn(icon('pulse') + ' ' + copy('Chèn tất cả', 'Insert all'), 'cv-insert-github', 'secondary small')
       + '</div>'
       + (verifiedScores.length > 0
         ? '<div class="cv-evidence-list">' + verifiedScores.map(item => {
-            const isVerified = item.status === 'Scored' && Array.isArray(item.breakdown) && item.breakdown.some(b => Array.isArray(b.evidence_ids) && b.evidence_ids.length > 0);
             return '<div class="cv-evidence-card">'
               + '<div class="cv-evidence-card-head">'
               + '<div class="cv-evidence-tech"><strong>' + escape(formatSkillName(item.technology)) + '</strong><span class="cv-score-pill">' + number(item.score) + '/100</span></div>'
-              + '<span class="status-pill ' + (isVerified ? 'green' : 'amber') + '">' + (isVerified ? '✓ Verified' : 'Insufficient') + '</span>'
+              + '<span class="status-pill green">' + copy('Đã xác minh','Verified') + '</span>'
               + '</div>'
               + '<div class="cv-evidence-meta">'
               + '<span class="cv-evidence-repo" title="' + escape(item.repo?.full_name || item.repo?.name || '') + '">📁 ' + escape(item.repo?.full_name || item.repo?.name || 'GitHub') + '</span>'
               + '</div>'
               + '<div class="cv-evidence-actions">'
-              + '<button type="button" class="button secondary small" data-act="cv-insert-single-skill" data-id="' + escape(item.technology) + '">'
+              + '<button type="button" class="button secondary small" data-act="cv-insert-single-skill" data-id="' + escape(cvSkillKey(item)) + '">'
               + copy('+ Chèn vào CV', '+ Add to CV') + '</button>'
               + '</div></div>';
           }).join('') + '</div>'

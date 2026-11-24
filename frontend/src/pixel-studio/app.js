@@ -1212,7 +1212,7 @@ const actions = {
       const type = firstEntry ? firstEntry.type : 'dated';
       let newEntry = { type, bullets: [] };
       if (type === 'dated') {
-        newEntry = { type: 'dated', date: '2023 - Nay', org: 'Tên công ty / Trường', role: 'Vị trí công việc', loc: 'Địa điểm', bullets: ['Mô tả kết quả đạt được...'] };
+        newEntry = { type: 'dated', date: '', org: 'Tên công ty / Trường', role: 'Vị trí công việc', loc: 'Địa điểm', bullets: ['Mô tả kết quả đạt được...'] };
       } else if (type === 'labeled') {
         newEntry = { type: 'labeled', label: 'Kỹ năng mới:', content: 'Công nghệ 1, 2...', bullets: [] };
       } else {
@@ -1233,16 +1233,16 @@ const actions = {
     let entry = { type: 'dated', bullets: [] };
     if (type === 'Experience') {
       title = 'KINH NGHIỆM LÀM VIỆC';
-      entry = { type: 'dated', date: '2023 - Nay', org: 'Tên công ty', role: 'Kỹ sư phần mềm', loc: 'TP. Hồ Chí Minh', bullets: ['Phát triển hệ thống...'] };
+      entry = { type: 'dated', date: '', org: 'Tên công ty', role: 'Vị trí công việc', loc: '', bullets: [] };
     } else if (type === 'Projects') {
       title = 'DỰ ÁN TIÊU BIỂU';
-      entry = { type: 'dated', date: '2023', org: 'Dự án AI Profile', role: 'Lập trình viên chính', loc: 'GitHub', bullets: ['Xây dựng nền tảng...'] };
+      entry = { type: 'dated', date: '', org: 'Tên dự án', role: 'Vai trò của bạn', loc: 'GitHub', bullets: [] };
     } else if (type === 'Skills') {
       title = 'KỸ NĂNG CHUYÊN MÔN';
-      entry = { type: 'labeled', label: 'Ngôn ngữ & Framework:', content: 'Python, FastAPI, TypeScript, React', bullets: [] };
+      entry = { type: 'labeled', label: 'Ngôn ngữ & Framework:', content: '', bullets: [] };
     } else if (type === 'Education') {
       title = 'HỌC VẤN & BẰNG CẤP';
-      entry = { type: 'dated', date: '2019 - 2023', org: 'Đại học', role: 'Cử nhân CNTT', loc: 'Việt Nam', bullets: [] };
+      entry = { type: 'dated', date: '', org: 'Đại học', role: 'Tên bằng cấp', loc: '', bullets: [] };
     } else {
       entry = { type: 'text', text: 'Nội dung chi tiết...', bullets: [] };
     }
