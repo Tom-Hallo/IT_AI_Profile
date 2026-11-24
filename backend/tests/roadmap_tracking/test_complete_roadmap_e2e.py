@@ -25,6 +25,7 @@ Tests:
 
 import json
 import os
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -227,7 +228,9 @@ def test_03_milestone_status_transition_and_optimistic_lock(
     assert histories[1].new_status == "completed"
 
 
-def test_04_evidence_submission_and_strict_validation(db: Session, test_user: User):
+def test_04_evidence_submission_and_strict_validation(
+    db: Session, test_user: User, monkeypatch
+):
     """Verify invalid URLs, self-reported URLs, and official GitHub verification."""
     from fastapi import HTTPException
 
@@ -273,76 +276,92 @@ def test_04_evidence_submission_and_strict_validation(db: Session, test_user: Us
         )
     assert exc.value.status_code == 422
 
-    # 2. Self-reported valid external URL
-    sub1 = submit_milestone_evidence(
+    from app.modules.career_roadmap.provider import RealAssessmentProvider
+    from app.modules.github.models import Repository, user_repository
+
+    for invalid in (
+        "https://medium.com/@dev/docker-guide",
+        "https://github.com.attacker.com/org/repo/pull/1",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            submit_milestone_evidence(
+                rm.id, ms.id, EvidenceSubmission(evidence_url=invalid), test_user, db
+            )
+        assert exc.value.status_code == 422
+
+    unique = uuid4().hex
+    repo = Repository(
+        owner_id=test_user.id,
+        external_id=unique,
+        name=unique,
+        full_name=f"example/{unique}",
+        html_url=f"https://github.com/example/{unique}",
+        private=False,
+    )
+    db.add(repo)
+    db.flush()
+    db.execute(
+        user_repository.insert().values(user_id=test_user.id, repository_id=repo.id)
+    )
+    db.commit()
+    sha = "a" * 40
+    pr_url = f"https://github.com/{repo.full_name}/pull/17"
+    commit_url = f"https://github.com/{repo.full_name}/commit/{sha}"
+    repo_id = repo.id
+    assessments = [
+        {
+            "skill": "docker",
+            "score": 70,
+            "confidence": "high",
+            "evidence": [
+                {
+                    "id": "fixture-pr:17",
+                    "repository_id": repo_id,
+                    "finding_type": "pull_request",
+                    "pr_number": 17,
+                },
+                {
+                    "id": "fixture-commit:" + sha,
+                    "repository_id": repo_id,
+                    "finding_type": "commit",
+                    "commit_sha": sha,
+                },
+            ],
+        }
+    ]
+    monkeypatch.setattr(RealAssessmentProvider, "load", lambda *_: assessments)
+    unverified = submit_milestone_evidence(
         rm.id,
         ms.id,
-        EvidenceSubmission(
-            evidence_url="https://medium.com/@dev/docker-guide", note="Study notes"
-        ),
+        EvidenceSubmission(evidence_url=f"https://github.com/{repo.full_name}/pull/18"),
         test_user,
         db,
     )
-    assert sub1["verification_status"] == "self_reported"
-    assert sub1["status"] == "in_progress"
-    assert sub1["version"] == 2
+    assert unverified["verification_status"] == "self_reported"
+    assert unverified["status"] == "in_progress"
+    assert unverified["version"] == 2
+    for url in (pr_url, commit_url):
+        verified = submit_milestone_evidence(
+            rm.id, ms.id, EvidenceSubmission(evidence_url=url), test_user, db
+        )
+        assert verified["verification_status"] == "verified"
+        assert verified["status"] == "completed"
 
-    # 3. Attacker spoofed GitHub domain
-    sub2 = submit_milestone_evidence(
-        rm.id,
-        ms.id,
-        EvidenceSubmission(
-            evidence_url="https://github.com.attacker.com/org/repo/pull/1",
-            note="Spoofed domain",
-        ),
-        test_user,
-        db,
-    )
-    assert sub2["verification_status"] == "self_reported"
-
-    # 4. Use existing verified PR and commit from Tom-Hallo/IT_AI_Profile
-    # Submit verified PR 17
-    sub_pr = submit_milestone_evidence(
-        rm.id,
-        ms.id,
-        EvidenceSubmission(
-            evidence_url="https://github.com/Tom-Hallo/IT_AI_Profile/pull/17",
-            note="Verified PR #17",
-        ),
-        test_user,
-        db,
-    )
-    assert sub_pr["verification_status"] == "verified"
-    assert sub_pr["status"] == "completed"
-    assert "được hệ thống xác minh" in sub_pr["explanation"]
-
-    # Submit verified commit
-    commit_sha = "c7c94bf112fa0c73a1e125a926941f60d493540f"
-    sub_commit = submit_milestone_evidence(
-        rm.id,
-        ms.id,
-        EvidenceSubmission(
-            evidence_url=f"https://github.com/Tom-Hallo/IT_AI_Profile/commit/{commit_sha}",
-            note="Verified Dockerfile commit",
-        ),
-        test_user,
-        db,
-    )
-    assert sub_commit["verification_status"] == "verified"
-
-    # Verify persistence in clean session and _serialize evidence retention
     db.expire_all()
     rm_check = db.scalar(select(Roadmap).where(Roadmap.id == rm.id))
     serialized = _serialize(rm_check, db, test_user.id)
     m_check = next(m for m in serialized["milestones"] if m["skill"] == "docker")
-    assert len(m_check["evidence"]) >= 3
+    assert len(m_check["evidence"]) == 3
     assert any(e.get("verification_status") == "verified" for e in m_check["evidence"])
 
 
-def test_05_re_evaluation_and_suggestion_resolution(db: Session, test_user: User):
+def test_05_re_evaluation_and_suggestion_resolution(
+    db: Session, test_user: User, monkeypatch
+):
     """Verify suggestion creation, applying suggestion, and rejection."""
     from fastapi import HTTPException
 
+    from app.modules.roadmap_tracking.engine import Snapshot
     from app.modules.roadmap_tracking.router import apply_suggestion
 
     res = generate("backend", [])
@@ -383,7 +402,18 @@ def test_05_re_evaluation_and_suggestion_resolution(db: Session, test_user: User
     db.add(sug)
     db.commit()
 
-    # Apply suggestion
+    snapshot = Snapshot(
+        "snap-test-123",
+        test_user.id,
+        "public",
+        "v2.1.0",
+        "all_time",
+        {"postgresql": [{"verified": True, "ref": "commit:123", "score": 80}]},
+    )
+    monkeypatch.setattr(
+        "app.modules.roadmap_tracking.router.current_snapshot", lambda *_: snapshot
+    )
+    # Apply only after verifying the current snapshot and criteria.
     applied = apply_suggestion(rm.id, sug.id, test_user, db)
     assert applied["state"] == "applied"
 
