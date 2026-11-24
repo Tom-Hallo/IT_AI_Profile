@@ -16,7 +16,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     road:null, tracking:null, pendingRoadmapFocus:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
-    errors:{}, messages:{}, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
+    errors:{}, messages:{}, analysisOutcome:null, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
   };
   try {
     const savedRange = sessionStorage.getItem('ita-studio-selected-range');
@@ -74,6 +74,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.busy.add(key);
     delete data.errors[key];
     delete data.messages[key];
+    if (key === 'repos') data.analysisOutcome = null;
     render();
     try {
       await action();
@@ -244,6 +245,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const repo = active();
     if (!repo || analysisJob || analysisStarted || data.busy.has('bulk')) return;
     analysisStarted = true;
+    data.analysisOutcome = null;
+    delete data.messages.repos;
     data.analysis = {status:'queued',progress:0,repo_id:repo.id};
     data.errors.repos = '';
     render();
@@ -288,22 +291,16 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         try {
           sessionStorage.removeItem("ita-active-job");
         } catch {}
+        data.analysisOutcome = {
+          status: job.status,
+          errorCode: job.error_code,
+          repoName: repo.full_name || repo.name,
+        };
         if (job.status === "succeeded") {
-          data.messages.repos = copy(
-            "Đã phân tích " + repo.full_name + ".",
-            "Analyzed " + repo.full_name + ".",
-          );
           if (active()?.id === repo.id)
             await repoDetail({ reportId: job.report_id });
           data.scores = [];
           data.dashboardRadar = [];
-        } else {
-          data.messages.repos =
-            job.status === "cancelled"
-              ? copy("Đã hủy phân tích.", "Analysis cancelled.")
-              : copy("Phân tích thất bại", "Analysis failed") +
-                (job.error_code ? " · " + job.error_code : "") +
-                ".";
         }
       } catch (error) {
         if (epoch !== analysisEpoch) return;
@@ -973,7 +970,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.dashboardRadar = []; data.dashboardRepos = null;
         data.jobMatch = null;
         analysisEpoch++;
-        clearTimeout(analysisPolling); analysisJob = null; data.analysis = null;
+        clearTimeout(analysisPolling); analysisJob = null; data.analysis = null; data.analysisOutcome = null;
         try { sessionStorage.removeItem('ita-active-job'); } catch {}
         state.access = 'none'; state.scope = 'public';
         clearChat();
@@ -1353,6 +1350,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const range = period(state.range);
 
       await work("bulk", async () => {
+        data.analysisOutcome = null;
+        delete data.messages.repos;
+        delete data.errors.repos;
         data.bulkAnalysis = {
           total: ids.length,
           done: 0,

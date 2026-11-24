@@ -1,6 +1,7 @@
 import { dateLabel, getLanguage, rangeLabel, scopeLabel, t } from './i18n.js';
 import { attr, badge, blank, brand, btn, details, escape, field, filterControls, formatSkillName, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
 import { radarView } from './radar.js';
+import {renderAnalysisFeedback} from './analysis-feedback.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
@@ -516,6 +517,7 @@ export function liveRepos(state, data, active) {
     + (data.search ? btn(icon('close') + ' ' + copy('Xóa bộ lọc', 'Clear search'), 'clear-repo-search', 'quiet small') : '')
     + '</form>'
     + '<p class="scope-summary" role="status">' + escape(t('repos.count', { count: data.total })) + '</p>'
+    + renderAnalysisFeedback(data.analysisOutcome, getLanguage())
     + feedback(data, 'repos', 'sync', 'activity', 'cancel') + '</div>';
   if (!active) return intro + toolbar + (data.busy.has('repos')
     ? '<section class="panel ita-list-skeleton" role="status"><span class="ita-visually-hidden">' + escape(copy('Đang tải repository…', 'Loading repositories…')) + '</span>' + Array.from({length:3}, () => '<div class="ita-skeleton-row" aria-hidden="true"><i class="ita-skeleton-line ita-skeleton-line--wide"></i><i class="ita-skeleton-line ita-skeleton-line--short"></i></div>').join('') + '</section>'
