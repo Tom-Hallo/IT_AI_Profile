@@ -47,3 +47,9 @@ test('old or rejected suggestions never become new proposals', () => {
   ]});
   assert.equal(result.pendingCount,0);
 });
+
+test('missing or malformed counts cannot report all milestones completed', () => {
+  for (const evaluation of [undefined, {}, {checked_milestones:0}, {checked_milestones:-1,verified_skill_count:0}, {checked_milestones:'0',verified_skill_count:0}]) {
+    assert.throws(()=>summarizeReevaluation({snapshot_id:'new',evaluation},{suggestions:[]}),/incomplete counts/);
+  }
+});
