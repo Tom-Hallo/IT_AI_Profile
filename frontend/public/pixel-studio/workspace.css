@@ -4837,3 +4837,277 @@ body.print-cv .cv-paper {
   background: transparent;
   padding: 0;
 }
+
+/* ==========================================================================
+   ENHANCED REPOSITORY LAYOUT, COLLAB PROGRESS BARS & TAKEAWAYS (PBI-REPO-UI)
+   ========================================================================== */
+
+/* Bố cục 2 bên cân đối chuẩn: Cột trái 290px cố định, cột phải co giãn tự nhiên */
+.repo-layout {
+  display: grid !important;
+  grid-template-columns: 290px minmax(0, 1fr) !important;
+  gap: 20px !important;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .repo-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Segmented Progress Bar đa màu */
+.kpi-segmented-bar {
+  display: flex;
+  height: 8px;
+  background: var(--surface-2, #2a343b);
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.seg-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.seg-fill.green { background: #4ade80; }
+.seg-fill.blue { background: #60a5fa; }
+.seg-fill.amber { background: #fbbf24; }
+.seg-fill.red { background: #f87171; }
+.seg-fill.grey { background: #64748b; }
+
+.kpi-bar-label {
+  font-size: 11.5px;
+  color: var(--muted, #9ba8a6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.kpi-bar-label strong {
+  color: var(--fg, #e6edf3);
+}
+
+/* Tối ưu chip số liệu không bao giờ bị dính chữ */
+.collab-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collab-chip {
+  flex: 1 1 calc(33.333% - 8px);
+  min-width: 80px;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 2px !important;
+  padding: 8px 10px;
+  background: var(--surface-2, #252e35);
+  border-radius: 6px;
+  border-left: 3px solid #576574;
+}
+
+.collab-chip .chip-val {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+  display: block;
+}
+
+.collab-chip .chip-label {
+  font-size: 11px;
+  color: var(--muted, #9ba8a6);
+  display: block;
+  white-space: nowrap;
+}
+
+/* Khối Takeaways tóm tắt năng lực trực quan cho người mới */
+.collab-takeaways-panel {
+  background: var(--surface-1, #1a2024);
+  border: 1px solid var(--line, #2d383e);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.takeaways-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.takeaways-icon {
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--surface-2, #252e35);
+  border-radius: 8px;
+  border: 1px solid var(--line, #2d383e);
+  flex-shrink: 0;
+}
+
+.takeaways-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg, #e6edf3);
+}
+
+.takeaways-header .subtle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted, #9ba8a6);
+}
+
+.takeaways-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.takeaway-card {
+  background: var(--surface-2, #20272e);
+  border: 1px solid var(--line, #2d383e);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.takeaway-card:hover {
+  border-color: var(--accent, #a5dec3);
+}
+
+.takeaway-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 2px;
+}
+
+.takeaway-badge.green {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+}
+
+.takeaway-badge.purple {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+}
+
+.takeaway-badge.blue {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+}
+
+.takeaway-badge.amber {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+
+.takeaway-card h5 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.takeaway-card p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted, #9ba8a6);
+  line-height: 1.45;
+}
+
+/* Thẻ Collapsible Drawer kỹ thuật chuyên sâu */
+.collab-details-drawer {
+  background: var(--surface-1, #1a2024);
+  border: 1px solid var(--line, #2d383e);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 14px;
+  transition: border-color 0.15s ease;
+}
+
+.collab-details-drawer[open] {
+  border-color: #3b474e;
+}
+
+.collab-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface-1, #1a2024);
+  transition: background 0.15s ease;
+  font-size: 13px;
+  color: var(--fg, #e6edf3);
+}
+
+.collab-details-summary:hover {
+  background: var(--surface-2, #21282f);
+}
+
+.drawer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-icon {
+  font-size: 15px;
+}
+
+.drawer-badge {
+  font-size: 11.5px;
+  color: var(--muted, #9ba8a6);
+  background: var(--surface-2, #252e35);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line, #2d383e);
+}
+
+.collab-details-body {
+  padding: 14px 16px;
+  border-top: 1px solid var(--line, #2d383e);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* Khung cuộn mượt cho danh sách minh chứng */
+.evidence-scroll-container {
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.evidence-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.evidence-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--line, #2d383e);
+  border-radius: 4px;
+}

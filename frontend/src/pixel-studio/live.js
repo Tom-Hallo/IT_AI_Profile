@@ -870,6 +870,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const action = item.action;
     const submit = async approved => {
       try {
+        if (approved && action.tool === 'update_roadmap' && action.proposal?.roadmap_id) {
+          try {
+            await request('/roadmap-tracking/' + encodeURIComponent(action.proposal.roadmap_id));
+          } catch (_) {}
+        }
         const result = await post('/agent/actions/' + encodeURIComponent(action.id) + '/' + (approved ? 'approve' : 'decline'));
         item.actionApplied = result.status === 'succeeded';
         item.actionDismissed = !approved;
@@ -904,7 +909,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             return;
           }
           notice(result.status === 'denied'
-            ? copy('Thao tác không thể thực hiện do không tìm thấy lộ trình phù hợp hoặc thiếu quyền.', 'Action denied: roadmap not found or missing permissions.')
+            ? copy('Thao tác không thể thực hiện do lộ trình không khả dụng hoặc quyền truy cập đã thay đổi.', 'Action denied: roadmap not available or access changed.')
             : copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
         } else {
           notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));

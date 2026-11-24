@@ -555,7 +555,7 @@ function reportContent(report, info, tab, data) {
       + '<div class="kpi-card-header"><span class="kpi-icon">💻</span> <span class="kpi-title">' + copy('Commits đóng góp', 'Contributed Commits') + '</span></div>'
       + '<div class="kpi-num">' + (v.verified_commits_count || 0) + ' <small>/ ' + totalCommits + ' (' + commitPct + '%)</small></div>'
       + '<div class="kpi-bar"><div class="kpi-bar-fill" style="width:' + commitPct + '%"></div></div>'
-      + '<div class="kpi-sub">' + (v.unverified_commits_count ? copy(v.unverified_commits_count + ' commits chưa xác minh tác giả', v.unverified_commits_count + ' unverified commits') : copy('100% commits đã được xác minh', '100% commits verified')) + '</div>'
+      + '<div class="kpi-sub">' + (v.unverified_commits_count ? copy(v.unverified_commits_count + ' commits chưa xác minh tác giả', v.unverified_commits_count + ' unverified commits') : copy('100% commits đã được xác minh tác giả', '100% commits author-verified')) + '</div>'
       + '</div>'
       + '<div class="kpi-card">'
       + '<div class="kpi-card-header"><span class="kpi-icon">🔀</span> <span class="kpi-title">' + copy('Pull Requests', 'Pull Requests') + '</span></div>'
@@ -566,26 +566,55 @@ function reportContent(report, info, tab, data) {
       + '<div class="kpi-card">'
       + '<div class="kpi-card-header"><span class="kpi-icon">📊</span> <span class="kpi-title">' + copy('Khối lượng mã nguồn (Code Churn)', 'Code Volume (Churn)') + '</span></div>'
       + '<div class="kpi-churn-row">'
-      + '<span class="churn-add">+' + (v.verified_additions || 0).toLocaleString() + ' <small>' + copy('dòng thêm', 'additions') + '</small></span>'
+      + '<span class="churn-add">+' + (v.verified_additions || 0).toLocaleString() + ' <small>' + copy('dòng thêm', 'additions') + '</small></span> '
       + '<span class="churn-del">−' + (v.verified_deletions || 0).toLocaleString() + ' <small>' + copy('dòng xóa', 'deletions') + '</small></span>'
       + '</div>'
-      + '<div class="kpi-sub">' + copy('Đóng góp trực tiếp vào nhánh chính', 'Direct contributions to primary branch') + '</div>'
+      + '<div class="kpi-sub">' + copy('Đóng góp trực tiếp vào nhánh chính của repository', 'Direct contributions to primary branch') + '</div>'
       + '</div>'
       + '</div>';
+
+    // Khối tóm tắt năng lực tác quyền súc tích cho người mới
+    const ownershipTakeaways = '<div class="collab-takeaways-panel ownership-takeaways">'
+      + '<div class="takeaways-header">'
+      + '<span class="takeaways-icon">💡</span>'
+      + '<div>'
+      + '<h4>' + copy('Tóm tắt năng lực tác quyền & đóng góp', 'Ownership & Contribution Takeaways') + '</h4>'
+      + '<p class="subtle">' + copy('Đánh giá nhanh về quyền sở hữu mã nguồn và độ tin cậy của các đóng góp kỹ thuật', 'Quick assessment of code ownership and contribution reliability') + '</p>'
+      + '</div></div>'
+      + '<div class="takeaways-grid">'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge purple">👑 ' + copy('Quyền sở hữu', 'Ownership') + '</div>'
+      + '<h5>' + (v.is_fork ? copy('Bản phát triển Fork', 'Fork Contributor') : copy('Dự án chính chủ (Original)', 'Original Author')) + '</h5>'
+      + '<p>' + (v.is_fork ? copy('Đóng góp mã nguồn trên nhánh fork với đầy đủ quyền kiểm soát và định hướng tính năng.', 'Contributes to a forked codebase with feature customization.') : copy('Mã nguồn gốc được xây dựng trực tiếp, thể hiện vai trò tác giả chính và kiến trúc sư của repository.', 'Original codebase created directly, demonstrating primary author and architectural role.')) + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge green">✓ ' + copy('Tác quyền minh bạch', 'Verified Identity') + '</div>'
+      + '<h5>' + copy('Xác thực danh tính Git chuẩn mực', 'Standard Git Identity Verification') + '</h5>'
+      + '<p>' + copy('Các commit và PR được đối chiếu danh tính với tài khoản GitHub, bảo đảm độ tin cậy và không thổi phồng năng lực.', 'Commits and PRs are verified against GitHub identity, ensuring credibility and authentic metrics.') + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge blue">📈 ' + copy('Quy mô ổn định', 'Code Churn') + '</div>'
+      + '<h5>' + copy('Khối lượng mã nguồn thực tế', 'Substantial Code Volume') + '</h5>'
+      + '<p>' + copy('Đóng góp hàng ngàn dòng mã thực thi trực tiếp, thể hiện sức bền kỹ thuật và tiến độ phát triển phần mềm liên tục.', 'Thousands of functional lines contributed, demonstrating technical stamina and continuous delivery.') + '</p>'
+      + '</div>'
+      + '</div></div>';
 
     const evidenceSection = v.evidence?.length ? (
       '<div class="evidence-section">'
       + '<div class="evidence-section-header">'
       + '<h4>' + icon('award') + ' ' + copy('Minh chứng xác minh đóng góp', 'Verified Contribution Evidence')
-      + ' <span class="ev-count">(' + v.evidence.length + ')</span></h4>'
+      + ' <span class="ev-count">(' + v.evidence.length + ' ' + copy('minh chứng', 'evidence records') + ')</span></h4>'
       + '</div>'
+      + '<div class="evidence-scroll-container">'
       + refs(v.evidence, data, repoFullName)
+      + '</div>'
       + '</div>'
     ) : '';
 
     return '<div class="ownership-dashboard">'
       + headerBar
       + cardsGrid
+      + ownershipTakeaways
       + evidenceSection
       + '<div class="ownership-actions">'
       + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr)
@@ -612,12 +641,26 @@ function reportContent(report, info, tab, data) {
       || (data?.repos?.find(r => r.id === (c.repository_id || report?.repository_id))?.full_name)
       || '';
 
+    const totalPRs = c.total_prs_analyzed || 0;
+    const mergedPRs = c.merged_prs_count || 0;
+    const openPRs = c.open_prs_count || 0;
+    const closedPRs = c.closed_unmerged_prs_count || 0;
+    const prMergePct = totalPRs > 0 ? Math.round((mergedPRs / totalPRs) * 100) : 0;
+    const prOpenPct = totalPRs > 0 ? Math.round((openPRs / totalPRs) * 100) : 0;
+    const prClosedPct = totalPRs > 0 ? Math.max(0, 100 - prMergePct - prOpenPct) : 0;
+
     const prCard = '<div class="collab-kpi-card">'
-      + '<div class="collab-card-title"><span class="collab-icon">🔀</span> ' + copy('Pull Requests', 'Pull Requests') + ' <strong class="collab-total">' + (c.total_prs_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-card-title"><span class="collab-icon">🔀</span> ' + copy('Pull Requests', 'Pull Requests') + ' <strong class="collab-total">' + totalPRs + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="PR Breakdown">'
+      + '<div class="seg-fill green" style="width:' + prMergePct + '%" title="' + copy('Đã merge: ', 'Merged: ') + prMergePct + '%"></div>'
+      + '<div class="seg-fill blue" style="width:' + prOpenPct + '%" title="' + copy('Đang mở: ', 'Open: ') + prOpenPct + '%"></div>'
+      + '<div class="seg-fill grey" style="width:' + prClosedPct + '%" title="' + copy('Đã đóng: ', 'Closed: ') + prClosedPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Tỷ lệ hoàn thành: ', 'Merge rate: ') + '<strong>' + prMergePct + '% ' + copy('Đã merge', 'Merged') + '</strong></span></div>'
       + '<div class="collab-chips-grid">'
-      + '<div class="collab-chip green"><span class="chip-val">' + (c.merged_prs_count || 0) + '</span><span class="chip-label">' + copy('Đã merge', 'Merged') + '</span></div>'
-      + '<div class="collab-chip blue"><span class="chip-val">' + (c.open_prs_count || 0) + '</span><span class="chip-label">' + copy('Đang mở', 'Open') + '</span></div>'
-      + '<div class="collab-chip grey"><span class="chip-val">' + (c.closed_unmerged_prs_count || 0) + '</span><span class="chip-label">' + copy('Đã đóng', 'Closed') + '</span></div>'
+      + '<div class="collab-chip green"><span class="chip-val">' + mergedPRs + '</span> <span class="chip-label">' + copy('Đã merge', 'Merged') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + openPRs + '</span> <span class="chip-label">' + copy('Đang mở', 'Open') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + closedPRs + '</span> <span class="chip-label">' + copy('Đã đóng', 'Closed') + '</span></div>'
       + '</div>'
       + '<div class="collab-breakdown-sub">'
       + '<span>👤 ' + copy('Cá nhân:', 'Author:') + ' <strong>' + (c.user_prs_count || 0) + '</strong></span> · '
@@ -625,13 +668,27 @@ function reportContent(report, info, tab, data) {
       + '</div>'
       + '</div>';
 
+    const totalReviews = c.total_reviews_analyzed || 0;
+    const approvedReviews = c.approved_reviews_count || 0;
+    const changesReviews = c.changes_requested_count || 0;
+    const commentReviews = c.commented_reviews_count || 0;
+    const revApprovedPct = totalReviews > 0 ? Math.round((approvedReviews / totalReviews) * 100) : 0;
+    const revChangesPct = totalReviews > 0 ? Math.round((changesReviews / totalReviews) * 100) : 0;
+    const revCommentPct = totalReviews > 0 ? Math.max(0, 100 - revApprovedPct - revChangesPct) : 0;
+
     const reviewCard = '<div class="collab-kpi-card">'
-      + '<div class="collab-card-title"><span class="collab-icon">💬</span> ' + copy('Code Reviews', 'Code Reviews') + ' <strong class="collab-total">' + (c.total_reviews_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-card-title"><span class="collab-icon">💬</span> ' + copy('Code Reviews', 'Code Reviews') + ' <strong class="collab-total">' + totalReviews + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="Review Breakdown">'
+      + '<div class="seg-fill green" style="width:' + revApprovedPct + '%" title="' + copy('Phê duyệt: ', 'Approved: ') + revApprovedPct + '%"></div>'
+      + '<div class="seg-fill amber" style="width:' + revChangesPct + '%" title="' + copy('Yêu cầu sửa: ', 'Changes requested: ') + revChangesPct + '%"></div>'
+      + '<div class="seg-fill blue" style="width:' + revCommentPct + '%" title="' + copy('Nhận xét: ', 'Comments: ') + revCommentPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Độ đồng thuận phê duyệt: ', 'Approval consensus: ') + '<strong>' + revApprovedPct + '% ' + copy('Phê duyệt', 'Approved') + '</strong></span></div>'
       + '<div class="collab-chips-grid">'
-      + '<div class="collab-chip green"><span class="chip-val">' + (c.approved_reviews_count || 0) + '</span><span class="chip-label">' + copy('Phê duyệt', 'Approved') + '</span></div>'
-      + '<div class="collab-chip amber"><span class="chip-val">' + (c.changes_requested_count || 0) + '</span><span class="chip-label">' + copy('Yêu cầu sửa', 'Changes') + '</span></div>'
-      + '<div class="collab-chip blue"><span class="chip-val">' + (c.commented_reviews_count || 0) + '</span><span class="chip-label">' + copy('Nhận xét', 'Comments') + '</span></div>'
-      + '<div class="collab-chip grey"><span class="chip-val">' + (c.dismissed_reviews_count || 0) + '</span><span class="chip-label">' + copy('Bãi miễn', 'Dismissed') + '</span></div>'
+      + '<div class="collab-chip green"><span class="chip-val">' + approvedReviews + '</span> <span class="chip-label">' + copy('Phê duyệt', 'Approved') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + changesReviews + '</span> <span class="chip-label">' + copy('Yêu cầu sửa', 'Changes') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + commentReviews + '</span> <span class="chip-label">' + copy('Nhận xét', 'Comments') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + (c.dismissed_reviews_count || 0) + '</span> <span class="chip-label">' + copy('Bãi miễn', 'Dismissed') + '</span></div>'
       + '</div>'
       + '<div class="collab-breakdown-sub">'
       + '<span>🔍 ' + copy('Bạn thực hiện:', 'Conducted:') + ' <strong>' + (c.user_reviews_conducted_count || 0) + '</strong></span> · '
@@ -639,13 +696,26 @@ function reportContent(report, info, tab, data) {
       + '</div>'
       + '</div>';
 
-    const ciSuccessPct = c.total_checks_analyzed > 0 ? Math.round(((c.successful_checks_count || 0) / c.total_checks_analyzed) * 100) : 0;
+    const totalChecks = c.total_checks_analyzed || 0;
+    const successfulChecks = c.successful_checks_count || 0;
+    const failedChecks = c.failed_checks_count || 0;
+    const pendingChecks = c.pending_checks_count || 0;
+    const ciSuccessPct = totalChecks > 0 ? Math.round((successfulChecks / totalChecks) * 100) : 0;
+    const ciFailPct = totalChecks > 0 ? Math.round((failedChecks / totalChecks) * 100) : 0;
+    const ciPendingPct = totalChecks > 0 ? Math.max(0, 100 - ciSuccessPct - ciFailPct) : 0;
+
     const ciCard = '<div class="collab-kpi-card">'
-      + '<div class="collab-card-title"><span class="collab-icon">⚡</span> ' + copy('CI Checks & Tự động hoá', 'CI Checks & Automation') + ' <strong class="collab-total">' + (c.total_checks_analyzed || 0) + '</strong></div>'
+      + '<div class="collab-card-title"><span class="collab-icon">⚡</span> ' + copy('CI Checks & Tự động hoá', 'CI Checks & Automation') + ' <strong class="collab-total">' + totalChecks + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="CI Checks Breakdown">'
+      + '<div class="seg-fill green" style="width:' + ciSuccessPct + '%" title="' + copy('Thành công: ', 'Passed: ') + ciSuccessPct + '%"></div>'
+      + '<div class="seg-fill red" style="width:' + ciFailPct + '%" title="' + copy('Thất bại: ', 'Failed: ') + ciFailPct + '%"></div>'
+      + '<div class="seg-fill amber" style="width:' + ciPendingPct + '%" title="' + copy('Đang chờ: ', 'Pending: ') + ciPendingPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Độ tin cậy kiểm thử: ', 'Test reliability: ') + '<strong>' + ciSuccessPct + '% ' + copy('Thành công', 'Passed') + '</strong></span></div>'
       + '<div class="collab-chips-grid">'
-      + '<div class="collab-chip green"><span class="chip-val">' + (c.successful_checks_count || 0) + '</span><span class="chip-label">' + copy('Thành công (' + ciSuccessPct + '%)', 'Passed (' + ciSuccessPct + '%)') + '</span></div>'
-      + '<div class="collab-chip red"><span class="chip-val">' + (c.failed_checks_count || 0) + '</span><span class="chip-label">' + copy('Thất bại', 'Failed') + '</span></div>'
-      + '<div class="collab-chip amber"><span class="chip-val">' + (c.pending_checks_count || 0) + '</span><span class="chip-label">' + copy('Đang chờ', 'Pending') + '</span></div>'
+      + '<div class="collab-chip green"><span class="chip-val">' + successfulChecks + '</span> <span class="chip-label">' + copy('Thành công', 'Passed') + '</span></div>'
+      + '<div class="collab-chip red"><span class="chip-val">' + failedChecks + '</span> <span class="chip-label">' + copy('Thất bại', 'Failed') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + pendingChecks + '</span> <span class="chip-label">' + copy('Đang chờ', 'Pending') + '</span></div>'
       + '</div>'
       + '<div class="collab-breakdown-sub">'
       + '<span>🔄 ' + copy('Chu kỳ giải quyết sự cố:', 'Problem-solving cycles:') + ' <strong>' + (c.problem_solving_sequences_count || 0) + '</strong></span>'
@@ -654,15 +724,43 @@ function reportContent(report, info, tab, data) {
 
     const collabGrid = '<div class="collab-dashboard-grid">' + prCard + reviewCard + ciCard + '</div>';
 
-    const seqs = (c.problem_solving_sequences ?? []).map(s =>
-      '<div class="observation-card seq-card">'
-      + '<div class="obs-card-header">'
-      + '<span class="obs-badge seq"><span class="obs-icon">⚡</span> ' + copy('Chuỗi giải quyết sự cố', 'Problem Solving Sequence') + '</span>'
-      + '<span class="obs-duration">' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + (s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' ' + copy('phút', 'min') : 'N/A') + '</span>'
+    // Khối tóm tắt năng lực cộng tác súc tích, chuyên nghiệp cho người mới & nhà tuyển dụng
+    const collabTakeaways = '<div class="collab-takeaways-panel">'
+      + '<div class="takeaways-header">'
+      + '<span class="takeaways-icon">🚀</span>'
+      + '<div>'
+      + '<h4>' + copy('Tóm tắt năng lực cộng tác kỹ thuật', 'Collaboration Competency Takeaways') + '</h4>'
+      + '<p class="subtle">' + copy('Đánh giá nhanh về văn hóa làm việc nhóm, phản biện mã nguồn và quy trình kiểm thử tự động', 'Quick assessment of teamwork culture, peer code review, and automated testing pipeline') + '</p>'
+      + '</div></div>'
+      + '<div class="takeaways-grid">'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge green">🔀 ' + copy('Bàn giao PR', 'PR Delivery') + '</div>'
+      + '<h5>' + copy('Quy trình PR liền mạch (' + prMergePct + '% Đã merge)', 'Seamless PR Delivery (' + prMergePct + '% Merged)') + '</h5>'
+      + '<p>' + copy('Đóng gói tính năng độc lập, tỷ lệ tích hợp vào nhánh chính cao (' + mergedPRs + '/' + totalPRs + ' PRs), phối hợp nhịp nhàng giữa cá nhân và nhóm phát triển.', 'Cleanly packaged features, high integration rate (' + mergedPRs + '/' + totalPRs + ' PRs), smooth collaboration across development team.') + '</p>'
       + '</div>'
-      + '<p class="obs-desc">' + escape(s.explanation) + '</p>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge blue">💬 ' + copy('Phản biện chất lượng', 'Peer Review') + '</div>'
+      + '<h5>' + copy('Chủ động đánh giá mã nguồn', 'Active Code Reviewer') + '</h5>'
+      + '<p>' + copy('Tích cực tham gia review mã nguồn cho đồng nghiệp (' + (c.user_reviews_conducted_count || 0) + ' lượt), xây dựng tiêu chuẩn chất lượng cao qua phản biện kỹ thuật.', 'Actively reviewed peers\' code (' + (c.user_reviews_conducted_count || 0) + ' reviews conducted), upholding high engineering quality standards.') + '</p>'
       + '</div>'
-    ).join('');
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge amber">⚡ ' + copy('CI/CD Tự động hóa', 'Automated CI/CD') + '</div>'
+      + '<h5>' + copy('Bộ lọc chất lượng tự động (' + ciSuccessPct + '% Pass)', 'Automated Quality Gate (' + ciSuccessPct + '% Pass)') + '</h5>'
+      + '<p>' + copy('Vận hành pipeline CI liên tục (' + successfulChecks + ' lượt kiểm tra đạt), áp dụng cơ chế phát hiện lỗi sớm trước khi hòa mã nguồn.', 'Continuous CI pipeline (' + successfulChecks + ' successful checks), enforcing fail-fast safety checks prior to merge.') + '</p>'
+      + '</div>'
+      + '</div></div>';
+
+    // Rút gọn và biên tập lại các chuỗi kỹ thuật chuyên sâu
+    const seqs = (c.problem_solving_sequences ?? []).map(s => {
+      const duration = s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' ' + copy('phút', 'min') : 'N/A';
+      return '<div class="observation-card seq-card">'
+        + '<div class="obs-card-header">'
+        + '<span class="obs-badge seq"><span class="obs-icon">⚡</span> ' + copy('Chuỗi giải quyết sự cố', 'Problem Solving Sequence') + '</span>'
+        + '<span class="obs-duration">' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + duration + '</span>'
+        + '</div>'
+        + '<p class="obs-desc">' + escape(s.explanation) + '</p>'
+        + '</div>';
+    }).join('');
 
     const obs = (c.collaboration_observations ?? []).map(o => {
       const categoryIcon = o.category === 'ci_check' ? '⚡' : o.category === 'review' ? '💬' : o.category === 'problem_solving' ? '💡' : '🔀';
@@ -680,26 +778,41 @@ function reportContent(report, info, tab, data) {
         + '</div>';
     }).join('');
 
+    // Đưa toàn bộ chi tiết kỹ thuật chuyên sâu vào Thẻ mở rộng/thu gọn (Collapsible Drawer)
+    const technicalDetailsDrawer = (seqs || obs || (c.limitations ?? []).length) ? (
+      '<details class="collab-details-drawer">'
+      + '<summary class="collab-details-summary">'
+      + '<span class="drawer-left"><span class="drawer-icon">🔍</span> <strong>' + copy('Xem phân tích kỹ thuật chi tiết & chuỗi sự kiện', 'View detailed technical analysis & event traces') + '</strong></span>'
+      + '<span class="drawer-badge">' + copy('Kỹ thuật chuyên sâu ▾', 'Advanced details ▾') + '</span>'
+      + '</summary>'
+      + '<div class="collab-details-body">'
+      + (seqs ? '<div class="obs-section"><h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs + '</div>' : '')
+      + (obs ? '<div class="obs-section"><h4>' + copy('Quan sát cộng tác chi tiết (Observations)', 'Collaboration Observations') + '</h4>' + obs + '</div>' : '')
+      + (c.limitations ?? []).map(muted).join('')
+      + '</div>'
+      + '</details>'
+    ) : '';
+
     const evidenceSection = c.evidence?.length ? (
       '<div class="evidence-section">'
       + '<div class="evidence-section-header">'
       + '<h4>' + icon('award') + ' ' + copy('Minh chứng cộng tác chi tiết', 'Detailed Collaboration Evidence')
-      + ' <span class="ev-count">(' + c.evidence.length + ')</span></h4>'
+      + ' <span class="ev-count">(' + c.evidence.length + ' ' + copy('minh chứng', 'evidence records') + ')</span></h4>'
       + '</div>'
+      + '<div class="evidence-scroll-container">'
       + refs(c.evidence, data, repoFullName)
+      + '</div>'
       + '</div>'
     ) : '';
 
     return '<div class="collab-breakdown">'
       + collabGrid
-      + (seqs ? '<div class="obs-section"><h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs + '</div>' : '')
-      + (obs ? '<div class="obs-section"><h4>' + copy('Quan sát cộng tác (Observations)', 'Collaboration Observations') + '</h4>' + obs + '</div>' : '')
-      + (c.limitations ?? []).map(muted).join('')
-      + '</div>'
+      + collabTakeaways
+      + technicalDetailsDrawer
       + evidenceSection
       + '<div class="collab-actions">'
       + namedButton(collabReLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr)
-      + '</div>';
+      + '</div></div>';
   }
   const list = (title, items, key) => '<h3>' + escape(title) + '</h3>' + tags(items.map(item => item[key]).filter(Boolean));
   const snippet = info.evidence?.find(item => typeof item.matched_content === 'string' && item.matched_content.trim());
