@@ -87,7 +87,11 @@ def serialize_milestone(m: Milestone, data_milestone: dict | None = None) -> dic
             "verified"
             if verified_submission or verified_evaluation
             else "self_reported"
-            if submitted
+            if any(
+                isinstance(item, dict)
+                and (item.get("source") == "submission" or item.get("url"))
+                for item in submitted
+            )
             else "pending"
         )
     return res
@@ -233,7 +237,7 @@ def get_history(roadmap_id: int, milestone_id: int, user: CurrentUser, db: DB):
         link_key(entry.get("url", ""))
         for item in (roadmap.data or {}).get("milestones", [])
         if isinstance(item, dict)
-        for entry in item.get("evidence", [])
+        for entry in (item.get("evidence") or [])
         if isinstance(entry, dict)
         and entry.get("repository_id") is not None
         and entry["repository_id"] not in permitted
@@ -434,7 +438,11 @@ def submit_milestone_evidence(
         existing.update(
             verified=is_verified,
             verification_status=verification_status,
-            repository_id=record["repository_id"],
+            repository_id=(
+                record["repository_id"]
+                if record["repository_id"] is not None
+                else existing.get("repository_id")
+            ),
         )
     roadmap.data = data
     flag_modified(roadmap, "data")
@@ -585,7 +593,8 @@ def resolve(
             (
                 item.get("target_score")
                 for item in (roadmap.data or {}).get("milestones", [])
-                if item.get("skill") == m.external_key
+                if str(item.get("skill", "")).strip().casefold()
+                == str(m.external_key or "").strip().casefold()
             ),
             None,
         )
