@@ -21,7 +21,8 @@ import {settingsView, syncThemeControls} from './settings-view.js';
 import {applyTheme, colorFields, defaultPreset, hexColor, loadTheme, presets, saveTheme, themeColors, themeKey} from './theme.js';
 import {mountAboutMotion} from './about-motion.js';
 import {createLiveStudio} from './live.js';
-import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus,orderedTrackingMilestones} from './live-views.js';
+import {renderReferenceCV, serializeCVFromSections, parseCVForReference} from './cv-renderer.js';
+import {liveCV,liveDashboard,liveData,liveJobs,livePublic,liveRepos,liveRoadmap,liveStatus,orderedTrackingMilestones,updateCVFitScale} from './live-views.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
@@ -83,6 +84,7 @@ let mapObserver;
 let jdTextareaObserver;
 let stopRoadAnimation;
 let radar;
+let cvObserver;
 let mentorLayout;
 let mentorContextKey;
 let mentorOpener;
@@ -99,14 +101,52 @@ function setSession(active) {
   writeSession(active);
 }
 
+let toastRemaining = 3000;
+let toastRaf = null;
+let toastPaused = false;
+
 function notify(key,fields) { notifyText(t(key,fields)); }
 
 function notifyText(text) {
   const toast = $('#toast');
+  if (!toast) return;
   clearTimeout(toastTimer);
+  if (toastRaf) cancelAnimationFrame(toastRaf);
+
   toast.hidden = false;
-  toast.textContent = text;
-  toastTimer = setTimeout(() => { toast.hidden = true; },4200);
+  toast.innerHTML = '<div class="toast-body"><span class="toast-icon">ℹ️</span><span class="toast-msg">' + escape(text) + '</span></div><div class="toast-progress"></div>';
+
+  const progressBar = toast.querySelector('.toast-progress');
+  toastRemaining = 3000;
+  toastPaused = false;
+  let lastTime = performance.now();
+
+  function step(now) {
+    if (!toastPaused) {
+      const delta = now - lastTime;
+      toastRemaining -= delta;
+      if (progressBar) {
+        const pct = Math.max(0, (toastRemaining / 3000) * 100);
+        progressBar.style.width = pct + '%';
+      }
+      if (toastRemaining <= 0) {
+        toast.hidden = true;
+        return;
+      }
+    }
+    lastTime = now;
+    toastRaf = requestAnimationFrame(step);
+  }
+
+  toast.onmouseenter = () => {
+    toastPaused = true;
+  };
+  toast.onmouseleave = () => {
+    toastPaused = false;
+    lastTime = performance.now();
+  };
+
+  toastRaf = requestAnimationFrame(step);
 }
 
 function audit(key,fields) {
@@ -163,25 +203,9 @@ function replaceView(view,content) {
   paintBots(view);
   if (key) view.querySelector(key)?.focus({preventScroll:true});
 }
-// Keep the JD field sized to its wrapped content, with limits owned by CSS.
+// Keep the JD field sized with stable dimensions; height is owned by CSS to prevent jitter.
 function resizeJDTextarea(textarea = $('#jd-form textarea[name="jd"]')) {
   if (!textarea) return;
-  const previousHeight = textarea.getBoundingClientRect().height;
-  const previousScrollTop = textarea.scrollTop;
-  textarea.style.height = 'auto';
-  const computed = getComputedStyle(textarea);
-  const minHeight = Number.parseFloat(computed.minHeight) || 0;
-  const maxHeight = Number.parseFloat(computed.maxHeight) || Infinity;
-  const borderHeight = textarea.offsetHeight - textarea.clientHeight;
-  const targetHeight = Math.ceil(Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + borderHeight)));
-
-  // Transition between numeric heights, never directly to/from "auto".
-  if (Math.abs(previousHeight - targetHeight) > 1) {
-    textarea.style.height = previousHeight + 'px';
-    void textarea.offsetHeight;
-  }
-  textarea.style.height = targetHeight + 'px';
-  textarea.scrollTop = previousScrollTop;
 }
 function updateStudio() {
   if (!isStudio()) return;
@@ -204,6 +228,8 @@ function renderRoute(force=false) {
   stopRoadAnimation = null;
   radar?.disconnect();
   radar = null;
+  cvObserver?.disconnect();
+  cvObserver = null;
   if (next.kind !== 'studio') {
     runtime.mentorOpen = false;
     mentorOpener = null;
@@ -307,20 +333,7 @@ function prepareView() {
   jdTextareaObserver?.disconnect();
   jdTextareaObserver = null;
   if (isStudio('jobs')) {
-    const textarea = $('#jd-form textarea[name="jd"]');
-    resizeJDTextarea(textarea);
-    if (textarea) {
-      let previousWidth = textarea.clientWidth;
-      jdTextareaObserver = new ResizeObserver(() => {
-        if (!textarea.isConnected) return;
-        const currentWidth = textarea.clientWidth;
-        if (currentWidth !== previousWidth) {
-          previousWidth = currentWidth;
-          resizeJDTextarea(textarea);
-        }
-      });
-      jdTextareaObserver.observe(textarea);
-    }
+    // Keep JD textarea fixed height from CSS, no observer jitter
   }
   if (isStudio('roadmap')) {
     mapObserver?.disconnect();
@@ -345,6 +358,15 @@ function prepareView() {
       runtime.radarAxis = value;
       if (runtime.mentorOpen) renderMentorPanel();
     });
+  }
+  if (isStudio('cv')) {
+    cvObserver?.disconnect();
+    const viewport = $('.cv-preview-viewport');
+    if (viewport) {
+      updateCVFitScale();
+      cvObserver = new ResizeObserver(() => updateCVFitScale());
+      cvObserver.observe(viewport);
+    }
   }
 }
 function mentorContext() {
@@ -402,6 +424,10 @@ function renderMentorPanel() {
   splitter.tabIndex = open && !compactMentor.matches ? 0 : -1;
   $('.workspace-content').inert = open && compactMentor.matches;
   mentorLayout?.refresh();
+  if (isStudio('cv')) {
+    setTimeout(updateCVFitScale, 50);
+    setTimeout(updateCVFitScale, 300);
+  }
   if (!open) {
     clearTimeout(mentorTimer);
     return;
@@ -458,12 +484,15 @@ function openMentor() {
   }
   runtime.mentorOpen = true;
   renderMentorPanel();
+  if (isStudio('cv')) updateStudio();
   if (compactMentor.matches) $('.workspace').scrollIntoView({block:'start',behavior:'instant'});
   $(compactMentor.matches ? '#mentor-title' : '#mentor-question')?.focus({preventScroll:true});
 }
 function closeMentor(returnFocus=false) {
   runtime.mentorOpen = false;
+  if (live?.data) live.data.rightPanelExplicitOpen = false;
   renderMentorPanel();
+  if (isStudio('cv')) updateStudio();
   if (returnFocus) {
     const target = mentorOpener?.isConnected && !mentorOpener.disabled ? mentorOpener : $('#mentor-toggle');
     if (compactMentor.matches && compactScroll !== undefined) window.scrollTo({top:compactScroll,behavior:'instant'});
@@ -835,10 +864,114 @@ function exportCV() {
   setTimeout(() => URL.revokeObjectURL(url),1500);
 }
 function previewCV() {
-  const {name,role,body} = runtime.cvDraft;
-  $('#cv-name').textContent = name;
-  $('#cv-role').textContent = role;
-  $('#cv-body').textContent = body || t('cv.empty');
+  try {
+    if (state.template === 'reference') {
+      const paper = $('.cv-paper');
+      if (paper) {
+        paper.outerHTML = renderReferenceCV(runtime.cvDraft);
+      }
+      return;
+    }
+    const {name,role,body} = runtime.cvDraft;
+    const nameEl = $('#cv-name');
+    const roleEl = $('#cv-role');
+    const bodyEl = $('#cv-body');
+    if (nameEl) nameEl.textContent = name;
+    if (roleEl) roleEl.textContent = role;
+    if (bodyEl) bodyEl.textContent = body || t('cv.empty');
+  } catch (err) {
+    console.error('Error in previewCV:', err);
+  }
+}
+
+function syncStructuredForm() {
+  const form = document.querySelector('#cv-form');
+  if (!form) return;
+
+  // Round-trip parse the existing draft body so non-focused sections are NEVER wiped
+  const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+  if (!Array.isArray(structured.sections)) structured.sections = [];
+
+  // Update contact if contact field exists in DOM
+  const contactInput = form.querySelector('input[name="cv-struct-contact"]');
+  if (contactInput) {
+    structured.contact = contactInput.value;
+  }
+
+  // Update focused section if currently editing a specific section
+  const focusedEditor = form.querySelector('.cv-focused-sec-editor');
+  if (focusedEditor) {
+    const titleInput = focusedEditor.querySelector('.cv-struct-title');
+    const entryEls = focusedEditor.querySelectorAll('.cv-struct-entry');
+    const sIdxAttr = focusedEditor.querySelector('[data-sec]')?.dataset.sec ?? (live?.data?.activeSection ?? -1);
+    const sIdx = Number(sIdxAttr);
+    if (sIdx >= 0 && structured.sections[sIdx]) {
+      if (titleInput && titleInput.value.trim()) {
+        structured.sections[sIdx].title = titleInput.value.trim();
+      }
+      const updatedEntries = [];
+      entryEls.forEach(entryEl => {
+        const type = entryEl.dataset.type;
+        if (type === 'dated') {
+          const date = entryEl.querySelector('[data-field="date"]')?.value || '';
+          const org = entryEl.querySelector('[data-field="org"]')?.value || '';
+          const role = entryEl.querySelector('[data-field="role"]')?.value || '';
+          const loc = entryEl.querySelector('[data-field="loc"]')?.value || '';
+          const bulletsText = entryEl.querySelector('[data-field="bullets"]')?.value || '';
+          const bullets = bulletsText.split('\n').map(b => b.trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
+          updatedEntries.push({ type: 'dated', date, org, role, loc, bullets });
+        } else if (type === 'labeled') {
+          const label = entryEl.querySelector('[data-field="label"]')?.value || '';
+          const content = entryEl.querySelector('[data-field="content"]')?.value || '';
+          updatedEntries.push({ type: 'labeled', label, content, bullets: [] });
+        } else {
+          const text = entryEl.querySelector('[data-field="text"]')?.value || '';
+          updatedEntries.push({ type: 'text', text, bullets: [] });
+        }
+      });
+      structured.sections[sIdx].entries = updatedEntries;
+    }
+  }
+
+  // Also support full section list if ever rendered simultaneously
+  const secEls = form.querySelectorAll('.cv-struct-section-full');
+  if (secEls.length > 0) {
+    const sections = [];
+    secEls.forEach(secEl => {
+      const title = secEl.querySelector('.cv-struct-title')?.value || '';
+      const entries = [];
+      secEl.querySelectorAll('.cv-struct-entry').forEach(entryEl => {
+        const type = entryEl.dataset.type;
+        if (type === 'dated') {
+          const date = entryEl.querySelector('[data-field="date"]')?.value || '';
+          const org = entryEl.querySelector('[data-field="org"]')?.value || '';
+          const role = entryEl.querySelector('[data-field="role"]')?.value || '';
+          const loc = entryEl.querySelector('[data-field="loc"]')?.value || '';
+          const bulletsText = entryEl.querySelector('[data-field="bullets"]')?.value || '';
+          const bullets = bulletsText.split('\n').map(b => b.trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
+          entries.push({ type: 'dated', date, org, role, loc, bullets });
+        } else if (type === 'labeled') {
+          const label = entryEl.querySelector('[data-field="label"]')?.value || '';
+          const content = entryEl.querySelector('[data-field="content"]')?.value || '';
+          entries.push({ type: 'labeled', label, content, bullets: [] });
+        } else {
+          const text = entryEl.querySelector('[data-field="text"]')?.value || '';
+          entries.push({ type: 'text', text, bullets: [] });
+        }
+      });
+      if (title || entries.length) sections.push({ title, entries });
+    });
+    if (sections.length > 0) structured.sections = sections;
+  }
+
+  runtime.cvDraft.body = serializeCVFromSections(structured);
+  const rawTextarea = form.querySelector('textarea[name="body"]');
+  if (rawTextarea) rawTextarea.value = runtime.cvDraft.body;
+  runtime.cvEdited = true;
+  runtime.atsChecked = false;
+  if (live) live.data.ats = null;
+  $('#ats-result')?.replaceChildren();
+  previewCV();
 }
 function checkCV() {
   runtime.atsChecked = true;
@@ -1055,6 +1188,69 @@ const actions = {
     updateStudio();
   },
   'cv-template':button => { state.template = button.dataset.id; save(); updateStudio(); },
+  'cv-intel-tab': button => { runtime.intelTab = button.dataset.id; updateStudio(); },
+  'cv-editor-mode': button => { runtime.editorMode = button.dataset.id; updateStudio(); },
+  'cv-zoom': button => { runtime.zoomLevel = button.dataset.id; updateStudio(); },
+  'cv-zoom-panel': button => { runtime.zoomLevel = button.dataset.id; updateStudio(); },
+  'cv-toggle-intel': () => { runtime.rightPanelCollapsed = !runtime.rightPanelCollapsed; updateStudio(); },
+  'cv-del-entry': button => {
+    const sIdx = Number(button.dataset.sec);
+    const eIdx = Number(button.dataset.entry);
+    const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+    if (structured.sections?.[sIdx]?.entries) {
+      structured.sections[sIdx].entries.splice(eIdx, 1);
+      runtime.cvDraft.body = serializeCVFromSections(structured);
+      runtime.cvEdited = true;
+      updateStudio();
+    }
+  },
+  'cv-add-entry': button => {
+    const sIdx = Number(button.dataset.sec);
+    const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+    if (structured.sections?.[sIdx]) {
+      const firstEntry = structured.sections[sIdx].entries?.[0];
+      const type = firstEntry ? firstEntry.type : 'dated';
+      let newEntry = { type, bullets: [] };
+      if (type === 'dated') {
+        newEntry = { type: 'dated', date: '2023 - Nay', org: 'Tên công ty / Trường', role: 'Vị trí công việc', loc: 'Địa điểm', bullets: ['Mô tả kết quả đạt được...'] };
+      } else if (type === 'labeled') {
+        newEntry = { type: 'labeled', label: 'Kỹ năng mới:', content: 'Công nghệ 1, 2...', bullets: [] };
+      } else {
+        newEntry = { type: 'text', text: 'Nội dung chi tiết...', bullets: [] };
+      }
+      if (!Array.isArray(structured.sections[sIdx].entries)) structured.sections[sIdx].entries = [];
+      structured.sections[sIdx].entries.push(newEntry);
+      runtime.cvDraft.body = serializeCVFromSections(structured);
+      runtime.cvEdited = true;
+      updateStudio();
+    }
+  },
+  'cv-add-section': button => {
+    const type = button.dataset.type || 'Custom';
+    const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+    if (!Array.isArray(structured.sections)) structured.sections = [];
+    let title = 'MỤC TÙY CHỌN';
+    let entry = { type: 'dated', bullets: [] };
+    if (type === 'Experience') {
+      title = 'KINH NGHIỆM LÀM VIỆC';
+      entry = { type: 'dated', date: '2023 - Nay', org: 'Tên công ty', role: 'Kỹ sư phần mềm', loc: 'TP. Hồ Chí Minh', bullets: ['Phát triển hệ thống...'] };
+    } else if (type === 'Projects') {
+      title = 'DỰ ÁN TIÊU BIỂU';
+      entry = { type: 'dated', date: '2023', org: 'Dự án AI Profile', role: 'Lập trình viên chính', loc: 'GitHub', bullets: ['Xây dựng nền tảng...'] };
+    } else if (type === 'Skills') {
+      title = 'KỸ NĂNG CHUYÊN MÔN';
+      entry = { type: 'labeled', label: 'Ngôn ngữ & Framework:', content: 'Python, FastAPI, TypeScript, React', bullets: [] };
+    } else if (type === 'Education') {
+      title = 'HỌC VẤN & BẰNG CẤP';
+      entry = { type: 'dated', date: '2019 - 2023', org: 'Đại học', role: 'Cử nhân CNTT', loc: 'Việt Nam', bullets: [] };
+    } else {
+      entry = { type: 'text', text: 'Nội dung chi tiết...', bullets: [] };
+    }
+    structured.sections.push({ title, entries: [entry] });
+    runtime.cvDraft.body = serializeCVFromSections(structured);
+    runtime.cvEdited = true;
+    updateStudio();
+  },
   'cv-export':exportCV,
   'cv-print':() => { document.body.classList.add('print-cv'); window.print(); },
   'cv-check':checkCV,
@@ -1206,13 +1402,47 @@ document.addEventListener('input',event => {
     if (control.name === 'mentor-jd') live.data.mentorJD = control.value;
   }
   if (control.name === 'evidence') control.setCustomValidity('');
-  if (control.closest('#cv-form') && Object.hasOwn(runtime.cvDraft,control.name)) {
-    runtime.cvDraft[control.name] = control.value;
+  const paper = control.closest?.('.cv-paper');
+  if (paper) {
     runtime.cvEdited = true;
     runtime.atsChecked = false;
     if (live) live.data.ats = null;
     $('#ats-result')?.replaceChildren();
-    previewCV();
+
+    const nameEl = paper.querySelector('#cv-name');
+    const roleEl = paper.querySelector('#cv-role');
+    const bodyEl = paper.querySelector('#cv-body');
+
+    if (nameEl && (control === nameEl || nameEl.contains(control))) {
+      runtime.cvDraft.name = nameEl.innerText.trim();
+      const input = document.querySelector('#cv-form input[name="name"]');
+      if (input && input !== control) input.value = runtime.cvDraft.name;
+    }
+    if (roleEl && (control === roleEl || roleEl.contains(control))) {
+      runtime.cvDraft.role = roleEl.innerText.trim();
+      const input = document.querySelector('#cv-form input[name="role"]');
+      if (input && input !== control) input.value = runtime.cvDraft.role;
+    }
+    if (bodyEl && (control === bodyEl || bodyEl.contains(control))) {
+      runtime.cvDraft.body = bodyEl.innerText.trim();
+      const textarea = document.querySelector('#cv-form textarea[name="body"]');
+      if (textarea && textarea !== control) textarea.value = runtime.cvDraft.body;
+    }
+    return;
+  }
+  if (control.closest('#cv-form')) {
+    if (control.classList.contains('cv-struct-field') || control.name === 'cv-struct-contact') {
+      syncStructuredForm();
+      return;
+    }
+    if (Object.hasOwn(runtime.cvDraft,control.name)) {
+      runtime.cvDraft[control.name] = control.value;
+      runtime.cvEdited = true;
+      runtime.atsChecked = false;
+      if (live) live.data.ats = null;
+      $('#ats-result')?.replaceChildren();
+      previewCV();
+    }
   }
   if (control.name === 'jd' && control.closest('#jd-form')) resizeJDTextarea(control);
   if (control.name === 'jd') runtime.jdText = control.value;
@@ -1320,6 +1550,19 @@ document.addEventListener('visibilitychange',animateMentorFace);
 compactMentor.addEventListener('change',() => {
   renderMentorPanel();
   if (runtime.mentorOpen && document.activeElement === document.body) $('#mentor-title')?.focus({preventScroll:true});
+});
+document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    if (location.hash.includes('cv')) {
+      event.preventDefault();
+      const saveBtn = document.querySelector('.cv-command-actions button[data-act="cv-save-bar"]')
+        || document.querySelector('#cv-form button[type="submit"]');
+      saveBtn?.click();
+    }
+  }
+});
+window.addEventListener('resize', () => {
+  if (isStudio('cv')) updateCVFitScale();
 });
 paintIcons(document.documentElement);
 applyTheme(theme);

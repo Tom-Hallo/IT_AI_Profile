@@ -3,6 +3,7 @@ import {dateLabel, sourceLabel, t} from './i18n.js';
 import {repoById, sourceSkills, wordsIn} from './model.js';
 import {milestoneText} from './roadmap-model.js';
 import {attr, badge, blank, brand, btn, checkRow, details, escape, field, heading, icon, labelAttr, languagePicker, panelHead, tags} from './ui.js';
+import { renderReferenceCV } from './cv-renderer.js';
 
 export function jobsView(state,runtime) {
   const query = runtime.jobQuery.toLowerCase().trim();
@@ -72,14 +73,19 @@ export function cvView(state,runtime) {
     + '<div class="action-row"><button class="button primary" type="submit">' + escape(t('cv.save')) + '</button>'
     + btn(escape(t('cv.example')),'cv-example') + '</div></form></article>'
     + '<article class="panel cv-preview">' + panelHead(t('cv.preview'),t('cv.previewCopy'))
-    + '<div class="tabs" role="group"' + labelAttr(t('cv.templates')) + '>' + ['plain','tech'].map(key =>
-      btn(escape(t('cv.' + key)),'cv-template','',attr('id',key) + ' aria-pressed="' + (state.template === key) + '"')).join('') + '</div>'
-    + '<div class="cv-paper" data-template="' + escape(state.template) + '"><h2 id="cv-name">' + escape(draft.name)
-    + '</h2><p id="cv-role">' + escape(draft.role) + '</p><div class="cv-body" id="cv-body">' + escape(draft.body || t('cv.empty')) + '</div></div>'
+    + '<div class="tabs" role="group"' + labelAttr(t('cv.templates')) + '>' + ['plain','tech','reference'].map(key =>
+      btn(escape(t('cv.' + key)),'cv-template','',attr('id',key) + ' aria-pressed="' + (state.template === key) + '"')).join('')
+    + '<span class="cv-direct-edit-tip">✏️ Sửa trực tiếp trên CV</span></div>'
+    + (state.template === 'reference'
+      ? renderReferenceCV(draft)
+      : '<div class="cv-paper" data-template="' + escape(state.template) + '"><h2 id="cv-name" contenteditable="true" spellcheck="false">' + escape(draft.name)
+        + '</h2><p id="cv-role" contenteditable="true" spellcheck="false">' + escape(draft.role) + '</p><div class="cv-body" id="cv-body" contenteditable="true" spellcheck="false">' + escape(draft.body || t('cv.empty')) + '</div></div>')
     + '<div class="action-row cv-exports">' + btn(escape(t('cv.text')),'cv-export','secondary small')
     + btn(escape(t('cv.print')),'cv-print','secondary small') + '</div></article></div>'
     + '<article class="panel cv-feedback view-rows">' + panelHead(t('cv.ats'),t('cv.atsCopy'))
-    + btn(escape(t('cv.check')),'cv-check','secondary small') + '<div id="ats-result" aria-live="polite">' + (runtime.atsChecked ? cvFeedback(draft,state.job) : '') + '</div></article>';
+    + '<div class="action-row cv-ats-actions">'
+    + btn(icon('pulse') + ' ' + escape(t('cv.check')),'cv-check','primary small')
+    + '</div><div id="ats-result" aria-live="polite">' + (runtime.atsChecked ? cvFeedback(draft,state.job) : '') + '</div></article>';
 }
 
 export function dataView(state,runtime) {

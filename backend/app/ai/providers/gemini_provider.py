@@ -51,7 +51,8 @@ class GeminiProvider:
             raise AIConfigurationError(provider="gemini")
 
         # Tự động chuyển đổi các model cũ/quota thấp sang model hoạt động ổn định nhất
-        if model in (
+        primary_model = model
+        if primary_model in (
             "gemini-1.5-flash",
             "gemini-2.0-flash",
             "gemini-2.5-flash",
@@ -59,7 +60,13 @@ class GeminiProvider:
             "gemini-3-flash-preview",
             "gemini-flash-latest",
         ):
-            model = "gemini-3.1-flash-lite"
+            primary_model = "gemini-3.5-flash-lite"
+
+        # Danh sách model dự phòng theo thứ tự ưu tiên khi model chính gặp lỗi tải cao (503) hoặc rate limit (429)
+        candidate_models = [primary_model]
+        for fallback in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"):
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
 
         if not instructions.strip() or not input_text.strip():
             raise ValueError("Instructions và input không được để trống.")
@@ -101,69 +108,105 @@ class GeminiProvider:
             },
         }
 
-        url = f"{self.API_BASE}/{model}:generateContent"
-
         result = None
         last_error: AIProviderError | None = None
+        per_attempt_timeout = max(5.0, min(float(self.settings.ai_timeout_seconds), 15.0))
 
         async with httpx.AsyncClient(
-            timeout=self.settings.ai_timeout_seconds
+            timeout=per_attempt_timeout
         ) as client:
-            for attempt in range(self.MAX_ATTEMPTS):
-                try:
-                    if before_send is not None:
-                        before_send()
-                    response = await client.post(
-                        url,
-                        headers=headers,
-                        json=payload,
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    break
+            for current_model in candidate_models:
+                url = f"{self.API_BASE}/{current_model}:generateContent"
+                model_succeeded = False
 
-                except httpx.TimeoutException:
-                    last_error = AITimeoutError(provider="gemini")
+                for attempt in range(self.MAX_ATTEMPTS):
+                    try:
+                        if before_send is not None:
+                            before_send()
+                        response = await client.post(
+                            url,
+                            headers=headers,
+                            json=payload,
+                        )
+                        response.raise_for_status()
+                        result = response.json()
+                        model_succeeded = True
+                        break
 
-                except httpx.HTTPStatusError as exc:
-                    status_code = exc.response.status_code
+                    except httpx.TimeoutException:
+                        last_error = AITimeoutError(provider="gemini")
+                        # Khi model bị timeout, thử ngay model dự phòng tiếp theo
+                        break
 
-                    if status_code == 429:
-                        raise AIRateLimitError(provider="gemini") from None
+                    except httpx.HTTPStatusError as exc:
+                        status_code = exc.response.status_code
 
-                    if status_code < 500:
-                        raise AIProviderError(
+                        # 404: Model không khả dụng hoặc bị xóa -> chuyển ngay sang model khác
+                        if status_code == 404:
+                            last_error = AIProviderError(
+                                f"Model {current_model} trả về HTTP 404.",
+                                provider="gemini",
+                                retryable=True,
+                            )
+                            break
+
+                        # 429: Rate limit -> chuyển sang model khác
+                        if status_code == 429:
+                            last_error = AIRateLimitError(provider="gemini")
+                            break
+
+                        # 503 / 5xx: Lỗi tải cao tạm thời -> retry theo backoff, nếu hết lượt thì chuyển model dự phòng
+                        if status_code == 503 or status_code >= 500:
+                            last_error = AIProviderError(
+                                f"Model {current_model} trả về HTTP {status_code}.",
+                                provider="gemini",
+                                retryable=True,
+                            )
+                            if attempt < self.MAX_ATTEMPTS - 1:
+                                delay = min(
+                                    self.RETRY_BASE_DELAY * (2**attempt),
+                                    self.RETRY_MAX_DELAY,
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            break
+
+                        if status_code < 500:
+                            raise AIProviderError(
+                                f"AI provider trả về lỗi HTTP {status_code}.",
+                                provider="gemini",
+                                retryable=False,
+                            ) from None
+
+                        last_error = AIProviderError(
                             f"AI provider trả về lỗi HTTP {status_code}.",
+                            provider="gemini",
+                            retryable=True,
+                        )
+
+                    except httpx.RequestError:
+                        last_error = AIProviderError(
+                            "Không thể kết nối đến AI provider.",
+                            provider="gemini",
+                            retryable=True,
+                        )
+
+                    except ValueError:
+                        raise AIProviderError(
+                            "AI provider trả về dữ liệu JSON không hợp lệ.",
                             provider="gemini",
                             retryable=False,
                         ) from None
 
-                    last_error = AIProviderError(
-                        f"AI provider trả về lỗi HTTP {status_code}.",
-                        provider="gemini",
-                        retryable=True,
-                    )
+                    if attempt < self.MAX_ATTEMPTS - 1:
+                        delay = min(
+                            self.RETRY_BASE_DELAY * (2**attempt),
+                            self.RETRY_MAX_DELAY,
+                        )
+                        await asyncio.sleep(delay)
 
-                except httpx.RequestError:
-                    last_error = AIProviderError(
-                        "Không thể kết nối đến AI provider.",
-                        provider="gemini",
-                        retryable=True,
-                    )
-
-                except ValueError:
-                    raise AIProviderError(
-                        "AI provider trả về dữ liệu JSON không hợp lệ.",
-                        provider="gemini",
-                        retryable=False,
-                    ) from None
-
-                if attempt < self.MAX_ATTEMPTS - 1:
-                    delay = min(
-                        self.RETRY_BASE_DELAY * (2**attempt),
-                        self.RETRY_MAX_DELAY,
-                    )
-                    await asyncio.sleep(delay)
+                if model_succeeded and result is not None:
+                    break
 
         if result is None:
             if last_error is not None:
@@ -211,7 +254,7 @@ class GeminiProvider:
 
         return {
             "text": output_text,
-            "model": str(result.get("modelVersion") or model),
+            "model": str(result.get("modelVersion") or current_model),
             "input_tokens": input_tokens if isinstance(input_tokens, int) else None,
             "output_tokens": output_tokens if isinstance(output_tokens, int) else None,
             "total_tokens": total_tokens if isinstance(total_tokens, int) else None,

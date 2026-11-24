@@ -170,11 +170,10 @@ You MUST respond with valid JSON adhering to this schema:
 """.strip()
 
 ACTION_INSTRUCTIONS = """
-Only when the user explicitly requests to create a CV, generate a roadmap,
-update an existing roadmap, or reanalyze a repository (e.g. 'tạo CV',
-'lập lộ trình', 'cập nhật lộ trình', 'thêm mốc', 'phân tích lại repo'),
-optionally add exactly one proposal field to the JSON object. Do NOT propose
-actions for general questions, job inquiries, explanations, or advice.
+When the user requests to create a CV, generate a roadmap, update an existing roadmap,
+learn or add a missing skill to their roadmap (e.g. 'tạo CV', 'lập lộ trình', 'cập nhật lộ trình',
+'thêm mốc', 'học và bổ sung kỹ năng', 'phân tích lại repo'), or whenever you advise the user
+to apply a milestone to their roadmap, you MUST include exactly one proposal field in the JSON object.
 Allowed proposal forms:
 {"tool":"create_cv","title":"...","summary":"...","skills":["..."]}
 {"tool":"create_roadmap","title":"...","steps":["..."]}
