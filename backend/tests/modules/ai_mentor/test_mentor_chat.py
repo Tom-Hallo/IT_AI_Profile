@@ -351,3 +351,22 @@ def test_action_fields_count_towards_budget_and_only_list_packed_repositories():
     assert len(input_text) <= 128
     assert json.loads(input_text)["selected_repository_ids"] == [1]
     assert list(packed.values()) == [small]
+
+
+def test_determine_language_scenarios():
+    # 1. Mode Vietnamese -> Vietnamese
+    assert service._determine_language("Làm sao để học SQL hiệu quả?", "vi") == "vi"
+    assert service._determine_language("How do I learn SQL?", "vi") == "vi"
+    assert service._determine_language("Please explain in english", "vi") == "en"
+
+    # 2. Mode English -> English
+    assert service._determine_language("How do I learn SQL?", "en") == "en"
+    assert service._determine_language("Tell me about Docker", "en") == "en"
+
+    # 3. Mode English but user asks in Vietnamese -> Vietnamese
+    assert service._determine_language("Làm sao để học SQL hiệu quả?", "en") == "vi"
+    assert service._determine_language("Cho tôi hỏi về lộ trình Backend", "en") == "vi"
+    assert service._determine_language("Cho toi hoi cach hoc Docker", "en") == "vi"
+    assert service._determine_language("hướng dẫn tôi", "en") == "vi"
+    assert service._determine_language("Trả lời bằng tiếng việt giúp tôi", "en") == "vi"
+

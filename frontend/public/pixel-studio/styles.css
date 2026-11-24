@@ -432,26 +432,53 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:2px}
 .chat-link{color:var(--accent,#818cf8);text-decoration:underline;text-underline-offset:2px;font-weight:600}
 .chat-link:hover{color:var(--accent-strong,#6366f1);text-decoration:none}
 .chat-limitation-tray{margin-top:6px;padding:4px 8px;border-radius:6px;background:rgba(234,179,8,0.08);border-left:3px solid #eab308;font-size:12px;color:var(--ink-muted)}
-.chat-action-card{min-width:0;margin-top:10px;padding:10px 12px;border:1px solid rgba(99,102,241,0.35);border-radius:10px;background:rgba(99,102,241,0.08);display:grid;gap:6px}
+.chat-action-card{min-width:0;margin-top:12px;padding:12px 14px;border:1px solid rgba(129,140,248,0.28);border-radius:12px;background:linear-gradient(145deg,rgba(26,24,44,0.9),rgba(17,17,29,0.95));box-shadow:0 6px 20px rgba(0,0,0,0.3);display:grid;gap:8px}
 .chat-action-card.applied{border-color:rgba(34,197,94,0.4);background:rgba(34,197,94,0.1)}
 .chat-action-card.dismissed{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06)}
+.chat-action-card.existing-milestone-card{border-color:rgba(16,185,129,0.35);background:linear-gradient(145deg,rgba(16,185,129,0.08),rgba(15,23,42,0.6))}
 /* Keep proposal controls visible at the card's top-right, without viewport-fixed overlays. */
-.chat-action-toolbar{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;min-width:0}
+.chat-action-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-width:0}
 .chat-action-card.dismissed .chat-action-toolbar{align-items:center}
-.chat-action-header{flex:1 1 130px;min-width:0;font-weight:700;font-size:12.5px;color:var(--ink-strong);display:flex;align-items:center;gap:6px}
+.chat-action-header{flex:1 1 140px;min-width:0;font-weight:600;font-size:12px;color:var(--ink-strong);display:flex;align-items:center;gap:6px}
+.chat-action-badge-dot{display:inline-grid;place-items:center;font-size:12px}
+.chat-action-kicker{font-size:11.5px;font-weight:700;letter-spacing:0.02em;color:#a5b4fc}
+.existing-milestone-card .chat-action-kicker{color:#6ee7b7}
+.chat-action-controls-row{display:inline-flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
 .chat-action-toolbar .badge{min-width:0}
-.chat-action-toolbar .button{min-width:0;max-width:100%;margin-left:auto}
+.chat-action-toolbar .button{min-width:0;max-width:100%}
+.chat-action-controls-row .button{margin-left:0}
 .chat-action-trigger,.chat-action-reopen{
-  white-space:normal;overflow-wrap:anywhere;transform-origin:top right;
+  white-space:nowrap;transform-origin:top right;
   animation:chat-action-control-in 340ms var(--ease);
-  transition:background 180ms,border-color 180ms,color 180ms,transform 180ms var(--ease),box-shadow 180ms var(--ease)
+  transition:background 180ms,border-color 180ms,color 180ms,transform 180ms var(--ease),box-shadow 180ms var(--ease);
+  font-weight:600;padding:6px 14px;border-radius:8px;
 }
-.chat-action-trigger:hover:not(:disabled),.chat-action-reopen:hover:not(:disabled){transform:translateY(-2px) scale(1.02);box-shadow:0 7px 16px rgba(9,9,11,0.16)}
-.chat-action-trigger:active:not(:disabled),.chat-action-reopen:active:not(:disabled){transform:translateY(1px) scale(0.98);box-shadow:none}
+.chat-action-trigger:hover:not(:disabled),.chat-action-reopen:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(99,102,241,0.35)}
+.chat-action-trigger:active:not(:disabled),.chat-action-reopen:active:not(:disabled){transform:translateY(1px);box-shadow:none}
 .chat-action-trigger:focus-visible,.chat-action-reopen:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.chat-action-secondary{justify-content:flex-end}
-.chat-action-impact{font-size:12px;color:var(--ink);margin:0;line-height:1.4}
-.chat-action-hint{font-size:11px;color:var(--muted);margin:0}
+.chat-action-decline-btn{
+  font-size:11.5px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.04);color:var(--ink-muted,#94a3b8);transition:all 180ms var(--ease);
+}
+.chat-action-decline-btn:hover:not(:disabled){
+  background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.35);color:#fca5a5;
+}
+.chat-action-target-banner{
+  background:rgba(99,102,241,0.08);border:1px solid rgba(129,140,248,0.2);
+  border-radius:8px;padding:8px 12px;margin:2px 0 6px 0;display:grid;gap:3px;
+}
+.existing-milestone-banner{
+  background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.22);
+}
+.chat-action-target-tag{
+  font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#a5b4fc;
+}
+.existing-milestone-banner .chat-action-target-tag{color:#6ee7b7}
+.chat-action-target-title{
+  font-size:13px;font-weight:600;color:#f8fafc;line-height:1.4;
+}
+.chat-action-impact{font-size:12px;color:var(--ink,#cbd5e1);margin:0;line-height:1.45}
+.chat-action-hint{font-size:11px;color:var(--muted,#64748b);margin:0}
 @keyframes chat-action-control-in{from{opacity:0;transform:translateY(7px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .chat-bubble.entering,.chat-row.pending{animation:message-in 280ms var(--ease) both}
 @keyframes message-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}

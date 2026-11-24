@@ -801,9 +801,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     if (!message || runtime.chatPending) return;
     const repo = (context.repoId && data.repos.find(item => String(item.id) === String(context.repoId))) || active();
     const sources = runtime.chosen;
-    const selectedRoadmapId = Number(data.mentorRoad || data.road?.id);
+    const selectedRoadmapId = Number(context.roadmap_id || data.mentorRoad || data.road?.id);
     const selectedRoadmapIds = Number.isSafeInteger(selectedRoadmapId) && selectedRoadmapId > 0
-      && (sources.has('roadmap') || data.road?.id) ? [selectedRoadmapId] : [];
+      && (sources.has('roadmap') || data.road?.id || context.roadmap_id) ? [selectedRoadmapId] : [];
     const repoSelected = repo && (sources.has('github') || sources.has('report') || sources.has('private'))
       && (!repo.private || sources.has('private'));
     const controller = new AbortController();
@@ -818,7 +818,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         method:'POST',signal:controller.signal,timeout:130000,json:{
           message,enable_actions:true,
           milestone_id: targetMilestoneId,
-          locale: state.locale || 'vi',
+          locale: getLanguage() || 'vi',
           sources:{
             github_repo_ids:repoSelected ? [repo.id] : [],
             include_cv:false,
@@ -837,7 +837,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         evidence: response.evidence || [],
         limitations: (response.limitations || []).filter(item => item.code !== 'confidence_unavailable'),
         used: response.sources_used.map(key => key === 'jd' ? 'job' : key),
-        action: response.action
+        action: response.action,
+        existingSkill: context.existingSkill,
+        existingMilestoneTitle: context.existingMilestoneTitle,
+        existingRoadmapTitle: context.existingRoadmapTitle
       });
     } catch (error) {
       if (!controller.signal.aborted) runtime.messages.push({type:'agent',id:++runtime.chatSequence,parts:[],liveText:[errorText(error)],used:[]});
@@ -1187,14 +1190,48 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         : copy('Đã bỏ qua đề xuất.', 'Suggestion dismissed.');
     }),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
-    'ask-gap-skill':button => {
+    'ask-gap-skill': async button => {
       const rawSkill = button.dataset.skill || '';
+      const skillKey = normalizeRoadmapSkill(rawSkill);
       const skillName = formatSkillName(rawSkill);
       openMentor();
       runtime.chosen.add('roadmap');
-      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và đề xuất tạo một cột mốc vào Lộ trình hiện tại để tôi rèn luyện kỹ năng này.`;
-      const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and propose adding this milestone to my Roadmap so I can track it.`;
-      void send(copy(promptVi, promptEn));
+
+      let targetRoadmap = null;
+      let targetMilestone = null;
+      try {
+        if (!data.roadmaps || !data.roadmaps.length) {
+          const response = await request('/career-roadmaps');
+          data.roadmaps = Array.isArray(response) ? response : [];
+        }
+        const items = data.roadmaps || [];
+        const candidates = items.filter(item => Array.isArray(item?.milestones)
+          && item.milestones.some(m => matchesRoadmapSkill(m, skillKey)));
+        targetRoadmap = candidates.find(item => String(item?.id) === String(data.road?.id)) ?? candidates[0];
+        if (targetRoadmap && Array.isArray(targetRoadmap.milestones)) {
+          targetMilestone = targetRoadmap.milestones.find(m => matchesRoadmapSkill(m, skillKey));
+        }
+      } catch {
+        // Fallback to default
+      }
+
+      if (targetRoadmap && targetMilestone) {
+        const milestoneTitle = targetMilestone.title || skillName;
+        const roadmapTitle = targetRoadmap.title || (getLanguage() === 'en' ? 'Current Roadmap' : 'Lộ trình hiện tại');
+        const promptVi = `Tôi đang muốn học kỹ năng: "${skillName}". Trong Lộ trình "${roadmapTitle}" của tôi đã có sẵn cột mốc "${milestoneTitle}". Hãy hướng dẫn tôi cách học hiệu quả nhất cho cột mốc này. Lưu ý rằng tôi ĐÃ CÓ sẵn cột mốc này trong lộ trình rồi, KHÔNG CẦN đề xuất tạo mới hay thêm vào lộ trình nữa, hãy khuyên tôi mở xem chi tiết cột mốc trong lộ trình nhé!`;
+        const promptEn = `I want to learn: "${skillName}". In my Roadmap "${roadmapTitle}", milestone "${milestoneTitle}" already exists. Please guide me on learning resources and practice for this milestone. Note that I ALREADY have this milestone in my roadmap, NO NEED to propose adding a duplicate milestone, advise me to view the existing milestone details!`;
+        void send(copy(promptVi, promptEn), {
+          roadmap_id: targetRoadmap.id,
+          milestone_id: targetMilestone.id,
+          existingSkill: rawSkill,
+          existingMilestoneTitle: milestoneTitle,
+          existingRoadmapTitle: roadmapTitle
+        });
+      } else {
+        const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và đề xuất tạo một cột mốc vào Lộ trình hiện tại để tôi rèn luyện kỹ năng này.`;
+        const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and propose adding this milestone to my Roadmap so I can track it.`;
+        void send(copy(promptVi, promptEn));
+      }
     },
     'view-skill-roadmap':async button => {
       const skillKey = normalizeRoadmapSkill(button?.dataset?.skill);

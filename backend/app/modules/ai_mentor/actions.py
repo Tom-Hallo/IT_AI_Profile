@@ -105,9 +105,28 @@ def propose_action(
     uses_private_github: bool,
     provider: Provider | None = None,
 ) -> ActionPreview | None:
+    text = model_text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     try:
-        data = json.loads(model_text)
-        proposal = tool_proposal_adapter.validate_python(data.get("proposal"))
+        data = json.loads(text, strict=False)
+        proposal_data = data.get("proposal")
+        if not isinstance(proposal_data, dict):
+            if data.get("tool"):
+                proposal_data = {
+                    k: v for k, v in data.items() if k not in ("claims", "limitations")
+                }
+            elif isinstance(data.get("claims"), list):
+                for c in data["claims"]:
+                    if isinstance(c, dict) and c.get("proposal"):
+                        proposal_data = c["proposal"]
+                        break
+        proposal = tool_proposal_adapter.validate_python(proposal_data)
     except (AttributeError, ValueError):
         return None
 
@@ -126,13 +145,51 @@ def propose_action(
         context_refs = []
     elif isinstance(proposal, UpdateRoadmapProposal):
         valid_roadmap = db.scalar(
-            select(Roadmap.id).where(
+            select(Roadmap).where(
                 Roadmap.id == proposal.roadmap_id, Roadmap.user_id == user.id
             )
         )
         if valid_roadmap is None:
             # Never silently redirect an action to a different roadmap.
             return None
+        to_add = (
+            [proposal.add_milestone] if proposal.add_milestone else []
+        ) + proposal.add_milestones
+        if to_add:
+            existing_keys = {
+                k.lower()
+                for k in db.scalars(
+                    select(Milestone.external_key).where(
+                        Milestone.roadmap_id == valid_roadmap.id
+                    )
+                ).all()
+                if k
+            }
+            existing_titles = {
+                t.lower()
+                for t in db.scalars(
+                    select(Milestone.title).where(
+                        Milestone.roadmap_id == valid_roadmap.id
+                    )
+                ).all()
+                if t
+            }
+            if isinstance(valid_roadmap.data, dict) and isinstance(
+                valid_roadmap.data.get("milestones"), list
+            ):
+                for item in valid_roadmap.data["milestones"]:
+                    if isinstance(item, dict):
+                        if item.get("skill"):
+                            existing_keys.add(str(item["skill"]).lower().strip())
+                        if item.get("external_key"):
+                            existing_keys.add(str(item["external_key"]).lower().strip())
+                        if item.get("title"):
+                            existing_titles.add(str(item["title"]).lower().strip())
+            for ms in to_add:
+                s_key = (ms.skill or "").lower().strip()
+                s_title = (ms.title or "").lower().strip()
+                if (s_key and s_key in existing_keys) or (s_title and s_title in existing_titles):
+                    return None
     elif uses_private_github:
         # Persisted CVs and roadmaps are reusable after GitHub consent is revoked.
         return None
