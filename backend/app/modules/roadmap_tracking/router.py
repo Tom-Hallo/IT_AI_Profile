@@ -6,13 +6,13 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
-from app.modules.analysis.models import VerificationEvidence
+from app.modules.career_roadmap.provider import RealAssessmentProvider, public_repo_ids
 from app.modules.consent.router import csrf
 from app.modules.github.models import Repository, user_repository
 from app.modules.roadmaps.models import Roadmap
@@ -21,6 +21,7 @@ from app.modules.users.models import User
 
 from .adapters import current_snapshot
 from .engine import IncomparableSnapshot, evaluate, normalize_rubric
+from .evidence_policy import link_key, matching_evidence, visible_milestone
 from .evidence_urls import parse_github_evidence_url
 from .models import Milestone, MilestoneHistory, RoadmapSuggestion
 
@@ -186,20 +187,35 @@ def get_tracking(roadmap_id: int, user: CurrentUser, db: DB):
         .where(RoadmapSuggestion.roadmap_id == roadmap_id)
         .order_by(RoadmapSuggestion.id.desc())
     ).all()
-    return {
-        "milestones": [
+    permitted = public_repo_ids(db, user.id)
+    assessments = RealAssessmentProvider().load(db, user.id)
+    safe_milestones = []
+    for m in milestones:
+        item = data_milestones.get(str(m.external_key or "").strip().lower())
+        safe_milestones.append(
             serialize_milestone(
-                m, data_milestones.get(str(m.external_key or "").lower())
+                m,
+                visible_milestone(item, permitted, assessments, m.required_skills)
+                if item
+                else None,
             )
-            for m in milestones
-        ],
-        "suggestions": [serialize_suggestion(s) for s in suggestions],
-    }
+        )
+    # A stale suggestion must not advertise inaccessible evidence as actionable.
+    snapshot = current_snapshot(db, user.id) if suggestions else None
+    safe_suggestions = []
+    for suggestion in suggestions:
+        result = serialize_suggestion(suggestion)
+        if snapshot is not None and suggestion.snapshot_key != snapshot.key:
+            result["evidence"] = []
+            if result["state"] == "pending":
+                result["state"] = "stale"
+        safe_suggestions.append(result)
+    return {"milestones": safe_milestones, "suggestions": safe_suggestions}
 
 
 @router.get("/{roadmap_id}/milestones/{milestone_id}/history")
 def get_history(roadmap_id: int, milestone_id: int, user: CurrentUser, db: DB):
-    owned_roadmap(db, user, roadmap_id)
+    roadmap = owned_roadmap(db, user, roadmap_id)
     milestone = db.scalar(
         select(Milestone).where(
             Milestone.id == milestone_id, Milestone.roadmap_id == roadmap_id
@@ -212,12 +228,30 @@ def get_history(roadmap_id: int, milestone_id: int, user: CurrentUser, db: DB):
         .where(MilestoneHistory.milestone_id == milestone_id)
         .order_by(MilestoneHistory.id)
     ).all()
+    permitted = public_repo_ids(db, user.id)
+    hidden_links = {
+        link_key(entry.get("url", ""))
+        for item in (roadmap.data or {}).get("milestones", [])
+        if isinstance(item, dict)
+        for entry in item.get("evidence", [])
+        if isinstance(entry, dict)
+        and entry.get("repository_id") is not None
+        and entry["repository_id"] not in permitted
+    }
+
+    def history_note(entry: MilestoneHistory) -> str | None:
+        if entry.source in {"submission", "verified"} and entry.note:
+            parts = entry.note.split(maxsplit=2)
+            if len(parts) > 1 and link_key(parts[1]) in hidden_links:
+                return None
+        return entry.note
+
     return [
         {
             "id": h.id,
             "old_status": h.old_status,
             "new_status": h.new_status,
-            "note": h.note,
+            "note": history_note(h),
             "source": h.source,
             "created_at": h.created_at,
         }
@@ -247,8 +281,21 @@ def update_milestone(
     }
     cur_data_m = data_milestones.get(str(m.external_key or "").lower())
 
+    def response() -> dict:
+        item = (
+            visible_milestone(
+                cur_data_m,
+                public_repo_ids(db, user.id),
+                RealAssessmentProvider().load(db, user.id),
+                m.required_skills,
+            )
+            if cur_data_m
+            else None
+        )
+        return serialize_milestone(m, item)
+
     if m.status == payload.status:
-        return serialize_milestone(m, cur_data_m)
+        return response()
     old = m.status
     m.status = payload.status
     m.version += 1
@@ -277,7 +324,7 @@ def update_milestone(
         }.get(str(m.external_key or "").lower())
 
     db.commit()
-    return serialize_milestone(m, cur_data_m)
+    return response()
 
 
 @router.post(
@@ -305,93 +352,104 @@ def submit_milestone_evidence(
     if m is None:
         raise HTTPException(404, "Milestone not found")
 
-    is_verified = False
-    verification_status = "self_reported"
-    explanation = (
-        "Đã ghi nhận minh chứng tự nộp (Tự khai báo). "
-        "Cần bằng chứng quét từ repository để xác minh."
-    )
-
     repo = db.scalar(
         select(Repository)
         .join(user_repository, Repository.id == user_repository.c.repository_id)
         .where(
             user_repository.c.user_id == user.id,
-            Repository.full_name == link.repo_name,
+            func.lower(Repository.full_name) == link.repo_name.lower(),
         )
     )
-    if repo is not None:
-        evidence = db.scalar(
-            select(VerificationEvidence.id)
-            .where(
-                VerificationEvidence.repository_id == repo.id,
-                VerificationEvidence.user_id == user.id,
-                VerificationEvidence.evidence_type == link.evidence_type,
-                VerificationEvidence.target_identifier == link.identifier,
-                VerificationEvidence.verification_status == "verified",
-                VerificationEvidence.is_bot.is_(False),
-                VerificationEvidence.is_fork_inherited.is_(False),
-            )
-            .limit(1)
+    data = deepcopy(roadmap.data or {})
+    item = next(
+        (
+            row
+            for row in data.get("milestones", [])
+            if str(row.get("skill", "")).strip().lower()
+            == str(m.external_key or "").strip().lower()
+        ),
+        None,
+    )
+    if item is None:
+        raise HTTPException(409, "Milestone data missing")
+    permitted = public_repo_ids(db, user.id)
+    is_verified = bool(
+        repo is not None
+        and repo.id in permitted
+        and matching_evidence(
+            link,
+            repo.id,
+            m.required_skills,
+            item.get("target_score"),
+            RealAssessmentProvider().load(db, user.id),
         )
-        if evidence is not None:
-            is_verified = True
-            verification_status = "verified"
-            explanation = (
-                "Đã đối chiếu minh chứng với đóng góp GitHub "
-                f"được hệ thống xác minh trong {link.repo_name}."
-            )
-        else:
-            explanation = (
-                f"Đã ghi nhận liên kết từ {link.repo_name}. "
-                "Chưa tìm thấy bản ghi xác minh đóng góp tương ứng."
-            )
-
-    # Deep-copy JSONB to guarantee SQLAlchemy detects and persists the update.
-    data = deepcopy(roadmap.data)
-    milestones = data.get("milestones", [])
-    for item in milestones:
-        if str(item.get("skill", "")).lower() == str(m.external_key or "").lower():
-            item.setdefault("evidence", [])
-            item["evidence"].append(
-                {
-                    "url": url,
-                    "note": payload.note,
-                    "source": "submission",
-                    "verified": is_verified,
-                    "verification_status": verification_status,
-                    "repository_id": repo.id
-                    if is_verified and repo is not None
-                    else payload.repository_id,
-                    "submitted_at": datetime.now(UTC).isoformat(),
-                }
-            )
-            if is_verified:
-                item["status"] = "completed"
-                item["confidence"] = "high"
-            break
+    )
+    verification_status = "verified" if is_verified else "self_reported"
+    explanation = (
+        "Đã đối chiếu đóng góp với kỹ năng và điểm mục tiêu của cột mốc."
+        if is_verified
+        else "Đã lưu liên kết. Chưa đủ minh chứng xác minh kỹ năng và điểm mục tiêu."
+    )
+    entries = item.setdefault("evidence", [])
+    if not isinstance(entries, list):
+        entries = []
+        item["evidence"] = entries
+    key = link_key(url)
+    existing = next(
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and link_key(entry.get("url", "")) == key
+        ),
+        None,
+    )
+    old_status = m.status
+    if is_verified:
+        m.status = "completed"
+    elif m.status == "pending":
+        m.status = "in_progress"
+    item["status"] = m.status
+    if m.status != old_status:
+        m.version += 1
+    record = {
+        "url": url,
+        "note": payload.note,
+        "source": "submission",
+        "verified": is_verified,
+        "verification_status": verification_status,
+        # Never trust a client-supplied repository ID for authorization.
+        "repository_id": repo.id if repo is not None else None,
+        "submitted_at": datetime.now(UTC).isoformat(),
+    }
+    duplicate = existing is not None
+    changed = (
+        not duplicate
+        or existing.get("verified") is not is_verified
+        or m.status != old_status
+    )
+    if not duplicate:
+        entries.append(record)
+    else:
+        existing.update(
+            verified=is_verified,
+            verification_status=verification_status,
+            repository_id=record["repository_id"],
+        )
     roadmap.data = data
     flag_modified(roadmap, "data")
-
-    old_status = m.status
-    if is_verified and m.status != "completed":
-        m.status = "completed"
-        m.version += 1
-    elif not is_verified and m.status == "pending":
-        m.status = "in_progress"
-        m.version += 1
-
-    db.add(
-        MilestoneHistory(
-            milestone_id=m.id,
-            actor_user_id=user.id,
-            old_status=old_status,
-            new_status=m.status,
-            note=f"[{verification_status.upper()}] {url}"
-            + (f" - {payload.note}" if payload.note else ""),
-            source="submission" if not is_verified else "verified",
+    if changed:
+        db.add(
+            MilestoneHistory(
+                milestone_id=m.id,
+                actor_user_id=user.id,
+                old_status=old_status,
+                new_status=m.status,
+                note=f"[{verification_status.upper()}] {url}"
+                + (f" - {payload.note}" if payload.note else ""),
+                source="verified" if is_verified else "submission",
+            )
         )
-    )
     db.commit()
     return {
         "milestone_id": m.id,
@@ -401,6 +459,7 @@ def submit_milestone_evidence(
         "evidence_url": url,
         "note": payload.note,
         "explanation": explanation,
+        "duplicate": duplicate,
     }
 
 
@@ -518,6 +577,30 @@ def resolve(
     if decision == "applied":
         if s.action != "complete":
             raise HTTPException(422, "Unsupported suggestion action")
+        snapshot = current_snapshot(db, user.id)
+        if s.snapshot_key != snapshot.key:
+            raise HTTPException(409, "Roadmap suggestion snapshot is stale")
+        metadata = (roadmap.data or {}).get("analysis_context", {})
+        target = next(
+            (
+                item.get("target_score")
+                for item in (roadmap.data or {}).get("milestones", [])
+                if item.get("skill") == m.external_key
+            ),
+            None,
+        )
+        try:
+            proposals = evaluate(
+                [{**serialize_milestone(m), "target_score": target}],
+                snapshot,
+                expected_scope=metadata.get("scope") or "public",
+                expected_rubric=metadata.get("rubric") or VERSION,
+                expected_period=metadata.get("period") or "all_time",
+            )
+        except IncomparableSnapshot as exc:
+            raise HTTPException(409, "Roadmap suggestion context is stale") from exc
+        if not proposals or proposals[0]["evidence"] != s.evidence:
+            raise HTTPException(409, "Roadmap suggestion no longer meets criteria")
         if m.status != "completed":
             old = m.status
             m.status = "completed"
