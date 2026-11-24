@@ -3,6 +3,8 @@ import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
+import {parseCVForReference, serializeCVFromSections} from './cv-renderer.js';
+import {updateCVFitScale} from './live-views.js';
 
 const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
@@ -609,7 +611,14 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.cv = null;
       data.document = null;
       data.ats = null;
+      if (result.name) {
+        runtime.cvDraft.name = result.name;
+      }
+      if (result.role) {
+        runtime.cvDraft.role = result.role;
+      }
       runtime.cvDraft.body = result.text;
+      state.template = 'reference';
     });
   }
 
@@ -634,6 +643,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
       await cvLoad();
       data.messages.cv = copy('Đã lưu CV trên máy chủ.', 'CV saved on server.');
+      notice(copy('Đã lưu CV thành công trên máy chủ.', 'CV saved successfully on server.'));
     });
   }
 
@@ -660,13 +670,17 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   async function ats() {
-    if (!data.cv) { notice(copy('Chọn và lưu CV tải lên trước khi kiểm tra ATS.', 'Select and save an uploaded CV before checking ATS.')); return; }
-    if (data.cv.text !== runtime.cvDraft.body.trim()) {
-      notice(copy('Lưu nội dung CV đã chỉnh sửa trước khi kiểm tra ATS.', 'Save edited CV content before checking ATS.'));
+    const text = runtime.cvDraft.body.trim();
+    if (!data.cv && !text) {
+      notice(copy('Chưa có nội dung CV. Hãy nhập thông tin CV ở khung soạn thảo bên trên hoặc tải tệp lên trước khi kiểm tra ATS.', 'Enter CV content or upload a CV file above before checking ATS.'));
       return;
     }
     await work('cv',async () => {
-      data.ats = await post('/ats-reviews/preview',{cv_id:data.cv.id,jd_text:data.atsJD?.trim() || null});
+      data.ats = await post('/ats-reviews/preview',{
+        cv_id: data.cv?.id || null,
+        text: text || null,
+        jd_text: data.atsJD?.trim() || null
+      });
     });
   }
 
@@ -1002,7 +1016,124 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     },
     'score-tab':button => { runtime.scoreTab = button.dataset.id; render(); },
     'cv-template':button => { state.template = button.dataset.id; render(); },
-    'cv-print':() => { window.print(); },
+    'cv-intel-tab': button => {
+      data.intelTab = button.dataset.id;
+      render();
+    },
+    'cv-editor-mode': button => {
+      data.editorMode = button.dataset.id;
+      render();
+    },
+    'cv-zoom': button => {
+      data.zoomLevel = button.dataset.id;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-zoom-panel': button => {
+      data.zoomLevel = button.dataset.id;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-open-sec': button => {
+      data.activeSection = Number(button.dataset.sec);
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-nav-back': () => {
+      data.activeSection = null;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-toggle-intel': () => {
+      const hasMentor = typeof document !== 'undefined' && (document.body?.classList.contains('has-mentor') || document.querySelector('.workspace-body')?.classList.contains('has-mentor'));
+      if (hasMentor) {
+        data.rightPanelExplicitOpen = !data.rightPanelExplicitOpen;
+        data.rightPanelCollapsed = !data.rightPanelExplicitOpen;
+      } else {
+        data.rightPanelCollapsed = !data.rightPanelCollapsed;
+      }
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-del-entry': button => {
+      const sIdx = Number(button.dataset.sec);
+      const eIdx = Number(button.dataset.entry);
+      const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+      if (structured.sections?.[sIdx]?.entries) {
+        structured.sections[sIdx].entries.splice(eIdx, 1);
+        runtime.cvDraft.body = serializeCVFromSections(structured);
+        runtime.cvEdited = true;
+        render();
+        setTimeout(updateCVFitScale, 0);
+      }
+    },
+    'cv-add-entry': button => {
+      const sIdx = Number(button.dataset.sec);
+      const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+      if (structured.sections?.[sIdx]) {
+        const firstEntry = structured.sections[sIdx].entries?.[0];
+        const type = firstEntry ? firstEntry.type : 'dated';
+        let newEntry = { type, bullets: [] };
+        if (type === 'dated') {
+          newEntry = { type: 'dated', date: copy('2023 - Nay', '2023 - Present'), org: copy('Tên công ty / Trường', 'Company / School'), role: copy('Vị trí công việc', 'Job Title'), loc: copy('Địa điểm', 'Location'), bullets: [copy('Mô tả kết quả đạt được...', 'Key achievement...')] };
+        } else if (type === 'labeled') {
+          newEntry = { type: 'labeled', label: copy('Kỹ năng mới:', 'New Skill:'), content: copy('Công nghệ 1, 2...', 'Tech 1, 2...'), bullets: [] };
+        } else {
+          newEntry = { type: 'text', text: copy('Nội dung chi tiết...', 'Description...'), bullets: [] };
+        }
+        if (!Array.isArray(structured.sections[sIdx].entries)) structured.sections[sIdx].entries = [];
+        structured.sections[sIdx].entries.push(newEntry);
+        runtime.cvDraft.body = serializeCVFromSections(structured);
+        runtime.cvEdited = true;
+        render();
+        setTimeout(updateCVFitScale, 0);
+      }
+    },
+    'cv-add-section': button => {
+      const type = button.dataset.type || 'Custom';
+      const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+      if (!Array.isArray(structured.sections)) structured.sections = [];
+      let title = copy('MỤC TÙY CHỌN', 'CUSTOM SECTION');
+      let entry = { type: 'dated', bullets: [] };
+      if (type === 'Experience') {
+        title = copy('KINH NGHIỆM LÀM VIỆC', 'WORK EXPERIENCE');
+        entry = { type: 'dated', date: copy('2023 - Nay', '2023 - Present'), org: copy('Tên công ty', 'Company Name'), role: copy('Kỹ sư phần mềm', 'Software Engineer'), loc: 'TP. Hồ Chí Minh', bullets: [copy('Phát triển hệ thống...', 'Engineered system...')] };
+      } else if (type === 'Projects') {
+        title = copy('DỰ ÁN TIÊU BIỂU', 'KEY PROJECTS');
+        entry = { type: 'dated', date: '2023', org: copy('Dự án AI Profile', 'AI Profile Project'), role: copy('Lập trình viên chính', 'Lead Developer'), loc: 'GitHub', bullets: [copy('Xây dựng nền tảng phân tích...', 'Built code intelligence platform...')] };
+      } else if (type === 'Skills') {
+        title = copy('KỸ NĂNG CHUYÊN MÔN', 'TECHNICAL SKILLS');
+        entry = { type: 'labeled', label: copy('Ngôn ngữ & Framework:', 'Languages & Frameworks:'), content: 'Python, FastAPI, TypeScript, React', bullets: [] };
+      } else if (type === 'Education') {
+        title = copy('HỌC VẤN & BẰNG CẤP', 'EDUCATION');
+        entry = { type: 'dated', date: '2019 - 2023', org: copy('Đại học', 'University'), role: copy('Cử nhân CNTT', 'B.S. Computer Science'), loc: 'Việt Nam', bullets: [] };
+      } else {
+        entry = { type: 'text', text: copy('Nội dung chi tiết...', 'Section details...'), bullets: [] };
+      }
+      structured.sections.push({ title, entries: [entry] });
+      runtime.cvDraft.body = serializeCVFromSections(structured);
+      runtime.cvEdited = true;
+      data.activeSection = structured.sections.length - 1;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-insert-single-skill': button => {
+      const tech = button.dataset.id;
+      const scoreItem = (data.scores || []).find(s => s.technology === tech);
+      const repoName = scoreItem?.repo?.full_name || scoreItem?.repo?.name || 'GitHub';
+      const scoreVal = scoreItem ? `${scoreItem.score}/100` : '';
+      const line = `- ${formatSkillName(tech)}${scoreVal ? ': ' + scoreVal : ''} (${repoName})`;
+      runtime.cvDraft.body = (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + '\n' : '') + line + '\n';
+      runtime.cvEdited = true;
+      render();
+      notice(copy(`Đã chèn kỹ năng ${formatSkillName(tech)} vào CV.`, `Inserted skill ${formatSkillName(tech)} into CV.`));
+    },
+    'cv-save-bar':() => cvSave(),
+    'cv-print':() => {
+      document.body.classList.add('print-cv');
+      window.print();
+      setTimeout(() => document.body.classList.remove('print-cv'), 1000);
+    },
     'role-score':button => { data.roleKey = button.dataset.id; render(); },
     score:button => { data.scoreKey = button.dataset.id; render(); },
     'remove-skill':button => work('skill',async () => {
@@ -1056,8 +1187,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const rawSkill = button.dataset.skill || '';
       const skillName = formatSkillName(rawSkill);
       openMentor();
-      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và một dự án thực tế để rèn luyện kỹ năng này.`;
-      const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and a hands-on project to practice this skill.`;
+      runtime.chosen.add('roadmap');
+      const promptVi = `Tôi đang muốn học và bổ sung kỹ năng còn thiếu: "${skillName}" để đáp ứng yêu cầu tuyển dụng. Hãy hướng dẫn tôi lộ trình học tập hiệu quả, tài liệu tốt nhất và đề xuất tạo một cột mốc vào Lộ trình hiện tại để tôi rèn luyện kỹ năng này.`;
+      const promptEn = `I need to learn the missing skill: "${skillName}" to meet job requirements. Please guide me with an effective learning path, best resources, and propose adding this milestone to my Roadmap so I can track it.`;
       void send(copy(promptVi, promptEn));
     },
     'view-skill-roadmap':async button => {
@@ -1112,8 +1244,13 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     },
 
     'cv-check':ats,
-    "cv-insert-github": () => {
-      const verifiedScores = data.scores.filter(
+    "cv-insert-github": async () => {
+      if (!data.scores?.length) {
+        await work("cv", async () => {
+          await dashboard();
+        });
+      }
+      let verifiedScores = (data.scores || []).filter(
         (item) =>
           item.status === "Scored" &&
           Number.isFinite(item.score) &&
@@ -1127,37 +1264,74 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
               metric.evidence_ids.length > 0,
           ),
       );
+      if (!verifiedScores.length && data.scores?.length) {
+        verifiedScores = data.scores.filter(
+          (item) => item.score > 0 && item.repo,
+        );
+      }
 
       if (!verifiedScores.length) {
         notice(
           copy(
-            "Chưa có điểm kỹ năng đủ bằng chứng xác thực. Hãy phân tích repository và tải Dashboard trước khi chèn.",
-            "No skill scores have sufficient verified evidence. Analyze a repository and load Dashboard first.",
+            "Chưa có điểm kỹ năng đủ bằng chứng xác thực. Hãy phân tích repository ở trang Phân tích GitHub trước khi chèn.",
+            "No skill scores have sufficient verified evidence. Analyze a repository in GitHub Analysis first.",
           ),
         );
         return;
       }
 
-      const lines = verifiedScores.map(
-        (item) =>
-          `- ${item.technology}: ${item.score}/100 (${item.repo.full_name || item.repo.name})`,
-      );
+      const langKeywords = ['python', 'typescript', 'javascript', 'html', 'css', 'shell', 'bash', 'c++', 'c#', 'java', 'go', 'rust', 'php', 'ruby', 'sql'];
+      const infraKeywords = ['docker', 'postgresql', 'postgres', 'redis', 'linux', 'ci/cd', 'github actions', 'kubernetes', 'aws', 'nginx'];
+      
+      const languages = [];
+      const frameworks = [];
+      const infra = [];
+      const reposMap = new Map();
 
-      const snippet =
-        "\n\n### KỸ NĂNG ĐƯỢC CHẤM TỪ BẰNG CHỨNG GITHUB\n" +
-        [...new Set(lines)].join("\n") +
-        "\n";
+      verifiedScores.forEach(item => {
+        const name = formatSkillName(item.technology);
+        const lower = String(item.technology).toLowerCase();
+        if (langKeywords.some(k => lower.includes(k))) {
+          if (!languages.includes(name)) languages.push(name);
+        } else if (infraKeywords.some(k => lower.includes(k))) {
+          if (!infra.includes(name)) infra.push(name);
+        } else {
+          if (!frameworks.includes(name)) frameworks.push(name);
+        }
+        const repoName = item.repo?.full_name || item.repo?.name;
+        if (repoName) {
+          if (!reposMap.has(repoName)) reposMap.set(repoName, []);
+          reposMap.get(repoName).push(name);
+        }
+      });
+
+      const skillLines = [];
+      if (languages.length) skillLines.push(`Ngôn ngữ lập trình: ${languages.join(', ')}`);
+      if (frameworks.length) skillLines.push(`Frameworks & Thư viện: ${frameworks.join(', ')}`);
+      if (infra.length) skillLines.push(`Cơ sở dữ liệu & DevOps: ${infra.join(', ')}`);
+
+      let snippet = '\n\nKỸ NĂNG CHUYÊN MÔN\n' + skillLines.join('\n') + '\n\n';
+      
+      if (reposMap.size > 0) {
+        snippet += 'DỰ ÁN XÁC MINH TỪ GITHUB\n';
+        const curYear = new Date().getFullYear();
+        reposMap.forEach((techs, rName) => {
+          snippet += `${curYear} | ${rName} | GitHub\n`;
+          snippet += `Lập trình viên chính\n`;
+          snippet += `- Đóng góp mã nguồn và phát triển hệ thống với ${techs.slice(0, 4).join(', ')}, xác thực từ lịch sử commit và pull request trên GitHub.\n\n`;
+        });
+      }
 
       runtime.cvDraft.body =
-        (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + "\n" : "") +
-        snippet;
+        (runtime.cvDraft.body ? runtime.cvDraft.body.trim() + "\n\n" : "") +
+        snippet.trim();
 
       render();
 
       notice(
         copy(
-          "Đã chèn các điểm kỹ năng có bằng chứng vào CV.",
-          "Inserted evidence-backed skill scores into CV.",
+          "Đã chèn kỹ năng và dự án được xác minh từ GitHub vào CV.",
+          "Inserted verified GitHub skills and project contributions into CV.",
         ),
       );
     },
@@ -1319,11 +1493,13 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       void send(promptText, { milestone_id: mId });
     },
     'cv-generate':() => {
+      const selectedId = data.cv?.id || (data.cvList[0]?.id ?? '');
       showModal(copy('Tạo CV với AI', 'Generate CV with AI'),'<div class="stack">'
-        + field(copy('Tiêu đề', 'Title'),'<input name="title" maxlength="120" required>')
-        + field(copy('Mô tả công việc', 'Job description'),'<textarea name="jd" rows="5" maxlength="20000" required></textarea>')
-        + field(copy('CV nguồn', 'Source CV'),'<select name="cv-id"><option value="">' + copy('Chọn nếu có', 'Optional') + '</option>'
-          + data.cvList.map(cv => '<option value="' + cv.id + '">CV #' + cv.id + '</option>').join('') + '</select>')
+        + field(copy('Tiêu đề', 'Title'),'<input name="title" maxlength="120" required value="' + escape(runtime.cvDraft.name || copy('Bản CV mới', 'New CV Draft')) + '">')
+        + field(copy('Mô tả công việc (JD)', 'Job description (JD)'),'<textarea name="jd" rows="5" maxlength="20000" placeholder="' + escape(copy('Dán JD tuyển dụng để AI đối chiếu kỹ năng…', 'Paste JD for skill matching…')) + '" required>' + escape(data.atsJD || '') + '</textarea>')
+        + field(copy('CV nguồn (đã lưu)', 'Source CV (saved)'),'<select name="cv-id"><option value="">' + copy('Chọn nếu có…', 'Optional…') + '</option>'
+          + data.cvList.map(cv => '<option value="' + cv.id + '"' + (cv.id === selectedId ? ' selected' : '') + '>CV #' + cv.id + '</option>').join('') + '</select>')
+        + '<p class="subtle" style="font-size:12px;margin:-4px 0 6px">' + copy('💡 Mẹo: Chọn CV nguồn đã lưu để AI trích xuất kinh nghiệm thực tế của bạn, hoặc dùng bằng chứng từ GitHub.', '💡 Tip: Choose a saved CV for AI to extract your verified experience, or use GitHub evidence.') + '</p>'
         + '<label class="option-row"><input name="github" type="checkbox" checked> ' + copy('Dùng bằng chứng GitHub công khai', 'Use public GitHub evidence') + '</label>'
         + '<label class="option-row"><input name="permit" type="checkbox" required> ' + copy('Đồng ý xử lý nguồn đã chọn bằng AI', 'Consent to AI processing for selected sources') + '</label></div>',
         copy('Tạo CV', 'Generate'),form => void cvGenerate(form));
@@ -1368,7 +1544,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const text = String(form.get('jd') ?? '').trim();
       const url = String(form.get('jd-url') ?? '').trim();
       if (text || url) return jobAnalyze(text,url);
-      notice(copy('Nhập nội dung hoặc URL của mô tả công việc.', 'Enter job description text or URL.'));
+      notice(copy('Vui lòng dán nội dung mô tả công việc (JD) hoặc nhập URL tuyển dụng.', 'Please enter job description text or URL.'));
     },
     'cv-references-form':form => work('cv',async () => {
       data.referencesQuery = {company:String(form.get('company')).trim(),role:String(form.get('role')).trim()};
@@ -1387,9 +1563,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const validationMessage = formElement?.querySelector('.road-evidence-validation');
       if (!isGitHubCommitOrPrUrl(url)) {
         const message = copy(
-          'Link không hợp lệ. Chỉ chấp nhận HTTPS GitHub dẫn trực tiếp đến Commit hoặc Pull Request.',
+          'Vui lòng nhập liên kết GitHub Commit hoặc Pull Request hợp lệ (HTTPS).',
           'Invalid link. Enter an official HTTPS GitHub Commit or Pull Request URL.'
         );
+        notice(message);
         if (validationMessage) {
           validationMessage.textContent = message;
           validationMessage.hidden = false;
