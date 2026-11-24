@@ -567,3 +567,36 @@ async def test_list_commit_statuses_for_ref_404_returns_empty():
 
     statuses = await client.list_commit_statuses_for_ref("owner", "repo", "missing")
     assert statuses == []
+
+
+@pytest.mark.anyio
+async def test_pull_request_files_collect_multiple_pages():
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = request.url.params["page"]
+        next_link = (
+            '<https://api.github.com/repos/u/r/pulls/1/files?page=2>; rel="next"'
+        )
+        headers = {"link": next_link} if page == "1" else {}
+        return httpx.Response(
+            200, json=[{"filename": f"{page}.py", "changes": 2}], headers=headers
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as mock_client:
+        client = GitHubApiClient("test-token", client=mock_client, base_delay=0.01)
+        files = await client.get_pull_request_files("u", "r", 1)
+    assert [item["filename"] for item in files] == ["1.py", "2.py"]
+
+
+@pytest.mark.anyio
+async def test_pull_request_files_reject_incomplete_bounded_collection():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[{"filename": request.url.params["page"] + ".py", "changes": 1}],
+            headers={"link": '<https://api.github.com/next>; rel="next"'},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as mock_client:
+        client = GitHubApiClient("test-token", client=mock_client, base_delay=0.01)
+        with pytest.raises(GitHubApiError):
+            await client.get_pull_request_files("u", "r", 1)

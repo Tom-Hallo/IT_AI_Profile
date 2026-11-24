@@ -288,6 +288,7 @@ class ArchitectureAnalyzer:
             for p in tree_paths
             if ("router" in p.lower() or "endpoint" in p.lower() or "/api/" in p)
             and p.endswith((".py", ".ts", ".js", ".java", ".go"))
+            and not p.endswith("/__init__.py")
         ]
         if api_routes:
             rec = EvidenceRecord(
@@ -329,6 +330,8 @@ class ArchitectureAnalyzer:
                 k in p.lower()
                 for k in ("worker.py", "tasks/", "queues.py", "/workers/")
             )
+            and _is_code_file(p)
+            and not p.endswith("/__init__.py")
         ]
         if worker_files:
             rec = EvidenceRecord(

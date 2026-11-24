@@ -254,6 +254,7 @@ class VerificationEvidenceListResponse(BaseModel):
 class CollaborationAnalysisRequest(BaseModel):
     """Tham số yêu cầu phân tích Pull Request, Review, CI & xử lý lỗi (PBI-014)."""
 
+    report_id: int | None = Field(default=None, gt=0)
     branch: str | None = Field(
         default=None,
         description="Tên nhánh Git cần phân tích (mặc định: default_branch)",

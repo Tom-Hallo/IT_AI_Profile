@@ -38,3 +38,34 @@ export function verifiedCVSkills(items = []) {
 export function cvSkillKey(item) {
   return JSON.stringify([item.repo.id,item.report_id,item.kind,item.technology]);
 }
+
+/** Role totals are valid only when the backend explicitly marks them as scored. */
+export function verifiedRoleScore(item) {
+  const value = numericScore(item?.role_score);
+  return item?.status === 'SCORED' && value !== null && value >= 0 && value <= 100 ? value : null;
+}
+
+/** Missing historical diagnostics are unknown, never an observed zero. */
+export function skillEvidenceSummary(item) {
+  const d = item?.diagnostics;
+  const count = key => Number.isSafeInteger(d?.[key]) && d[key] >= 0 ? d[key] : null;
+  const part = item?.breakdown?.find(p => p.criterion === 'confidence'
+    && p.evidence_kind === 'verification' && p.evidence_ids?.some(id => Number.isSafeInteger(id) && id > 0));
+  const value = part?.normalized_value;
+  return {
+    available: Boolean(d && !d.snapshot_missing && Array.isArray(d.missing_metrics)),
+    snapshotMissing: d?.snapshot_missing === true,
+    missing: Array.isArray(d?.missing_metrics) ? d.missing_metrics.filter(key => typeof key === 'string') : [],
+    confidence: Number.isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 10000) / 100 : null,
+    matchedCommits: count('matched_commits'),
+    matchedPRs: count('matched_prs'),
+    matchedFiles: count('matched_files'),
+    usedEvents: count('used_events'),
+    usedFiles: count('used_files'),
+    sourceFiles: count('framework_source_files'),
+    eligiblePRFiles: count('eligible_pr_files'),
+    completedPRFiles: count('completed_pr_files'),
+    collectionIncomplete: d?.collection_complete === false,
+    filesPartial: d?.file_collection_partial === true,
+  };
+}

@@ -11,8 +11,8 @@ thứ hai) và guard authorization/consent hiện có. Quy tắc:
 * Riêng tư: chỉ SELECT các cột cần cho tham chiếu (id, repo, commit, file_path, loại,
   nguồn, confidence). KHÔNG đọc ``matched_content``, ``line_number`` hay ``rationale``.
 * Không suy diễn chất lượng: chỉ giữ ``finding_type = architecture`` với pattern mà
-  analyzer thật sự phát ra. Evidence suy ra CHỈ từ tên thư mục (``directory_structure``)
-  bị loại theo mặc định; số file/commit/LOC không bao giờ được đưa vào.
+  analyzer thật sự phát ra. Evidence cấu trúc thư mục chỉ được dùng mặc định khi
+  file tương ứng có thay đổi cá nhân đã xác minh trong cùng report.
 * ``verified``: evidence chỉ được coi là đã kiểm chứng khi PBI-013 xác nhận đóng góp
   thực tế của người dùng ở repository đó (``verification_status == "verified"``).
   Thiếu bản xác minh → ``verified=False`` và engine loại evidence (reason UNVERIFIED).
@@ -45,6 +45,7 @@ from app.modules.analysis.models import (
     AnalysisEvidence,
     AnalysisReport,
     RepositoryVerification,
+    VerificationEvidence,
 )
 from app.modules.analysis.report_window import ReportWindow
 from app.modules.github.models import user_repository
@@ -57,12 +58,13 @@ from app.modules.role_scoring.errors import (
 logger = logging.getLogger(__name__)
 
 DIRECTORY_STRUCTURE_SOURCE = "directory_structure"
+STRUCTURAL_ROLE_PATTERNS = frozenset({"layered_architecture", "mvc_architecture"})
 MAX_REPOSITORIES = 50
 
 
 @dataclass(frozen=True)
 class ArchitectureEvidencePolicy:
-    # Nguồn evidence KHÔNG được dùng làm bằng chứng (suy ra từ tên thư mục).
+    # Không dùng cấu trúc suy từ tên thư mục nếu thiếu thay đổi đã xác minh.
     excluded_evidence_sources: frozenset[str] = frozenset({DIRECTORY_STRUCTURE_SOURCE})
     # Chỉ coi evidence là verified khi PBI-013 xác nhận đóng góp thực tế.
     require_verified_contribution: bool = True
@@ -337,6 +339,52 @@ class DbArchitectureEvidenceProvider:
         )
         return status == "verified"
 
+    def _verified_changed_paths(self, report: AnalysisReport) -> set[str]:
+        """Use only personal, report-bound changes, never a repository-wide flag."""
+        events = self._db.execute(
+            select(
+                VerificationEvidence.actor_type,
+                VerificationEvidence.evidence_type,
+                VerificationEvidence.is_merge,
+                VerificationEvidence.metadata_,
+            )
+            .join(
+                RepositoryVerification,
+                RepositoryVerification.id == VerificationEvidence.verification_id,
+            )
+            .where(
+                RepositoryVerification.report_id == report.id,
+                RepositoryVerification.repository_id == report.repository_id,
+                RepositoryVerification.user_id == self._user_id,
+                RepositoryVerification.verification_status == "verified",
+                VerificationEvidence.repository_id == report.repository_id,
+                VerificationEvidence.user_id == self._user_id,
+                VerificationEvidence.verification_status == "verified",
+                VerificationEvidence.is_bot.is_(False),
+                VerificationEvidence.is_fork_inherited.is_(False),
+                VerificationEvidence.evidence_type.in_(("commit", "pull_request")),
+            )
+        ).all()
+        paths: set[str] = set()
+        for event in events:
+            if event.actor_type == "Bot" or (
+                event.evidence_type == "commit" and event.is_merge
+            ):
+                continue
+            metadata = event.metadata_
+            files = (
+                metadata.get("changed_files", []) if isinstance(metadata, dict) else []
+            )
+            if not isinstance(files, list):
+                continue
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                path, changes = item.get("path"), item.get("changes")
+                if isinstance(path, str) and type(changes) is int and changes > 0:
+                    paths.add(path)
+        return paths
+
     def _load_evidence(
         self, report: AnalysisReport, verified: bool
     ) -> tuple[list[EvidenceRef], Counter[str], bool, int]:
@@ -364,13 +412,26 @@ class DbArchitectureEvidenceProvider:
         refs: list[EvidenceRef] = []
         excluded: Counter[str] = Counter()
         invalid = 0
+        verified_paths: set[str] | None = None
         for row in rows[:limit]:
             if normalize_key(row.classification) not in SUPPORTED_ARCHITECTURE_PATTERNS:
                 continue
             source = normalize_key(row.evidence_source or "")
+            row_verified = verified
             if source in self._policy.excluded_evidence_sources:
-                excluded[source] += 1
-                continue
+                if (
+                    source != DIRECTORY_STRUCTURE_SOURCE
+                    or normalize_key(row.classification) not in STRUCTURAL_ROLE_PATTERNS
+                    or row.commit_sha != report.commit_sha
+                ):
+                    excluded[source] += 1
+                    continue
+                if verified_paths is None:
+                    verified_paths = self._verified_changed_paths(report)
+                if row.file_path not in verified_paths:
+                    excluded[source] += 1
+                    continue
+                row_verified = True
             try:
                 refs.append(
                     EvidenceRef(
@@ -381,7 +442,7 @@ class DbArchitectureEvidenceProvider:
                         finding_type=row.finding_type,
                         classification=row.classification,
                         confidence_score=row.confidence_score,
-                        verified=verified,
+                        verified=row_verified,
                     )
                 )
             except ValidationError:

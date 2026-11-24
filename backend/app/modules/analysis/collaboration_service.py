@@ -27,6 +27,7 @@ from sqlalchemy.types import JSON
 
 from app.core.time_range import resolve_range
 from app.modules.analysis.models import (
+    AnalysisReport,
     CollaborationAnalysis,
     CollaborationEvidence,
 )
@@ -110,6 +111,19 @@ async def analyze_repository_collaboration(
 
     # Private repo phải được kiểm tra bằng scope thật, không phải None.
     verify_private_repo_consent(repo, scopes, db, user.id)
+
+    if request.report_id is not None:
+        if report_id is not None and report_id != request.report_id:
+            raise HTTPException(422, "Conflicting analysis report IDs")
+        report_id = request.report_id
+        linked_report = db.scalar(
+            select(AnalysisReport.id).where(
+                AnalysisReport.id == report_id,
+                AnalysisReport.repository_id == repository_id,
+            )
+        )
+        if linked_report is None:
+            raise HTTPException(404, "Analysis report not found")
 
     since_dt = until_dt = None
     time_range_info = None
@@ -1046,6 +1060,7 @@ def get_stored_collaboration(
     user: User,
     *,
     only_unfiltered: bool = False,
+    report_id: int | None = None,
 ) -> CollaborationAnalysisResponse | None:
     """Truy xuất bản ghi phân tích cộng tác gần nhất đã lưu trong cơ sở dữ liệu."""
 
@@ -1059,6 +1074,9 @@ def get_stored_collaboration(
         CollaborationAnalysis.repository_id == repository_id,
         CollaborationAnalysis.user_id == user.id,
     )
+
+    if report_id is not None:
+        stmt = stmt.where(CollaborationAnalysis.report_id == report_id)
 
     if only_unfiltered:
         stmt = stmt.where(

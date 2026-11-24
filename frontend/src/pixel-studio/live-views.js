@@ -1,10 +1,11 @@
 import { dateLabel, getLanguage, rangeLabel, scopeLabel, t } from './i18n.js';
 import { attr, badge, blank, brand, btn, details, escape, field, filterControls, formatSkillName, heading, icon, labelAttr, languagePicker, link, option, panelHead, progress, tags } from './ui.js';
 import { radarView } from './radar.js';
+import {renderAnalysisFeedback} from './analysis-feedback.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, reportBackedSkillScore, verifiedCVSkills, cvSkillKey} from './score-presentation.js';
+import {reportBackedSkillScore, verifiedCVSkills, cvSkillKey, verifiedRoleScore, skillEvidenceSummary} from './score-presentation.js';
 import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metrics.js';
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
@@ -113,11 +114,50 @@ function scoreStatusLabel(status) {
   return status || '—';
 }
 
-function scoreRow(title, value, action, id, active) {
+function scoreRow(title, value, action, id, active, unavailableLabel = '') {
   return '<button type="button" class="score-row" data-act="' + action + '"' + attr('id', id)
-    + ' aria-pressed="' + active + '"><span>' + escape(title) + '</span><b>' + number(value)
+    + ' aria-pressed="' + active + '"><span>' + escape(title) + '</span><b>'
+    + (value == null && unavailableLabel ? '<small>' + escape(unavailableLabel) + '</small>' : number(value))
     + (value == null ? '' : '<small>/100</small>') + '</b>'
     + (value == null ? '' : '<span class="score-track" aria-hidden="true">' + progress(value, title) + '</span>') + '</button>';
+}
+
+const skillCriterionLabels = {
+  code_contribution:['Đóng góp mã nguồn','Source contributions'],
+  commit_frequency:['Commit cá nhân','Personal commits'],
+  pr_contribution:['Đóng góp qua PR','PR contributions'],
+  complexity:['Phạm vi tệp thay đổi','Changed file scope'],
+  verified_activity:['Hoạt động đã xác minh','Verified activity'],
+  confidence:['Độ tin cậy','Confidence']
+};
+
+function skillEvidenceDetails(item, audit) {
+  if (audit.snapshotMissing) return muted(copy('Chưa có snapshot điểm cho báo cáo này.', 'No score snapshot exists for this report.'));
+  if (!audit.available) return muted(copy('Báo cáo cũ chưa lưu chẩn đoán chi tiết. Phân tích lại để xem tiêu chí và số minh chứng.', 'Older reports lack detailed diagnostics. Reanalyze to see criteria and evidence counts.'));
+  const count = value => value === null ? '—' : String(value);
+  const rows = [
+    [copy('Commit khớp công nghệ','Matching commits'), count(audit.matchedCommits)],
+    [copy('PR khớp công nghệ','Matching PRs'), count(audit.matchedPRs)],
+    [copy('File khớp minh chứng','Matching files'), count(audit.matchedFiles)],
+    [copy('Sự kiện dùng để chấm điểm','Events used for scoring'), count(audit.usedEvents)],
+    [copy('File dùng để chấm điểm','Files used for scoring'), count(audit.usedFiles)]
+  ];
+  if (audit.sourceFiles !== null) rows.push([copy('File có import framework','Files importing framework'), count(audit.sourceFiles)]);
+  if (audit.eligiblePRFiles !== null && audit.completedPRFiles !== null) rows.push([
+    copy('PR đã lấy đủ chi tiết file (repo)','PR file collection (repository)'), audit.completedPRFiles + '/' + audit.eligiblePRFiles
+  ]);
+  const missing = audit.missing.length ? '<div class="role-score-audit"><h4>'
+    + copy('Tiêu chí chưa đủ minh chứng','Missing evidence criteria') + '</h4><ul class="audit-list">'
+    + audit.missing.map(key => '<li>' + escape(copy(...(skillCriterionLabels[key] ?? [key,key]))) + '</li>').join('')
+    + '</ul></div>' : '';
+  const warnings = (audit.collectionIncomplete ? muted(copy(
+    'Quá trình thu thập hoặc phân tích chưa đầy đủ; chưa thể kết luận về kỹ năng.',
+    'Collection or analysis is incomplete; skill cannot be assessed.'
+  )) : '') + (audit.filesPartial ? muted(item.kind === 'framework' ? copy(
+    'Chi tiết file GitHub còn thiếu. Rubric framework đang áp dụng hệ số giảm độ tin cậy.',
+    'Some GitHub file details are missing. The framework rubric applies a confidence reduction.'
+  ) : copy('Chi tiết file GitHub còn thiếu; phạm vi minh chứng có thể chưa đầy đủ.', 'Some GitHub file details are missing; evidence coverage may be incomplete.')) : '');
+  return details(rows) + missing + warnings;
 }
 
 function dashboardScores(state, runtime, data, analyzedCount = 1) {
@@ -155,19 +195,22 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
 
     if (selected) {
       const selectedValue = reportBackedSkillScore(selected);
-      const confidence = selected.breakdown?.find(item => item.criterion === 'confidence')?.normalized_value;
-      const confPct = Number.isFinite(confidence) ? Math.round(confidence * 100) : '—';
+      const audit = skillEvidenceSummary(selected);
+      const confPct = audit.confidence === null ? '—' : number(audit.confidence);
+      const evidenceLabel = audit.snapshotMissing ? copy('Chưa có kết quả chấm điểm','No score snapshot')
+        : audit.collectionIncomplete ? copy('Dữ liệu chưa đầy đủ','Incomplete collection')
+          : selectedValue === null ? copy('Chưa đủ bằng chứng xác minh','Insufficient verified evidence')
+            : copy('Đã có điểm từ minh chứng','Evidence-backed score');
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.technology) + '</h3>'
-        + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + (selectedValue === null
-          ? copy('Chưa đủ bằng chứng xác minh', 'Insufficient verified evidence')
-          : copy('Đủ bằng chứng xác minh', 'Verified evidence')) + '</span></div>'
+        + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + escape(evidenceLabel) + '</span></div>'
         + scorePill(selectedValue) + '</div>'
         + paragraph(selected.explanation)
         + details([
           [copy('Repository nguồn', 'Source Repository'), escape(selected.repo.full_name || selected.repo.name)],
           [copy('Độ tin cậy', 'Confidence'), confPct + (confPct === '—' ? '' : '/100')],
-          [copy('Trạng thái xác minh', 'Verification Status'), escape(scoreStatusLabel(selected.status))]
+          [copy('Trạng thái chấm điểm', 'Scoring status'), escape(scoreStatusLabel(selected.status))]
         ])
+        + skillEvidenceDetails(selected, audit)
         + '<div class="evidence-action-row modal-action-footer">'
         + btn(icon('file') + ' ' + copy('Xem mã nguồn & bằng chứng tại repo ', 'Inspect code & evidence in ') + escape(selected.repo.full_name || selected.repo.name) + ' ↗',
           'evidence', 'primary small', attr('id', selected.repo.id))
@@ -176,21 +219,30 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
   } else if (runtime.scoreTab === 'roles') {
     const selection = data.roles.find(item => item.key === data.roleKey) ?? data.roles[0];
     const selected = selection?.score;
-    scores = data.roles.map(item => scoreRow(item.name, numericScore(item.score?.role_score), 'role-score', item.key, selection === item)).join('');
+    scores = data.roles.map(item => {
+      const value = verifiedRoleScore(item.score);
+      const label = item.loadError ? copy('Lỗi tải điểm', 'Score load failed')
+        : item.available === false ? copy('Không khả dụng', 'Unavailable')
+          : item.score ? scoreStatusLabel(item.score.status) : copy('Chưa có dữ liệu', 'No data');
+      return scoreRow(item.name, value, 'role-score', item.key, selection === item, label);
+    }).join('');
     if (selected) {
-      const selectedValue = selected.status === 'SCORED' ? numericScore(selected.role_score) : null;
+      const selectedValue = verifiedRoleScore(selected);
       const coverage = Number.isFinite(selected.coverage)
         ? Math.round(selected.coverage * 100) + '%' : '—';
       const confidence = Number.isFinite(selected.confidence)
         ? number(selected.confidence) + '/100' : '—';
       const criteria = Array.isArray(selected.criteria) ? selected.criteria : [];
-      const blockers = criteria.filter(item => item.status !== 'SCORED');
+      const requiredUnmet = new Set(selected.required_unmet ?? []);
+      const blockers = criteria.filter(item => item.status !== 'SCORED' || requiredUnmet.has(item.key));
       const refsUsed = Array.isArray(selected.evidence_refs) ? selected.evidence_refs : [];
       const blockersList = blockers.length
         ? '<div class="role-score-audit"><h4>' + copy('Tiêu chí chưa đạt hoặc chưa xác định', 'Unmet or unknown criteria') + '</h4>'
           + '<ul class="audit-list">' + blockers.map(item => '<li><strong>' + escape(item.name || item.key) + '</strong>'
             + (item.required ? ' <span class="tag-badge yellow">' + copy('Bắt buộc', 'Required') + '</span>' : '')
-            + muted(item.rationale || scoreStatusLabel(item.status)) + '</li>').join('') + '</ul></div>'
+            + muted(item.rationale || scoreStatusLabel(item.status))
+            + (Number.isFinite(item.confidence) ? muted(copy('Độ tin cậy: ', 'Confidence: ') + number(item.confidence) + '/100') : '')
+            + '</li>').join('') + '</ul></div>'
         : '';
       evidence = '<div class="evidence-header-block"><div><h3>' + escape(selected.role_name || selection.name) + '</h3>'
         + '<span class="tag-badge ' + (selectedValue === null ? 'yellow' : 'green') + '">' + (selectedValue === null
@@ -213,6 +265,8 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
         + [...new Set(refsUsed.map(ref => ref.repository_id).filter(Boolean))]
           .map(id => namedButton(copy('Mở repo #', 'Open repo #') + id + ' ↗', 'evidence', 'secondary small', id)).join(' ')
         + '</div>';
+    } else if (selection?.loadError) {
+      evidence = muted(copy('Không tải được điểm vai trò từ máy chủ. Hãy thử tải lại Dashboard.', 'Unable to load the role score from the server. Reload the Dashboard and try again.'));
     } else if (selection?.limitations?.length) {
       evidence = selection.limitations.map(item => muted(item.message ?? item.code)).join('');
     }
@@ -507,6 +561,7 @@ export function liveRepos(state, data, active) {
     + (data.search ? btn(icon('close') + ' ' + copy('Xóa bộ lọc', 'Clear search'), 'clear-repo-search', 'quiet small') : '')
     + '</form>'
     + '<p class="scope-summary" role="status">' + escape(t('repos.count', { count: data.total })) + '</p>'
+    + renderAnalysisFeedback(data.analysisOutcome, getLanguage())
     + feedback(data, 'repos', 'sync', 'activity', 'cancel') + '</div>';
   if (!active) return intro + toolbar + (data.busy.has('repos')
     ? '<section class="panel ita-list-skeleton" role="status"><span class="ita-visually-hidden">' + escape(copy('Đang tải repository…', 'Loading repositories…')) + '</span>' + Array.from({length:3}, () => '<div class="ita-skeleton-row" aria-hidden="true"><i class="ita-skeleton-line ita-skeleton-line--wide"></i><i class="ita-skeleton-line ita-skeleton-line--short"></i></div>').join('') + '</section>'

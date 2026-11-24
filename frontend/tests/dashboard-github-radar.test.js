@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from '../src/pixel-studio/dashboard-github-metrics.js';
-import {radarView} from '../src/pixel-studio/radar.js';
+import {radarView, measuredRadarSegments} from '../src/pixel-studio/radar.js';
 
 const ref = (id,kind='verification') => ({
   evidence_id:id,repository_id:7,report_id:4,kind,target:'123'
@@ -37,4 +37,11 @@ test('reject incompatible rubric versions and absent provenance', () => {
 
 test('do not use server totals without individual criterion evidence', () => {
   assert.equal(githubRadarMetrics([report('collaboration',[])])[3].score,null);
+});
+
+
+test('partial radar shades only adjacent observed sectors, without inventing missing vertices', () => {
+  assert.deepEqual(measuredRadarSegments([.5,null,.5,1,1]), [[2,3],[3,4],[4,0]]);
+  assert.deepEqual(measuredRadarSegments([null,null,null,null,null]), []);
+  assert.deepEqual(measuredRadarSegments([0,.5,null,null,null]), [[0,1]]);
 });

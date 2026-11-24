@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.modules.analysis.models import RepositoryVerification, VerificationEvidence
 from app.modules.role_scoring.access import DbRepositoryAccessGuard
 from app.modules.role_scoring.architecture_provider import (
     ArchitectureEvidencePolicy,
@@ -300,3 +301,48 @@ def test_evidence_row_limit_is_enforced_and_reported(world, db):
 
     assert len(result.evidence_set.evidence) == 2
     assert "ARCHITECTURE_EVIDENCE_TRUNCATED" in codes(result)
+
+
+@pytest.mark.parametrize(
+    ("same_report", "same_path", "is_merge", "expected"),
+    [
+        (True, True, False, True),
+        (False, True, False, False),
+        (True, False, False, False),
+        (True, True, True, False),
+    ],
+)
+def test_structural_evidence_requires_personal_report_file_change(
+    world, db, same_report, same_path, is_merge, expected
+):
+    user = world.user("layered-role@example.test")
+    repo = world.repo(user)
+    world.verification(user, repo)
+    older = world.report(repo, [], commit="b" * 40)
+    report = world.report(repo, [LAYERED])
+    verification = db.query(RepositoryVerification).one()
+    verification.report_id = report.id if same_report else older.id
+    db.add(
+        VerificationEvidence(
+            verification_id=verification.id,
+            repository_id=repo.id,
+            user_id=user.id,
+            evidence_type="commit",
+            target_identifier="c" * 40,
+            verification_status="verified",
+            is_merge=is_merge,
+            rationale="Verified personal change",
+            metadata_={
+                "changed_files": [
+                    {"path": LAYERED[1] if same_path else "other.py", "changes": 5}
+                ]
+            },
+        )
+    )
+    db.commit()
+
+    result = provider(db, user).get([repo.id])
+    refs = result.evidence_set.evidence
+    assert bool(refs) == expected
+    if expected:
+        assert refs[0].verified and refs[0].file_path == LAYERED[1]

@@ -34,6 +34,15 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
     + '<p class="subtle">' + escape(t(coverage ? 'radar.coverageMissing' : 'radar.missingAxes')) + '</p></div></div>' + insights + '</section>';
 }
 
+/** Adjacent measured axes only; a real zero remains a valid observation. */
+export function measuredRadarSegments(values) {
+  const measured = value => typeof value === 'number' && Number.isFinite(value);
+  return values.flatMap((value,i) => {
+    const next = (i + 1) % values.length;
+    return measured(value) && measured(values[next]) ? [[i,next]] : [];
+  });
+}
+
 export function mountRadar(panel, selectedAxis, selectAxis) {
   const plot = panel?.querySelector('.radar-plot');
   const canvas = plot?.querySelector('canvas');
@@ -105,28 +114,36 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
     });
 
     const complete = values.every(value => typeof value === 'number' && Number.isFinite(value));
+    const fill = ctx.createLinearGradient(0,centerY - radius,0,centerY + radius);
+    fill.addColorStop(0,accent + '52');
+    fill.addColorStop(1,accent + '13');
+    ctx.fillStyle = fill;
     if (complete) {
       polygon(values);
-      const fill = ctx.createLinearGradient(0,centerY - radius,0,centerY + radius);
-      fill.addColorStop(0,accent + '52');
-      fill.addColorStop(1,accent + '13');
-      ctx.fillStyle = fill;
       ctx.fill();
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1.8;
       ctx.stroke();
     } else {
-      // Missing evidence is not zero: only connect adjacent measured axes.
+      // Fill only sectors bounded by two measured axes. Leave gaps at
+      // unknown axes: never plot missing evidence as a zero-valued vertex.
+      const segments = measuredRadarSegments(values);
+      ctx.beginPath();
+      for (const [i,next] of segments) {
+        ctx.moveTo(centerX,centerY);
+        ctx.lineTo(...point(angles[i], radius * values[i]));
+        ctx.lineTo(...point(angles[next], radius * values[next]));
+        ctx.closePath();
+      }
+      if (segments.length) ctx.fill();
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1.8;
-      values.forEach((value, i) => {
-        const next = (i + 1) % values.length;
-        if (value === null || values[next] === null) return;
+      for (const [i,next] of segments) {
         ctx.beginPath();
-        ctx.moveTo(...point(angles[i], radius * value));
+        ctx.moveTo(...point(angles[i], radius * values[i]));
         ctx.lineTo(...point(angles[next], radius * values[next]));
         ctx.stroke();
-      });
+      }
     }
 
     if (previous.every(value => typeof value === 'number' && Number.isFinite(value))) {

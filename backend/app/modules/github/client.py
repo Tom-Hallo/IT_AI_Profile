@@ -521,16 +521,22 @@ class GitHubApiClient:
     async def get_pull_request_files(
         self, owner: str, repo: str, number: int
     ) -> list[dict[str, Any]]:
-        response = await self._request(
-            "GET",
+        endpoint = (
             f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
-            f"/pulls/{number}/files",
-            params={"per_page": 100},
+            f"/pulls/{number}/files"
         )
-        data = response.json()
-        if not isinstance(data, list) or _parse_next_link(response.headers.get("link")):
-            raise GitHubApiError("Không có danh sách tệp PR đầy đủ.")
-        return data
+        files: list[dict[str, Any]] = []
+        for page in range(1, 4):
+            response = await self._request(
+                "GET", endpoint, params={"per_page": 100, "page": page}
+            )
+            data = response.json()
+            if not isinstance(data, list) or len(files) + len(data) > 300:
+                break
+            files.extend(data)
+            if not _parse_next_link(response.headers.get("link")):
+                return files
+        raise GitHubApiError("Không có danh sách tệp PR đầy đủ.")
 
     async def list_pull_requests(
         self,

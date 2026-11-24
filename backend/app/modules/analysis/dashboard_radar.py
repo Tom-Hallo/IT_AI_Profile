@@ -190,7 +190,7 @@ def radar_coverage(
             key = groups.get(finding.classification)
             if key:
                 record(key, event, "verification", path, finding.id)
-    # Directory findings are matched by path prefix, never by repo ownership alone.
+    # Structural findings may reference an actual source file or a directory.
     for finding in findings:
         if (
             finding.finding_type == "architecture"
@@ -202,7 +202,9 @@ def radar_coverage(
             if not prefix or prefix == ".":
                 continue
             for path, event in changes.items():
-                if _is_source(path) and path.startswith(prefix + "/"):
+                if _is_source(path) and (
+                    path == prefix or path.startswith(prefix + "/")
+                ):
                     record("structure_design", event, "verification", path, finding.id)
                     break
 

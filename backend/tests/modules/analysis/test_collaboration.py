@@ -33,6 +33,7 @@ from app.modules.analysis.collaboration_service import (
     persist_collaboration_result,
 )
 from app.modules.analysis.models import (
+    AnalysisReport,
     CollaborationAnalysis,
     CollaborationEvidence,
 )
@@ -1003,9 +1004,10 @@ def test_10_api_endpoints_trigger_and_get(in_memory_db, monkeypatch):
         evidence=[],
     )
 
+    trigger = AsyncMock(return_value=fake_resp)
     monkeypatch.setattr(
         "app.modules.analysis.collaboration_router.analyze_repository_collaboration",
-        AsyncMock(return_value=fake_resp),
+        trigger,
     )
 
     client = TestClient(app)
@@ -1016,6 +1018,11 @@ def test_10_api_endpoints_trigger_and_get(in_memory_db, monkeypatch):
     data = post_res.json()
     assert data["total_prs_analyzed"] == 1
     assert data["merged_prs_count"] == 1
+    linked = client.post(
+        f"/api/v1/repositories/{repo.id}/collaboration", json={"report_id": 13}
+    )
+    assert linked.status_code == 200
+    assert trigger.call_args.kwargs["request"].report_id == 13
 
     # 2. Get latest before persisting returns 404
     get_404 = client.get(f"/api/v1/repositories/{repo.id}/collaboration")
@@ -1026,6 +1033,10 @@ def test_10_api_endpoints_trigger_and_get(in_memory_db, monkeypatch):
     get_200 = client.get(f"/api/v1/repositories/{repo.id}/collaboration")
     assert get_200.status_code == 200
     assert get_200.json()["total_prs_analyzed"] == 1
+    get_wrong_report = client.get(
+        f"/api/v1/repositories/{repo.id}/collaboration", params={"report_id": 13}
+    )
+    assert get_wrong_report.status_code == 404
 
     # 4. Evidence list GET returns 200
     ev_res = client.get(f"/api/v1/repositories/{repo.id}/collaboration/evidence")
@@ -1476,3 +1487,50 @@ async def test_same_sha_ci_is_fetched_and_counted_once(monkeypatch):
         1,
         2,
     }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("report_exists", [True, False])
+async def test_collaboration_request_links_only_report_in_repository(
+    monkeypatch, report_exists
+):
+    user = _create_mock_user()
+    repo = _create_mock_repo()
+    db = make_mock_db(repo)
+    scalar = db.scalar.side_effect
+
+    def find_report(stmt):
+        if AnalysisReport.__tablename__ in str(stmt):
+            return 13 if report_exists else None
+        return scalar(stmt)
+
+    db.scalar.side_effect = find_report
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.get_user_github_token",
+        lambda *_: ("valid-token", "read:user"),
+    )
+    monkeypatch.setattr(
+        "app.modules.analysis.collaboration_service.verify_repository_access",
+        lambda *_: repo,
+    )
+    client = MagicMock(spec=GitHubApiClient)
+    client.get_authenticated_user = AsyncMock(
+        return_value={"id": 12345, "login": "mydev"}
+    )
+    client.list_pull_requests = AsyncMock(return_value=[])
+    args = dict(
+        db=db,
+        repository_id=repo.id,
+        user=user,
+        request=CollaborationAnalysisRequest(report_id=13),
+        persist=False,
+        custom_client=client,
+    )
+    if not report_exists:
+        with pytest.raises(HTTPException) as exc:
+            await analyze_repository_collaboration(**args)
+        assert exc.value.status_code == 404
+        client.get_authenticated_user.assert_not_called()
+    else:
+        result = await analyze_repository_collaboration(**args)
+        assert result.report_id == 13
