@@ -12,13 +12,20 @@ const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
 
 export function createLiveStudio({state,runtime,render,drawMentor,showModal,openMentor,navigate,notice}) {
   const data = {
-    user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
+    user:null, repos:[], page:1, total:0, search:'', repoData:{}, repoTabBusy:null, roles:[], scores:[], skills:[],
     dashboardRepos:null, dashboardRadar:[], dashboardPartial:false, dashboardLoadErrors:[],
     road:null, tracking:null, pendingRoadmapFocus:null, history:[], historyLoaded:false, roadAction:null, roadEvidenceDraft:null, roadNotice:null, reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
-    errors:{}, messages:{}, analysisOutcome:null, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
+    errors:{}, messages:{}, analysisOutcome:null, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]},
+    focusMode:false, previewOnly:false
   };
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('cv_focus_mode') === '1') {
+      data.focusMode = true;
+      runtime.cvFocusMode = true;
+    }
+  } catch (_) {}
   try {
     const savedRange = sessionStorage.getItem('ita-studio-selected-range');
     if (savedRange) state.range = Number(savedRange);
@@ -367,16 +374,24 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const repo = active();
     const report = currentReport()?.report;
     if (!repo || !report) return;
+    if (data.repoTabBusy) return;
     const endpoint = tab === 'ownership' ? 'verification' : 'collaboration';
-    await work('repos',async () => {
-      const result = await post(repository(repo) + '/' + endpoint,{
-        report_id:report.report_id,scope:repo.private ? 'private' : 'public',
-        mode:'custom',...period(state.range),timezone:'UTC'
-      },65000);
-      if (active()?.id === repo.id && currentReport()?.report?.report_id === report.report_id) {
-        data.repoData[repo.id][endpoint] = result;
-      }
-    });
+    data.repoTabBusy = tab;
+    render();
+    try {
+      await work('repos',async () => {
+        const result = await post(repository(repo) + '/' + endpoint,{
+          report_id:report.report_id,scope:repo.private ? 'private' : 'public',
+          mode:'custom',...period(state.range),timezone:'UTC'
+        },65000);
+        if (active()?.id === repo.id && currentReport()?.report?.report_id === report.report_id) {
+          data.repoData[repo.id][endpoint] = result;
+        }
+      });
+    } finally {
+      data.repoTabBusy = null;
+      render();
+    }
   }
 
   async function dashboard() {
@@ -503,6 +518,19 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     // A Skill Gap navigation is one-shot; stage the entire view before updating it.
     const pendingFocus = targetId == null ? data.pendingRoadmapFocus : null;
     data.pendingRoadmapFocus = null;
+    if (pendingFocus && String(data.road?.id) === String(pendingFocus.roadmapId)
+      && Array.isArray(data.tracking?.milestones)
+      && data.tracking.milestones.some(m => String(m.id) === String(pendingFocus.milestoneId))) {
+      if (data.road) {
+        data.goal = data.road.goal || data.goal;
+        try {
+          sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id));
+          if (data.milestone != null) sessionStorage.setItem('ita-studio-selected-milestone:' + data.road.id, String(data.milestone));
+          else sessionStorage.removeItem('ita-studio-selected-milestone:' + data.road.id);
+        } catch {}
+      }
+      return;
+    }
     const items = await request('/career-roadmaps');
     let storedId = null;
     try {
@@ -842,6 +870,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     const action = item.action;
     const submit = async approved => {
       try {
+        if (approved && action.tool === 'update_roadmap' && action.proposal?.roadmap_id) {
+          try {
+            await request('/roadmap-tracking/' + encodeURIComponent(action.proposal.roadmap_id));
+          } catch (_) {}
+        }
         const result = await post('/agent/actions/' + encodeURIComponent(action.id) + '/' + (approved ? 'approve' : 'decline'));
         item.actionApplied = result.status === 'succeeded';
         item.actionDismissed = !approved;
@@ -857,8 +890,26 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
             await loads.cv();
           }
         } else if (approved) {
+          if (result.status === 'declined') {
+            item.actionDismissed = true;
+            drawMentor();
+            notice(copy(
+              'Đề xuất này đã bị đóng trước đó. Đang yêu cầu AI Mentor tạo đề xuất mới cho bạn...',
+              'This proposal was previously closed. Asking AI Mentor to generate a fresh proposal for you...'
+            ));
+            const prompt = action.tool === 'update_roadmap'
+              ? (action.proposal?.add_milestone?.title || action.proposal?.title || action.proposal?.add_milestone?.skill || '')
+              : '';
+            void send(copy(
+              prompt ? `Tôi muốn áp dụng đề xuất "${prompt}" vào Lộ trình. Hãy tạo lại đề xuất cho tôi.`
+                     : 'Hãy tạo lại đề xuất vừa rồi để tôi áp dụng.',
+              prompt ? `I would like to apply "${prompt}" to my roadmap. Please generate the proposal again.`
+                     : 'Please re-generate the previous proposal so I can apply it.'
+            ));
+            return;
+          }
           notice(result.status === 'denied'
-            ? copy('Thao tác không thể thực hiện do không tìm thấy lộ trình phù hợp hoặc thiếu quyền.', 'Action denied: roadmap not found or missing permissions.')
+            ? copy('Thao tác không thể thực hiện do lộ trình không khả dụng hoặc quyền truy cập đã thay đổi.', 'Action denied: roadmap not available or access changed.')
             : copy('Thao tác chưa hoàn tất · ', 'Action not completed · ') + result.status);
         } else {
           notice(copy('Đã từ chối đề xuất.', 'Proposal declined.'));
@@ -885,9 +936,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     }
     showModal(copy('Xác nhận thao tác AI', 'Confirm AI action'), detailHtml + tags(action.sources),
       copy('Thực hiện', 'Apply'),() => void submit(true),{
-        onDecline:() => void submit(false),
-        declineLabel:copy('Từ chối','Decline'),
-        cancelLabel:copy('Hủy bỏ (Để sau)','Cancel / Later'),
+        cancelLabel:copy('Đóng (Để sau)','Close / Later'),
         onCancel:() => {
           notice(copy('Đã đóng hộp thoại. Đề xuất vẫn được giữ để bạn suy nghĩ thêm.','Dialog closed. Proposal kept for review.'));
           drawMentor();
@@ -908,10 +957,19 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   function reconsiderAction(button) {
     const item = runtime.messages.find(message => String(message.id) === button.dataset.id || String(message.action?.id) === button.dataset.id);
-    if (item?.action) {
-      item.actionDismissed = false;
-      drawMentor();
-    }
+    if (!item?.action) return;
+    const action = item.action;
+    const title = action.proposal?.add_milestone?.title || action.proposal?.title || action.proposal?.add_milestone?.skill || '';
+    notice(copy(
+      'Đang yêu cầu AI Mentor tạo lại đề xuất cho bạn...',
+      'Asking AI Mentor to generate a fresh proposal...'
+    ));
+    void send(copy(
+      title ? `Tôi muốn xem xét lại và áp dụng đề xuất "${title}" vào Lộ trình. Hãy tạo lại đề xuất cho tôi.`
+            : 'Tôi muốn xem xét lại đề xuất trước đó. Hãy tạo lại đề xuất cho tôi.',
+      title ? `I would like to reconsider and apply "${title}" to my roadmap. Please generate the proposal again.`
+            : 'I would like to reconsider the previous proposal. Please generate it again.'
+    ));
   }
 
   const loads = {
@@ -1017,6 +1075,45 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       render();
       setTimeout(updateCVFitScale, 0);
     },
+    'cv-zoom-in': () => {
+      const cur = data.zoomLevel || 'fit';
+      let next = '100';
+      if (cur === '85') next = '100';
+      else if (cur === '100') next = '115';
+      else if (cur === '115' || cur === '125') next = '125';
+      else if (cur === 'fit') next = '100';
+      data.zoomLevel = next;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-zoom-out': () => {
+      const cur = data.zoomLevel || 'fit';
+      let next = '85';
+      if (cur === '125') next = '115';
+      else if (cur === '115') next = '100';
+      else if (cur === '100' || cur === '85') next = '85';
+      else if (cur === 'fit') next = '85';
+      data.zoomLevel = next;
+      render();
+      setTimeout(updateCVFitScale, 0);
+    },
+    'cv-toggle-focus': () => {
+      data.focusMode = !data.focusMode;
+      runtime.cvFocusMode = data.focusMode;
+      try {
+        localStorage.setItem('cv_focus_mode', data.focusMode ? '1' : '0');
+      } catch (_) {}
+      const studio = document.querySelector('.studio');
+      if (studio) studio.classList.toggle('cv-focus-mode', data.focusMode);
+      document.body.classList.toggle('cv-focus-mode', data.focusMode);
+      render();
+      setTimeout(updateCVFitScale, 50);
+    },
+    'cv-toggle-preview-only': () => {
+      data.previewOnly = !data.previewOnly;
+      render();
+      setTimeout(updateCVFitScale, 50);
+    },
     'cv-zoom-panel': button => {
       data.zoomLevel = button.dataset.id;
       render();
@@ -1035,13 +1132,13 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     'cv-toggle-intel': () => {
       const hasMentor = typeof document !== 'undefined' && (document.body?.classList.contains('has-mentor') || document.querySelector('.workspace-body')?.classList.contains('has-mentor'));
       if (hasMentor) {
-        data.rightPanelExplicitOpen = !data.rightPanelExplicitOpen;
-        data.rightPanelCollapsed = !data.rightPanelExplicitOpen;
+        closeMentor();
+        data.rightPanelCollapsed = false;
       } else {
         data.rightPanelCollapsed = !data.rightPanelCollapsed;
       }
       render();
-      setTimeout(updateCVFitScale, 0);
+      setTimeout(updateCVFitScale, 50);
     },
     'cv-del-entry': button => {
       const sIdx = Number(button.dataset.sec);
@@ -1053,6 +1150,58 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         runtime.cvEdited = true;
         render();
         setTimeout(updateCVFitScale, 0);
+      }
+    },
+    'cv-del-section': button => {
+      const sIdx = Number(button.dataset.sec);
+      const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+      if (structured.sections?.[sIdx]) {
+        structured.sections.splice(sIdx, 1);
+        runtime.cvDraft.body = serializeCVFromSections(structured);
+        runtime.cvEdited = true;
+        if (data.activeSection === sIdx) {
+          data.activeSection = null;
+        } else if (data.activeSection > sIdx) {
+          data.activeSection -= 1;
+        }
+        render();
+        setTimeout(updateCVFitScale, 0);
+      }
+    },
+    'live-cv-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const id = button.dataset.id;
+      if (id) void work('cv', async () => { setCV(await request('/cvs/' + Number(id))); });
+    },
+    'live-document-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const doc = data.documentList.find(item => item.document_id === button.dataset.id);
+      if (doc) void work('cv', async () => {
+        setDocument(await request(cvPath(doc) + '/versions/' + doc.number));
+        data.versions = await request(cvPath(doc) + '/versions');
+      });
+    },
+    'live-version-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      if (!data.document) return;
+      const path = cvPath(data.document);
+      const number = Number(button.dataset.id);
+      void work('cv', async () => { setDocument(await request(path + '/versions/' + number)); });
+    },
+    'road-goal-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const goal = button.dataset.id;
+      if (goal) {
+        data.goal = goal;
+        goalWasChosen = true;
+        void loads.road();
+      }
+    },
+    'road-select-option': button => {
+      button.closest('details')?.removeAttribute('open');
+      const id = Number(button.dataset.id);
+      if (id) {
+        void work('road', () => road(id));
       }
     },
     'cv-add-entry': button => {
@@ -1119,7 +1268,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       render();
       notice(copy(`Đã chèn kỹ năng ${formatSkillName(tech)} vào CV.`, `Inserted skill ${formatSkillName(tech)} into CV.`));
     },
+    'cv-save':() => cvSave(),
     'cv-save-bar':() => cvSave(),
+    'cv-insert-all-skills': async () => actions['cv-insert-github'](),
     'cv-print':() => {
       document.body.classList.add('print-cv');
       window.print();
@@ -1225,46 +1376,55 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       }
       const formatted = formatSkillName(skillKey);
       let shouldNavigate = false;
-      // Finish this work before changing routes, so route loading cannot be
-      // silently skipped by the shared 'road' busy guard.
-      await work('road', async () => {
-        const response = await request('/career-roadmaps');
-        const items = Array.isArray(response) ? response : [];
-        data.roadmaps = items;
-        const candidates = items.filter(item => Array.isArray(item?.milestones)
-          && item.milestones.some(m => matchesRoadmapSkill(m, skillKey)));
-        const targetRoadmap = candidates.find(item => String(item?.id) === String(data.road?.id)) ?? candidates[0];
-        if (!targetRoadmap?.id) {
-          notice(copy(
-            'Chưa có mốc "' + formatted + '" trong lộ trình của bạn. Hãy chọn "Hỏi AI Mentor cách học" hoặc chủ động tạo lộ trình.',
-            'No "' + formatted + '" milestone exists in your roadmaps. Ask AI Mentor for a learning plan or create a roadmap yourself.'
-          ));
-          return;
-        }
+      if (button) {
+        button.disabled = true;
+        button.style.pointerEvents = 'none';
+      }
+      try {
+        await work('road', async () => {
+          const response = await request('/career-roadmaps');
+          const items = Array.isArray(response) ? response : [];
+          data.roadmaps = items;
+          const candidates = items.filter(item => Array.isArray(item?.milestones)
+            && item.milestones.some(m => matchesRoadmapSkill(m, skillKey)));
+          const targetRoadmap = candidates.find(item => String(item?.id) === String(data.road?.id)) ?? candidates[0];
+          if (!targetRoadmap?.id) {
+            notice(copy(
+              'Chưa có mốc "' + formatted + '" trong lộ trình của bạn. Hãy chọn "Hỏi AI Mentor cách học" hoặc chủ động tạo lộ trình.',
+              'No "' + formatted + '" milestone exists in your roadmaps. Ask AI Mentor for a learning plan or create a roadmap yourself.'
+            ));
+            return;
+          }
 
-        const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
-        const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
-        const targetMilestone = milestones.find(m => m?.id != null && matchesRoadmapSkill(m, skillKey));
-        if (!targetMilestone) {
-          notice(copy(
-            'Lộ trình chưa có mốc "' + formatted + '" để mở. Hãy hỏi AI Mentor hoặc tạo lộ trình phù hợp.',
-            'The roadmap has no "' + formatted + '" milestone to open. Ask AI Mentor or create a suitable roadmap.'
-          ));
-          return;
-        }
+          const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
+          const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
+          const targetMilestone = milestones.find(m => m?.id != null && matchesRoadmapSkill(m, skillKey));
+          if (!targetMilestone) {
+            notice(copy(
+              'Lộ trình chưa có mốc "' + formatted + '" để mở. Hãy hỏi AI Mentor hoặc tạo lộ trình phù hợp.',
+              'The roadmap has no "' + formatted + '" milestone to open. Ask AI Mentor or create a suitable roadmap.'
+            ));
+            return;
+          }
 
-        data.road = targetRoadmap;
-        data.goal = targetRoadmap.goal;
-        data.tracking = tracking;
-        data.milestone = targetMilestone.id;
-        data.reevaluation = null;
-        data.history = []; data.historyLoaded = false;
-        data.pendingRoadmapFocus = {roadmapId:targetRoadmap.id, milestoneId:targetMilestone.id};
-        shouldNavigate = true;
-      });
-      if (shouldNavigate) {
-        navigate('roadmap', '#milestone-detail');
-        notice(copy('Đã mở đúng mốc "' + formatted + '".', 'Opened the "' + formatted + '" milestone.'));
+          data.road = targetRoadmap;
+          data.goal = targetRoadmap.goal;
+          data.tracking = tracking;
+          data.milestone = targetMilestone.id;
+          data.reevaluation = null;
+          data.history = []; data.historyLoaded = false;
+          data.pendingRoadmapFocus = {roadmapId:targetRoadmap.id, milestoneId:targetMilestone.id};
+          shouldNavigate = true;
+        });
+        if (shouldNavigate) {
+          navigate('roadmap', '#milestone-detail');
+          notice(copy('Đã mở đúng mốc "' + formatted + '".', 'Opened the "' + formatted + '" milestone.'));
+        }
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.style.pointerEvents = '';
+        }
       }
     },
 
@@ -1664,6 +1824,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     return false;
   }
 
-  return {data,active,session,loadPublic,actions,forms,change,send,clearChat,loadMentor,
+  return {data,active,session,loadPublic,actions,forms,change,send,clearChat,loadMentor,render,updateCVFitScale,
     loadPage:page => loads[page === 'roadmap' ? 'road' : page]?.()};
 }

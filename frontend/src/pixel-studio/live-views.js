@@ -10,7 +10,7 @@ import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metri
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
 export const copy = (vi, en) => getLanguage() === 'en' ? en : vi;
-const namedButton = (label, action, style, id) => btn(escape(label), action, style, id === undefined ? '' : attr('id', id));
+const namedButton = (label, action, style, id, attributes = '') => btn(escape(label), action, style, (id === undefined ? '' : attr('id', id)) + (attributes ? ' ' + attributes : ''));
 const paragraph = value => '<p>' + escape(value) + '</p>';
 const muted = value => '<p class="subtle">' + escape(value) + '</p>';
 const fallback = value => value ?? '—';
@@ -26,55 +26,112 @@ function feedback(data, ...keys) {
       : data.busy.has(key) ? '<p class="ita-loading-status" role="status"><span class="ita-loading-spinner" aria-hidden="true"></span><span>' + escape(copy('Đang tải…', 'Loading…')) + '</span></p>' : '').join('');
 }
 
-function formatEvidenceItem(item, data) {
-  const sha = item.commit_sha || (typeof item.evidence_id === 'string' && item.evidence_id.startsWith('verification-commit:') ? item.evidence_id.split(':').pop() : '');
-  const repoName = item.repository_full_name || item.repository_name || (data?.repos?.find(r => r.id === item.repository_id)?.full_name) || (data?.repos?.find(r => r.id === item.repository_id)?.name) || '';
-  const commitUrl = item.commit_url || (repoName && sha ? ('https://github.com/' + repoName + '/commit/' + sha) : '');
+function formatEvidenceItem(item, data, contextRepoName = '') {
+  if (!item) return '';
 
-  const repoBadge = repoName
-    ? '<span class="evidence-repo" title="' + escape(copy('Kho lưu trữ GitHub', 'GitHub repository')) + '">' + icon('branch') + ' <strong>' + escape(repoName) + '</strong></span>'
-    : '';
+  const repoName = item.repository_full_name
+    || item.repository_name
+    || contextRepoName
+    || (data?.repos?.find(r => r.id === item.repository_id)?.full_name)
+    || (data?.repos?.find(r => r.id === item.repository_id)?.name)
+    || '';
 
-  const fileBadge = item.file_path
-    ? '<span class="evidence-file" title="' + escape(copy('File mã nguồn', 'Source file')) + '">' + icon('file') + ' ' + escape(item.file_path) + '</span>'
-    : '';
+  const evType = item.evidence_type
+    || (item.check_name ? 'check_run' : item.pr_number ? 'pull_request' : (item.commit_sha || (typeof item.target_identifier === 'string' && item.target_identifier.length >= 7 && !item.target_identifier.includes(' ') && !item.target_identifier.includes('#'))) ? 'commit' : 'general');
 
-  let commitBadge = '';
-  if (sha) {
-    const shortSha = sha.slice(0, 7);
+  // Trích xuất SHA commit nếu có
+  const rawSha = item.commit_sha
+    || (typeof item.target_identifier === 'string' && /^[0-9a-f]{7,40}$/i.test(item.target_identifier) ? item.target_identifier : '')
+    || (typeof item.evidence_id === 'string' && item.evidence_id.startsWith('verification-commit:') ? item.evidence_id.split(':').pop() : '');
+  const shortSha = rawSha ? rawSha.slice(0, 7) : '';
+  const commitUrl = item.commit_url || item.html_url || (repoName && rawSha ? ('https://github.com/' + repoName + '/commit/' + rawSha) : '');
+
+  // Trích xuất PR info
+  const prNum = Number(item.pr_number) || (typeof item.target_identifier === 'string' && item.target_identifier.startsWith('PR #') ? Number(item.target_identifier.replace('PR #', '')) : null);
+  const prUrl = item.html_url || (repoName && prNum ? ('https://github.com/' + repoName + '/pull/' + prNum) : '');
+  const prState = (item.pr_state || item.state || '').toLowerCase();
+  const prMerged = item.pr_merged != null ? item.pr_merged : prState === 'merged';
+
+  let typeBadge = '';
+  let mainTitle = '';
+  const subInfo = [];
+  let actionLink = '';
+
+  if (evType === 'pull_request' || (prNum && !item.check_name && evType !== 'review')) {
+    typeBadge = '<span class="ev-badge pr">🔀 PR #' + (prNum || '') + '</span>';
+    mainTitle = item.title_or_message || item.rationale || ('Pull Request #' + prNum);
+    if (prMerged) subInfo.push('<span class="badge green mini">✓ ' + copy('Đã merge', 'Merged') + '</span>');
+    else if (prState === 'open') subInfo.push('<span class="badge blue mini">● ' + copy('Đang mở', 'Open') + '</span>');
+    else if (prState) subInfo.push('<span class="badge grey mini">✕ ' + copy('Đã đóng', 'Closed') + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.recorded_at) subInfo.push('<span class="ev-date">' + formattedDate(item.recorded_at) + '</span>');
+    if (prUrl) {
+      actionLink = '<a href="' + escape(prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Mở PR', 'Open PR') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else if (evType === 'review') {
+    const revState = (item.state || '').toUpperCase();
+    typeBadge = '<span class="ev-badge review">💬 Review</span>';
+    mainTitle = item.target_identifier || (prNum ? 'Review PR #' + prNum : 'Review');
+    if (revState === 'APPROVED') subInfo.push('<span class="badge green mini">✓ ' + copy('Phê duyệt (APPROVED)', 'Approved') + '</span>');
+    else if (revState === 'CHANGES_REQUESTED') subInfo.push('<span class="badge amber mini">⚠ ' + copy('Yêu cầu sửa đổi', 'Changes Requested') + '</span>');
+    else if (revState === 'COMMENTED') subInfo.push('<span class="badge blue mini">💬 ' + copy('Nhận xét', 'Commented') + '</span>');
+    else if (revState) subInfo.push('<span class="badge grey mini">' + escape(revState) + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.title_or_message) subInfo.push('<span class="ev-quote">"' + escape(item.title_or_message.slice(0, 100)) + '"</span>');
+    if (item.html_url || prUrl) {
+      actionLink = '<a href="' + escape(item.html_url || prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Mở review', 'Open review') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else if (evType === 'check_run' || evType === 'commit_status') {
+    const checkName = item.check_name || item.target_identifier || 'CI Check';
+    const conclusion = (item.conclusion || item.state || '').toLowerCase();
+    typeBadge = '<span class="ev-badge ci">⚡ CI Check</span>';
+    mainTitle = escape(checkName);
+    if (conclusion === 'success') subInfo.push('<span class="badge green mini">✓ ' + copy('Thành công', 'Success') + '</span>');
+    else if (conclusion === 'failure' || conclusion === 'error') subInfo.push('<span class="badge red mini">✕ ' + copy('Thất bại', 'Failed') + '</span>');
+    else if (conclusion === 'pending' || conclusion === 'in_progress') subInfo.push('<span class="badge amber mini">● ' + copy('Đang chạy', 'Running') + '</span>');
+    else if (conclusion) subInfo.push('<span class="badge grey mini">' + escape(conclusion) + '</span>');
+    if (shortSha) subInfo.push('<span class="ev-commit-ref">Commit: <code>' + escape(shortSha) + '</code></span>');
+    if (item.title_or_message && item.title_or_message !== checkName) subInfo.push('<span class="ev-quote">' + escape(item.title_or_message.slice(0, 100)) + '</span>');
+    if (item.html_url) {
+      actionLink = '<a href="' + escape(item.html_url) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
+        + copy('Xem CI', 'View CI') + ' <span class="ext-icon" aria-hidden="true">↗</span></a>';
+    }
+  } else {
+    // Commit hoặc File mã nguồn
+    const fileBadge = item.file_path ? '<span class="evidence-file">' + icon('file') + ' ' + escape(item.file_path) + '</span>' : '';
+    typeBadge = '<span class="ev-badge commit">💻 Commit</span>';
+    mainTitle = item.title_or_message || item.rationale || fileBadge || (shortSha ? ('Commit <code>' + escape(shortSha) + '</code>') : copy('Minh chứng đóng góp', 'Contribution Evidence'));
+    if (item.verification_status === 'verified') subInfo.push('<span class="badge green mini">✓ ' + copy('Đã xác minh', 'Verified') + '</span>');
+    if (item.actor_login) subInfo.push('<span class="ev-actor">@' + escape(item.actor_login) + '</span>');
+    if (item.additions != null || item.deletions != null) {
+      subInfo.push('<span class="ev-churn"><span class="add">+' + (item.additions || 0).toLocaleString() + '</span> <span class="del">−' + (item.deletions || 0).toLocaleString() + '</span></span>');
+    }
+    if (item.recorded_at) subInfo.push('<span class="ev-date">' + formattedDate(item.recorded_at) + '</span>');
     if (commitUrl) {
-      commitBadge = '<a href="' + escape(commitUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link" title="'
-        + escape(copy('Mở commit ' + sha + ' trên GitHub', 'Open commit ' + sha + ' on GitHub')) + '">'
-        + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code> <span class="ext-icon" aria-hidden="true">↗</span></a>';
-    } else {
-      commitBadge = '<span class="evidence-commit-label">' + icon('git-commit') + ' ' + escape(copy('Commit', 'Commit')) + ': <code>' + escape(shortSha) + '</code></span>';
+      actionLink = '<a href="' + escape(commitUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link" title="'
+        + escape(copy('Mở commit trên GitHub', 'Open commit on GitHub')) + '">'
+        + (shortSha ? '<code>' + escape(shortSha) + '</code> ' : '') + '<span class="ext-icon" aria-hidden="true">↗</span></a>';
+    } else if (shortSha) {
+      actionLink = '<span class="evidence-commit-label"><code>' + escape(shortSha) + '</code></span>';
     }
   }
 
-  const prNumber = Number(item.pr_number);
-  const safeRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoName);
-  const prUrl = safeRepo && Number.isSafeInteger(prNumber) && prNumber > 0
-    ? 'https://github.com/' + repoName + '/pull/' + prNumber : '';
-  const prBadge = prUrl
-    ? '<a href="' + escape(prUrl) + '" target="_blank" rel="noopener noreferrer" class="evidence-commit-link">'
-      + icon('branch') + ' PR #' + prNumber + ' <span class="ext-icon" aria-hidden="true">↗</span></a>'
-    : '';
-
-  const label = item.label || item.target_identifier || item.evidence_id || '';
-  const generalBadge = (!repoBadge && !fileBadge && !commitBadge && label)
-    ? '<span class="evidence-general">' + icon('check') + ' ' + escape(label) + '</span>'
-    : '';
-
-  const infoRow = [repoBadge, fileBadge].filter(Boolean).join(' · ');
-
-  return '<li class="evidence-item">'
-    + '<div class="evidence-info">' + (infoRow || generalBadge || '<span class="evidence-general">' + icon('check') + ' ' + escape(copy('Minh chứng mã nguồn GitHub', 'GitHub source evidence')) + '</span>') + '</div>'
-    + (commitBadge || prBadge ? '<div class="evidence-action">' + (commitBadge || prBadge) + '</div>' : '')
+  return '<li class="evidence-item enhanced">'
+    + '<div class="evidence-main">'
+    + '<div class="evidence-head">' + typeBadge + '<strong class="evidence-title">' + mainTitle + '</strong></div>'
+    + (subInfo.length ? '<div class="evidence-sub">' + subInfo.join(' · ') + '</div>' : '')
+    + '</div>'
+    + (actionLink ? '<div class="evidence-action">' + actionLink + '</div>' : '')
     + '</li>';
 }
 
-function refs(items = [], data = null) {
-  return items.length ? '<ul class="audit-list evidence-list">' + items.slice(0, 20).map(item => formatEvidenceItem(item, data)).join('') + '</ul>' : '';
+function refs(items = [], data = null, contextRepoName = '') {
+  if (!items || !items.length) return '';
+  return '<ul class="audit-list evidence-list">'
+    + items.slice(0, 30).map(item => formatEvidenceItem(item, data, contextRepoName)).join('')
+    + '</ul>';
 }
 
 export function orderedTrackingMilestones(data) {
@@ -443,72 +500,319 @@ export function liveDashboard(state, runtime, data) {
     + dashboardScores(state, runtime, data, radar.count);
 }
 
-function reportContent(report, info, tab) {
+function reportContent(report, info, tab, data) {
   if (tab === 'ownership') {
+    const isOwnershipBusy = data?.repoTabBusy === 'ownership';
+    const ownershipLabel = isOwnershipBusy
+      ? copy('Đang xác minh đóng góp…', 'Verifying contributions…')
+      : copy('Xác minh đóng góp', 'Verify contributions');
+    const ownershipStyle = 'secondary small' + (isOwnershipBusy ? ' is-loading' : '');
+    const ownershipAttr = isOwnershipBusy ? 'disabled aria-busy="true"' : '';
+
     const v = info.verification;
-    return (v ? details([
-      ['Trạng thái xác minh', escape(v.verification_status)],
-      ['Quyền sở hữu', escape(v.ownership_status)],
-      ['Loại nguồn gốc', escape(v.provenance_type) + (v.is_fork ? ' (Fork từ ' + escape(v.parent_repo_name || 'gốc') + ')' : ' (Repository gốc)')],
-      ['Commits đã xác minh', escape(v.verified_commits_count)],
-      ['Commits chưa xác minh', escape(v.unverified_commits_count ?? 0)],
-      ['PR đã xác minh', escape(v.verified_prs_count)],
-      ['PR chưa xác minh', escape(v.unverified_prs_count ?? 0)],
-      ['Dòng thêm (Additions)', '+' + escape(v.verified_additions ?? 0)],
-      ['Dòng xóa (Deletions)', '−' + escape(v.verified_deletions ?? 0)],
-      ['Cờ chống thổi phồng', v.anti_inflation_flag ? copy('Đã phát hiện bất thường', 'Inflation detected') : copy('Bình thường', 'Normal')],
-      ['Độ tin cậy', escape(v.confidence ?? '—')]
-    ]) + refs(v.evidence) : muted(copy('Chưa có kết quả xác minh.', 'No verification yet.')))
-      + namedButton(copy('Xác minh đóng góp', 'Verify contributions'), 'repo-analyze-tab', 'secondary small', 'ownership');
+    if (!v) {
+      return muted(copy('Chưa có kết quả xác minh.', 'No verification yet.'))
+        + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr);
+    }
+
+    const repoFullName = v.repository_full_name
+      || report?.repository_full_name
+      || (data?.repos?.find(r => r.id === (v.repository_id || report?.repository_id))?.full_name)
+      || '';
+
+    const totalCommits = (v.verified_commits_count || 0) + (v.unverified_commits_count || 0);
+    const commitPct = totalCommits > 0 ? Math.round(((v.verified_commits_count || 0) / totalCommits) * 100) : 0;
+    const totalPRs = (v.verified_prs_count || 0) + (v.unverified_prs_count || 0);
+    const prPct = totalPRs > 0 ? Math.round(((v.verified_prs_count || 0) / totalPRs) * 100) : 0;
+
+    const statusBadge = v.verification_status === 'verified'
+      ? '<span class="badge green bold"><span class="badge-dot"></span> ' + copy('Đã xác minh năng lực', 'Verified Contributor') + '</span>'
+      : v.verification_status === 'unverified'
+        ? '<span class="badge amber bold">' + copy('Chưa xác minh', 'Unverified') + '</span>'
+        : '<span class="badge grey bold">' + copy('Chưa xác định', 'Unknown') + '</span>';
+
+    const ownerBadge = (v.ownership_status === 'owner' || v.ownership_status === 'fork_owner')
+      ? '<span class="badge purple">👑 ' + copy('Chủ sở hữu (Owner)', 'Owner') + '</span>'
+      : '<span class="badge blue">🤝 ' + copy('Cộng tác viên (Collaborator)', 'Collaborator') + '</span>';
+
+    const provBadge = v.is_fork
+      ? '<span class="badge amber">🍴 ' + copy('Fork từ ', 'Forked from ') + escape(v.parent_repo_name || 'gốc') + '</span>'
+      : '<span class="badge grey">📦 ' + copy('Repository gốc', 'Original Repository') + '</span>';
+
+    const confBadge = '<span class="badge info">🎯 ' + copy('Độ tin cậy: ', 'Confidence: ')
+      + (v.confidence === 'high' ? copy('Cao', 'High') : copy('Vừa', 'Medium')) + '</span>';
+
+    const inflationBadge = v.anti_inflation_flag
+      ? '<span class="badge red">⚠ ' + copy('Cờ cảnh báo thổi phồng', 'Inflation detected') + '</span>'
+      : '<span class="badge green">✓ ' + copy('Chỉ số chuẩn', 'Anti-inflation Normal') + '</span>';
+
+    const headerBar = '<div class="ownership-header-bar">'
+      + '<div class="ownership-badges">' + statusBadge + ownerBadge + provBadge + confBadge + inflationBadge + '</div>'
+      + '</div>';
+
+    const cardsGrid = '<div class="ownership-kpi-grid">'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">💻</span> <span class="kpi-title">' + copy('Commits đóng góp', 'Contributed Commits') + '</span></div>'
+      + '<div class="kpi-num">' + (v.verified_commits_count || 0) + ' <small>/ ' + totalCommits + ' (' + commitPct + '%)</small></div>'
+      + '<div class="kpi-bar"><div class="kpi-bar-fill" style="width:' + commitPct + '%"></div></div>'
+      + '<div class="kpi-sub">' + (v.unverified_commits_count ? copy(v.unverified_commits_count + ' commits chưa xác minh tác giả', v.unverified_commits_count + ' unverified commits') : copy('100% commits đã được xác minh tác giả', '100% commits author-verified')) + '</div>'
+      + '</div>'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">🔀</span> <span class="kpi-title">' + copy('Pull Requests', 'Pull Requests') + '</span></div>'
+      + '<div class="kpi-num">' + (v.verified_prs_count || 0) + ' <small>/ ' + totalPRs + ' (' + prPct + '%)</small></div>'
+      + '<div class="kpi-bar"><div class="kpi-bar-fill green" style="width:' + prPct + '%"></div></div>'
+      + '<div class="kpi-sub">' + copy(v.verified_prs_count + ' PR cá nhân đã xác minh', v.verified_prs_count + ' personal verified PRs') + '</div>'
+      + '</div>'
+      + '<div class="kpi-card">'
+      + '<div class="kpi-card-header"><span class="kpi-icon">📊</span> <span class="kpi-title">' + copy('Khối lượng mã nguồn (Code Churn)', 'Code Volume (Churn)') + '</span></div>'
+      + '<div class="kpi-churn-row">'
+      + '<span class="churn-add">+' + (v.verified_additions || 0).toLocaleString() + ' <small>' + copy('dòng thêm', 'additions') + '</small></span> '
+      + '<span class="churn-del">−' + (v.verified_deletions || 0).toLocaleString() + ' <small>' + copy('dòng xóa', 'deletions') + '</small></span>'
+      + '</div>'
+      + '<div class="kpi-sub">' + copy('Đóng góp trực tiếp vào nhánh chính của repository', 'Direct contributions to primary branch') + '</div>'
+      + '</div>'
+      + '</div>';
+
+    // Khối tóm tắt năng lực tác quyền súc tích cho người mới
+    const ownershipTakeaways = '<div class="collab-takeaways-panel ownership-takeaways">'
+      + '<div class="takeaways-header">'
+      + '<span class="takeaways-icon">💡</span>'
+      + '<div>'
+      + '<h4>' + copy('Tóm tắt năng lực tác quyền & đóng góp', 'Ownership & Contribution Takeaways') + '</h4>'
+      + '<p class="subtle">' + copy('Đánh giá nhanh về quyền sở hữu mã nguồn và độ tin cậy của các đóng góp kỹ thuật', 'Quick assessment of code ownership and contribution reliability') + '</p>'
+      + '</div></div>'
+      + '<div class="takeaways-grid">'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge purple">👑 ' + copy('Quyền sở hữu', 'Ownership') + '</div>'
+      + '<h5>' + (v.is_fork ? copy('Bản phát triển Fork', 'Fork Contributor') : copy('Dự án chính chủ (Original)', 'Original Author')) + '</h5>'
+      + '<p>' + (v.is_fork ? copy('Đóng góp mã nguồn trên nhánh fork với đầy đủ quyền kiểm soát và định hướng tính năng.', 'Contributes to a forked codebase with feature customization.') : copy('Mã nguồn gốc được xây dựng trực tiếp, thể hiện vai trò tác giả chính và kiến trúc sư của repository.', 'Original codebase created directly, demonstrating primary author and architectural role.')) + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge green">✓ ' + copy('Tác quyền minh bạch', 'Verified Identity') + '</div>'
+      + '<h5>' + copy('Xác thực danh tính Git chuẩn mực', 'Standard Git Identity Verification') + '</h5>'
+      + '<p>' + copy('Các commit và PR được đối chiếu danh tính với tài khoản GitHub, bảo đảm độ tin cậy và không thổi phồng năng lực.', 'Commits and PRs are verified against GitHub identity, ensuring credibility and authentic metrics.') + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge blue">📈 ' + copy('Quy mô ổn định', 'Code Churn') + '</div>'
+      + '<h5>' + copy('Khối lượng mã nguồn thực tế', 'Substantial Code Volume') + '</h5>'
+      + '<p>' + copy('Đóng góp hàng ngàn dòng mã thực thi trực tiếp, thể hiện sức bền kỹ thuật và tiến độ phát triển phần mềm liên tục.', 'Thousands of functional lines contributed, demonstrating technical stamina and continuous delivery.') + '</p>'
+      + '</div>'
+      + '</div></div>';
+
+    const evidenceSection = v.evidence?.length ? (
+      '<div class="evidence-section">'
+      + '<div class="evidence-section-header">'
+      + '<h4>' + icon('award') + ' ' + copy('Minh chứng xác minh đóng góp', 'Verified Contribution Evidence')
+      + ' <span class="ev-count">(' + v.evidence.length + ' ' + copy('minh chứng', 'evidence records') + ')</span></h4>'
+      + '</div>'
+      + '<div class="evidence-scroll-container">'
+      + refs(v.evidence, data, repoFullName)
+      + '</div>'
+      + '</div>'
+    ) : '';
+
+    return '<div class="ownership-dashboard">'
+      + headerBar
+      + cardsGrid
+      + ownershipTakeaways
+      + evidenceSection
+      + '<div class="ownership-actions">'
+      + namedButton(ownershipLabel, 'repo-analyze-tab', ownershipStyle, 'ownership', ownershipAttr)
+      + '</div></div>';
   }
   if (tab === 'collab') {
+    const isCollabBusy = data?.repoTabBusy === 'collab';
+    const collabLabel = isCollabBusy
+      ? copy('Đang phân tích PR, Review và CI…', 'Analyzing PR, reviews and CI…')
+      : copy('Phân tích PR, Review và CI', 'Analyze PR, reviews and CI');
+    const collabReLabel = isCollabBusy
+      ? copy('Đang phân tích lại PR, Review và CI…', 'Re-analyzing PR, reviews and CI…')
+      : copy('Phân tích lại PR, Review và CI', 'Re-analyze PR, reviews and CI');
+    const collabStyle = 'secondary small' + (isCollabBusy ? ' is-loading' : '');
+    const collabAttr = isCollabBusy ? 'disabled aria-busy="true"' : '';
+
     const c = info.collaboration;
     if (!c) {
       return muted(copy('Chưa có kết quả PR, Review và CI.', 'No PR, review or CI results yet.'))
-        + namedButton(copy('Phân tích PR, Review và CI', 'Analyze PR, reviews and CI'), 'repo-analyze-tab', 'secondary small', 'collab');
+        + namedButton(collabLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr);
     }
-    const prDetails = details([
-      ['Tổng PR phân tích', escape(c.total_prs_analyzed)],
-      ['PR đã merge', escape(c.merged_prs_count)],
-      ['PR đang mở', escape(c.open_prs_count)],
-      ['PR đã đóng (chưa merge)', escape(c.closed_unmerged_prs_count)],
-      ['PR do user tạo', escape(c.user_prs_count)],
-      ['PR từ bên ngoài', escape(c.external_prs_count)]
-    ]);
-    const reviewDetails = details([
-      ['Tổng review phân tích', escape(c.total_reviews_analyzed)],
-      ['Review đã approve', escape(c.approved_reviews_count)],
-      ['Review yêu cầu sửa đổi', escape(c.changes_requested_count)],
-      ['Review đóng góp nhận xét', escape(c.commented_reviews_count)],
-      ['Review bị bác bỏ', escape(c.dismissed_reviews_count)],
-      ['Review do user thực hiện', escape(c.user_reviews_conducted_count)],
-      ['Review user nhận được', escape(c.user_reviews_received_count)]
-    ]);
-    const ciDetails = details([
-      ['Tổng kiểm tra CI', escape(c.total_checks_analyzed)],
-      ['CI thành công', escape(c.successful_checks_count)],
-      ['CI thất bại', escape(c.failed_checks_count)],
-      ['CI đang chạy/chờ', escape(c.pending_checks_count)],
-      ['CI trạng thái khác', escape(c.other_checks_count)],
-      ['Chu kỳ giải quyết vấn đề', escape(c.problem_solving_sequences_count)]
-    ]);
-    const seqs = (c.problem_solving_sequences ?? []).map(s =>
-      '<div class="observation-card"><strong>' + icon('pulse') + ' ' + escape(s.explanation) + '</strong>'
-      + '<small>' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + (s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' phút' : 'N/A') + '</small></div>'
-    ).join('');
-    const obs = (c.collaboration_observations ?? []).map(o =>
-      '<div class="observation-card"><strong>' + icon('check') + ' ' + escape(o.title) + '</strong><p>' + escape(o.description) + '</p></div>'
-    ).join('');
-    return '<div class="collab-breakdown">'
-      + '<h4>' + copy('Phân tích Pull Requests', 'Pull Request Metrics') + '</h4>' + prDetails
-      + '<h4>' + copy('Phân tích Code Reviews', 'Code Review Metrics') + '</h4>' + reviewDetails
-      + '<h4>' + copy('Phân tích CI Checks & Tự động hóa', 'CI Checks & Automation') + '</h4>' + ciDetails
-      + (seqs ? '<h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs : '')
-      + (obs ? '<h4>' + copy('Quan sát cộng tác (Observations)', 'Collaboration Observations') + '</h4>' + obs : '')
+    const repoFullName = c.repository_full_name
+      || report?.repository_full_name
+      || (data?.repos?.find(r => r.id === (c.repository_id || report?.repository_id))?.full_name)
+      || '';
+
+    const totalPRs = c.total_prs_analyzed || 0;
+    const mergedPRs = c.merged_prs_count || 0;
+    const openPRs = c.open_prs_count || 0;
+    const closedPRs = c.closed_unmerged_prs_count || 0;
+    const prMergePct = totalPRs > 0 ? Math.round((mergedPRs / totalPRs) * 100) : 0;
+    const prOpenPct = totalPRs > 0 ? Math.round((openPRs / totalPRs) * 100) : 0;
+    const prClosedPct = totalPRs > 0 ? Math.max(0, 100 - prMergePct - prOpenPct) : 0;
+
+    const prCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">🔀</span> ' + copy('Pull Requests', 'Pull Requests') + ' <strong class="collab-total">' + totalPRs + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="PR Breakdown">'
+      + '<div class="seg-fill green" style="width:' + prMergePct + '%" title="' + copy('Đã merge: ', 'Merged: ') + prMergePct + '%"></div>'
+      + '<div class="seg-fill blue" style="width:' + prOpenPct + '%" title="' + copy('Đang mở: ', 'Open: ') + prOpenPct + '%"></div>'
+      + '<div class="seg-fill grey" style="width:' + prClosedPct + '%" title="' + copy('Đã đóng: ', 'Closed: ') + prClosedPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Tỷ lệ hoàn thành: ', 'Merge rate: ') + '<strong>' + prMergePct + '% ' + copy('Đã merge', 'Merged') + '</strong></span></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + mergedPRs + '</span> <span class="chip-label">' + copy('Đã merge', 'Merged') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + openPRs + '</span> <span class="chip-label">' + copy('Đang mở', 'Open') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + closedPRs + '</span> <span class="chip-label">' + copy('Đã đóng', 'Closed') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>👤 ' + copy('Cá nhân:', 'Author:') + ' <strong>' + (c.user_prs_count || 0) + '</strong></span> · '
+      + '<span>👥 ' + copy('Cộng sự / Ngoài:', 'External:') + ' <strong>' + (c.external_prs_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const totalReviews = c.total_reviews_analyzed || 0;
+    const approvedReviews = c.approved_reviews_count || 0;
+    const changesReviews = c.changes_requested_count || 0;
+    const commentReviews = c.commented_reviews_count || 0;
+    const revApprovedPct = totalReviews > 0 ? Math.round((approvedReviews / totalReviews) * 100) : 0;
+    const revChangesPct = totalReviews > 0 ? Math.round((changesReviews / totalReviews) * 100) : 0;
+    const revCommentPct = totalReviews > 0 ? Math.max(0, 100 - revApprovedPct - revChangesPct) : 0;
+
+    const reviewCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">💬</span> ' + copy('Code Reviews', 'Code Reviews') + ' <strong class="collab-total">' + totalReviews + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="Review Breakdown">'
+      + '<div class="seg-fill green" style="width:' + revApprovedPct + '%" title="' + copy('Phê duyệt: ', 'Approved: ') + revApprovedPct + '%"></div>'
+      + '<div class="seg-fill amber" style="width:' + revChangesPct + '%" title="' + copy('Yêu cầu sửa: ', 'Changes requested: ') + revChangesPct + '%"></div>'
+      + '<div class="seg-fill blue" style="width:' + revCommentPct + '%" title="' + copy('Nhận xét: ', 'Comments: ') + revCommentPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Độ đồng thuận phê duyệt: ', 'Approval consensus: ') + '<strong>' + revApprovedPct + '% ' + copy('Phê duyệt', 'Approved') + '</strong></span></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + approvedReviews + '</span> <span class="chip-label">' + copy('Phê duyệt', 'Approved') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + changesReviews + '</span> <span class="chip-label">' + copy('Yêu cầu sửa', 'Changes') + '</span></div>'
+      + '<div class="collab-chip blue"><span class="chip-val">' + commentReviews + '</span> <span class="chip-label">' + copy('Nhận xét', 'Comments') + '</span></div>'
+      + '<div class="collab-chip grey"><span class="chip-val">' + (c.dismissed_reviews_count || 0) + '</span> <span class="chip-label">' + copy('Bãi miễn', 'Dismissed') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>🔍 ' + copy('Bạn thực hiện:', 'Conducted:') + ' <strong>' + (c.user_reviews_conducted_count || 0) + '</strong></span> · '
+      + '<span>📥 ' + copy('Bạn nhận được:', 'Received:') + ' <strong>' + (c.user_reviews_received_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const totalChecks = c.total_checks_analyzed || 0;
+    const successfulChecks = c.successful_checks_count || 0;
+    const failedChecks = c.failed_checks_count || 0;
+    const pendingChecks = c.pending_checks_count || 0;
+    const ciSuccessPct = totalChecks > 0 ? Math.round((successfulChecks / totalChecks) * 100) : 0;
+    const ciFailPct = totalChecks > 0 ? Math.round((failedChecks / totalChecks) * 100) : 0;
+    const ciPendingPct = totalChecks > 0 ? Math.max(0, 100 - ciSuccessPct - ciFailPct) : 0;
+
+    const ciCard = '<div class="collab-kpi-card">'
+      + '<div class="collab-card-title"><span class="collab-icon">⚡</span> ' + copy('CI Checks & Tự động hoá', 'CI Checks & Automation') + ' <strong class="collab-total">' + totalChecks + '</strong></div>'
+      + '<div class="kpi-segmented-bar" aria-label="CI Checks Breakdown">'
+      + '<div class="seg-fill green" style="width:' + ciSuccessPct + '%" title="' + copy('Thành công: ', 'Passed: ') + ciSuccessPct + '%"></div>'
+      + '<div class="seg-fill red" style="width:' + ciFailPct + '%" title="' + copy('Thất bại: ', 'Failed: ') + ciFailPct + '%"></div>'
+      + '<div class="seg-fill amber" style="width:' + ciPendingPct + '%" title="' + copy('Đang chờ: ', 'Pending: ') + ciPendingPct + '%"></div>'
+      + '</div>'
+      + '<div class="kpi-bar-label"><span>' + copy('Độ tin cậy kiểm thử: ', 'Test reliability: ') + '<strong>' + ciSuccessPct + '% ' + copy('Thành công', 'Passed') + '</strong></span></div>'
+      + '<div class="collab-chips-grid">'
+      + '<div class="collab-chip green"><span class="chip-val">' + successfulChecks + '</span> <span class="chip-label">' + copy('Thành công', 'Passed') + '</span></div>'
+      + '<div class="collab-chip red"><span class="chip-val">' + failedChecks + '</span> <span class="chip-label">' + copy('Thất bại', 'Failed') + '</span></div>'
+      + '<div class="collab-chip amber"><span class="chip-val">' + pendingChecks + '</span> <span class="chip-label">' + copy('Đang chờ', 'Pending') + '</span></div>'
+      + '</div>'
+      + '<div class="collab-breakdown-sub">'
+      + '<span>🔄 ' + copy('Chu kỳ giải quyết sự cố:', 'Problem-solving cycles:') + ' <strong>' + (c.problem_solving_sequences_count || 0) + '</strong></span>'
+      + '</div>'
+      + '</div>';
+
+    const collabGrid = '<div class="collab-dashboard-grid">' + prCard + reviewCard + ciCard + '</div>';
+
+    // Khối tóm tắt năng lực cộng tác súc tích, chuyên nghiệp cho người mới & nhà tuyển dụng
+    const collabTakeaways = '<div class="collab-takeaways-panel">'
+      + '<div class="takeaways-header">'
+      + '<span class="takeaways-icon">🚀</span>'
+      + '<div>'
+      + '<h4>' + copy('Tóm tắt năng lực cộng tác kỹ thuật', 'Collaboration Competency Takeaways') + '</h4>'
+      + '<p class="subtle">' + copy('Đánh giá nhanh về văn hóa làm việc nhóm, phản biện mã nguồn và quy trình kiểm thử tự động', 'Quick assessment of teamwork culture, peer code review, and automated testing pipeline') + '</p>'
+      + '</div></div>'
+      + '<div class="takeaways-grid">'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge green">🔀 ' + copy('Bàn giao PR', 'PR Delivery') + '</div>'
+      + '<h5>' + copy('Quy trình PR liền mạch (' + prMergePct + '% Đã merge)', 'Seamless PR Delivery (' + prMergePct + '% Merged)') + '</h5>'
+      + '<p>' + copy('Đóng gói tính năng độc lập, tỷ lệ tích hợp vào nhánh chính cao (' + mergedPRs + '/' + totalPRs + ' PRs), phối hợp nhịp nhàng giữa cá nhân và nhóm phát triển.', 'Cleanly packaged features, high integration rate (' + mergedPRs + '/' + totalPRs + ' PRs), smooth collaboration across development team.') + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge blue">💬 ' + copy('Phản biện chất lượng', 'Peer Review') + '</div>'
+      + '<h5>' + copy('Chủ động đánh giá mã nguồn', 'Active Code Reviewer') + '</h5>'
+      + '<p>' + copy('Tích cực tham gia review mã nguồn cho đồng nghiệp (' + (c.user_reviews_conducted_count || 0) + ' lượt), xây dựng tiêu chuẩn chất lượng cao qua phản biện kỹ thuật.', 'Actively reviewed peers\' code (' + (c.user_reviews_conducted_count || 0) + ' reviews conducted), upholding high engineering quality standards.') + '</p>'
+      + '</div>'
+      + '<div class="takeaway-card">'
+      + '<div class="takeaway-badge amber">⚡ ' + copy('CI/CD Tự động hóa', 'Automated CI/CD') + '</div>'
+      + '<h5>' + copy('Bộ lọc chất lượng tự động (' + ciSuccessPct + '% Pass)', 'Automated Quality Gate (' + ciSuccessPct + '% Pass)') + '</h5>'
+      + '<p>' + copy('Vận hành pipeline CI liên tục (' + successfulChecks + ' lượt kiểm tra đạt), áp dụng cơ chế phát hiện lỗi sớm trước khi hòa mã nguồn.', 'Continuous CI pipeline (' + successfulChecks + ' successful checks), enforcing fail-fast safety checks prior to merge.') + '</p>'
+      + '</div>'
+      + '</div></div>';
+
+    // Rút gọn và biên tập lại các chuỗi kỹ thuật chuyên sâu
+    const seqs = (c.problem_solving_sequences ?? []).map(s => {
+      const duration = s.cycle_duration_seconds ? Math.round(s.cycle_duration_seconds / 60) + ' ' + copy('phút', 'min') : 'N/A';
+      return '<div class="observation-card seq-card">'
+        + '<div class="obs-card-header">'
+        + '<span class="obs-badge seq"><span class="obs-icon">⚡</span> ' + copy('Chuỗi giải quyết sự cố', 'Problem Solving Sequence') + '</span>'
+        + '<span class="obs-duration">' + copy('Thời gian chu kỳ: ', 'Cycle duration: ') + duration + '</span>'
+        + '</div>'
+        + '<p class="obs-desc">' + escape(s.explanation) + '</p>'
+        + '</div>';
+    }).join('');
+
+    const obs = (c.collaboration_observations ?? []).map(o => {
+      const categoryIcon = o.category === 'ci_check' ? '⚡' : o.category === 'review' ? '💬' : o.category === 'problem_solving' ? '💡' : '🔀';
+      const categoryLabel = o.category === 'ci_check' ? copy('CI/CD & Fail-Fast', 'CI/CD & Fail-Fast')
+        : o.category === 'review' ? copy('Phản biện mã nguồn', 'Code Review')
+        : o.category === 'problem_solving' ? copy('Giải quyết sự cố', 'Problem Solving')
+        : copy('Quy trình PR', 'Pull Request Workflow');
+      const catClass = o.category ? 'cat-' + o.category : 'cat-general';
+      return '<div class="observation-card ' + catClass + '">'
+        + '<div class="obs-card-header">'
+        + '<span class="obs-badge ' + catClass + '"><span class="obs-icon">' + categoryIcon + '</span> ' + escape(categoryLabel) + '</span>'
+        + '</div>'
+        + '<h5 class="obs-title">' + escape(o.title) + '</h5>'
+        + '<p class="obs-desc">' + escape(o.description) + '</p>'
+        + '</div>';
+    }).join('');
+
+    // Đưa toàn bộ chi tiết kỹ thuật chuyên sâu vào Thẻ mở rộng/thu gọn (Collapsible Drawer)
+    const technicalDetailsDrawer = (seqs || obs || (c.limitations ?? []).length) ? (
+      '<details class="collab-details-drawer">'
+      + '<summary class="collab-details-summary">'
+      + '<span class="drawer-left"><span class="drawer-icon">🔍</span> <strong>' + copy('Xem phân tích kỹ thuật chi tiết & chuỗi sự kiện', 'View detailed technical analysis & event traces') + '</strong></span>'
+      + '<span class="drawer-badge">' + copy('Kỹ thuật chuyên sâu ▾', 'Advanced details ▾') + '</span>'
+      + '</summary>'
+      + '<div class="collab-details-body">'
+      + (seqs ? '<div class="obs-section"><h4>' + copy('Chuỗi giải quyết sự cố (Problem Solving)', 'Problem Solving Sequences') + '</h4>' + seqs + '</div>' : '')
+      + (obs ? '<div class="obs-section"><h4>' + copy('Quan sát cộng tác chi tiết (Observations)', 'Collaboration Observations') + '</h4>' + obs + '</div>' : '')
       + (c.limitations ?? []).map(muted).join('')
       + '</div>'
-      + refs(c.evidence)
-      + namedButton(copy('Phân tích lại PR, Review và CI', 'Re-analyze PR, reviews and CI'), 'repo-analyze-tab', 'secondary small', 'collab');
+      + '</details>'
+    ) : '';
+
+    const evidenceSection = c.evidence?.length ? (
+      '<div class="evidence-section">'
+      + '<div class="evidence-section-header">'
+      + '<h4>' + icon('award') + ' ' + copy('Minh chứng cộng tác chi tiết', 'Detailed Collaboration Evidence')
+      + ' <span class="ev-count">(' + c.evidence.length + ' ' + copy('minh chứng', 'evidence records') + ')</span></h4>'
+      + '</div>'
+      + '<div class="evidence-scroll-container">'
+      + refs(c.evidence, data, repoFullName)
+      + '</div>'
+      + '</div>'
+    ) : '';
+
+    return '<div class="collab-breakdown">'
+      + collabGrid
+      + collabTakeaways
+      + technicalDetailsDrawer
+      + evidenceSection
+      + '<div class="collab-actions">'
+      + namedButton(collabReLabel, 'repo-analyze-tab', collabStyle, 'collab', collabAttr)
+      + '</div></div>';
   }
   const list = (title, items, key) => '<h3>' + escape(title) + '</h3>' + tags(items.map(item => item[key]).filter(Boolean));
   const snippet = info.evidence?.find(item => typeof item.matched_content === 'string' && item.matched_content.trim());
@@ -809,7 +1113,7 @@ export function liveRepos(state, data, active) {
     + (counters ? tags(['Commits ' + counters.commits, 'PR ' + counters.pull_requests_created,
     '+' + counters.additions, '−' + counters.deletions]) : '')
     + btn(escape(copy('Tải hoạt động', 'Load activity')), 'repo-activity', 'secondary small', data.busy.has('activity') ? 'disabled' : '') + '</div></section>'
-    + (report ? highlightsCard + tabs + '<div id="repo-details">' + reportContent(report, info, data.reportTab) + '</div>' + nextStepsSection
+    + (report ? highlightsCard + tabs + '<div id="repo-details">' + reportContent(report, info, data.reportTab, data) + '</div>' + nextStepsSection
       : blank(t('repos.noReport'), t('repos.noReportCopy'), btn(icon('pulse') + escape(copy('Bắt đầu phân tích repo ngay', 'Start analyzing this repository')), 'analyze', 'primary', job || busy ? 'disabled' : '')))
     + '</div></article></div>';
 }
@@ -898,6 +1202,32 @@ function roadmapLoadingSkeleton() {
     + '<section class="panel road-detail ita-skeleton-card ita-skeleton-detail" aria-hidden="true">' + lines + lines + '</section></div></div>';
 }
 
+function renderCustomPicker(label, currentId, currentLabel, items, action, glyph = 'file', copy) {
+  const displayText = currentLabel || (copy ? copy('Chọn…', 'Select…') : 'Chọn…');
+  const title = '<span class="filter-glyph">' + icon(glyph) + '</span>'
+    + '<span class="filter-value">' + escape(displayText) + '</span>'
+    + '<span class="filter-chevron" aria-hidden="true"></span>';
+  const menuItems = items.map(item => {
+    const isSelected = String(item.id) === String(currentId);
+    return '<button type="button" class="filter-option" data-act="' + action + '" data-id="' + escape(item.id) + '" aria-pressed="' + isSelected + '">'
+      + '<span>' + escape(item.title) + '</span>'
+      + (isSelected ? icon('check') : '')
+      + '</button>';
+  }).join('');
+
+  return '<div class="filter-field cv-filter-field">'
+    + '<span class="filter-label">' + escape(label) + '</span>'
+    + '<details class="filter-dropdown cv-picker-dropdown">'
+    + '<summary class="filter-trigger" aria-label="' + escape(label + ': ' + displayText) + '">' + title + '</summary>'
+    + '<div class="filter-menu" role="group" aria-label="' + escape(label) + '">'
+    + (items.length > 0
+      ? menuItems
+      : '<div class="cv-picker-empty" style="padding:8px 12px;font-size:12px;color:var(--muted)">' + (copy ? copy('Chưa có dữ liệu', 'No items yet') : 'Chưa có dữ liệu') + '</div>')
+    + '</div>'
+    + '</details>'
+    + '</div>';
+}
+
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
   const busy = data.busy.has('road');
@@ -920,17 +1250,33 @@ export function liveRoadmap(data) {
     metric: copy('Hoàn thành mục tiêu của cột mốc này và nộp minh chứng.', 'Complete the objective of this milestone and submit evidence.'),
     evidence: selected.evidence || []
   } : null);
-  const picker = field(t('road.goal'), '<select id="road-goal"' + disabled + '>' + [
+  const goalEntries = [
     ['backend', 'Backend'], ['frontend', 'Frontend'], ['fullstack', 'Full-stack'], ['devops', 'DevOps']
-  ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
+  ];
+  const currentGoalLabel = goalEntries.find(([k]) => k === data.goal)?.[1] || 'Backend';
+  const picker = renderCustomPicker(
+    t('road.goal'),
+    data.goal,
+    currentGoalLabel,
+    goalEntries.map(([key, label]) => ({ id: key, title: label })),
+    'road-goal-select',
+    'branch',
+    copy
+  );
   const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
-    ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select"' + disabled + '>'
-      + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
-      + '</select>')
+    ? renderCustomPicker(
+        copy('Đổi lộ trình', 'Switch roadmap'),
+        data.road?.id,
+        data.road ? `${displayRoadmapTitle(data.road.title, data.road.goal)} (#${data.road.id})` : undefined,
+        data.roadmaps.map(r => ({ id: r.id, title: `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})` })),
+        'road-select-option',
+        'repo',
+        copy
+      )
     : '';
 
   if (data.busy.has('road') && data.roadmaps === undefined) {
-    return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + roadmapLoadingSkeleton();
+    return heading(t('road.heading'), t('road.intro')) + '<div class="road-pickers-row">' + picker + roadPicker + '</div>' + roadmapLoadingSkeleton();
   }
 
   const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
@@ -1012,6 +1358,48 @@ export function liveRoadmap(data) {
   // Proof checkmarks represent submitted links, never scoring references.
   const evidenceItems = submittedEvidenceLinks(selected?.evidence);
   const verifiedLinkCount = evidenceItems.filter(ev => ev.verified).length;
+  const selfReportedCount = evidenceItems.length - verifiedLinkCount;
+  const unverifiedGuideHtml = selfReportedCount > 0
+    ? '<div class="milestone-unverified-guide" role="region" aria-label="' + escape(copy('Hướng dẫn xác minh năng lực', 'Competency verification guide')) + '">'
+      + '<div class="guide-header">'
+      + icon('pulse') + ' <strong>' + escape(copy('Làm sao để xác minh năng lực cho minh chứng này?', 'How to verify competency for this evidence?')) + '</strong>'
+      + '</div>'
+      + '<p class="guide-desc">'
+      + escape(copy(
+        'Minh chứng của bạn đang ở trạng thái Tự khai báo. Để được hệ thống cấp huy hiệu Đã xác minh năng lực cho cột mốc này, hãy thực hiện theo các bước sau:',
+        'Your evidence is currently Self-reported. To earn the Verified Skill badge for this milestone, follow these steps:'
+      ))
+      + '</p>'
+      + '<ul class="guide-steps">'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Code thực tế trong PR/Commit', 'Actual code in PR/Commit')) + '</strong>'
+      + '<p>' + escape(copy('Đảm bảo PR hoặc Commit chứa mã nguồn thực tế liên quan đến kỹ năng của mốc.', 'Ensure the PR or Commit contains actual code demonstrating this milestone skill.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Chạy Phân tích GitHub', 'Run GitHub Analysis')) + '</strong>'
+      + '<p>' + escape(copy('Vào mục Phân tích GitHub để hệ thống quét và chấm điểm năng lực từ repository chứa code.', 'Go to GitHub Analysis to scan and score competencies from the repository.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '<li>'
+      + '<span class="step-dot" aria-hidden="true">•</span>'
+      + '<div>'
+      + '<strong>' + escape(copy('Bấm "Đánh giá lại"', 'Click "Re-evaluate"')) + '</strong>'
+      + '<p>' + escape(copy('Sau khi phân tích xong, quay lại Lộ trình và bấm "Đánh giá lại" để hệ thống tự động đối chiếu và thăng hạng thành Đã xác minh.', 'After analysis, return to Roadmap and click "Re-evaluate" to automatically verify.')) + '</p>'
+      + '</div>'
+      + '</li>'
+      + '</ul>'
+      + '<div class="guide-actions">'
+      + '<a class="button secondary small" href="#studio/repos">'
+      + icon('repo') + ' ' + escape(copy('Đến Phân tích GitHub', 'Go to GitHub Analysis'))
+      + '</a>'
+      + '</div>'
+      + '</div>'
+    : '';
   const proofLinksHtml = '<div class="milestone-proof-evidence">'
     + '<div class="milestone-proof-summary"><strong>'
     + escape(copy('Đã nộp ' + evidenceItems.length + ' liên kết', evidenceItems.length + ' submitted links'))
@@ -1033,6 +1421,7 @@ export function liveRoadmap(data) {
       : '<p class="milestone-proof-empty">'
         + escape(copy('Chưa có liên kết bằng chứng được nộp.', 'No evidence links submitted yet.'))
         + '</p>')
+    + unverifiedGuideHtml
     + '<small class="milestone-proof-help">'
     + escape(copy('Chỉ minh chứng đáp ứng tiêu chí năng lực mới được xác minh.', 'Only evidence meeting skill criteria is verified.'))
     + '</small></div>';
@@ -1093,7 +1482,7 @@ export function liveRoadmap(data) {
     + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', detailTitle)) + '</div>'
     + pending.map(suggestion => '<div class="notice">' + paragraph(suggestionText(suggestion))
       + ['apply', 'reject'].map(decision => roadButton(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small', 'suggestion:' + suggestion.id + ':' + decision, attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
-  return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + (data.errors.road || data.messages.road || loading('load') ? feedback(data, 'road') : '')
+  return heading(t('road.heading'), t('road.intro')) + '<div class="road-pickers-row">' + picker + roadPicker + '</div>' + (data.errors.road || data.messages.road || loading('load') ? feedback(data, 'road') : '')
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
     + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
     + (goal ? paragraph(displayObjective(goal.objective, next?.external_key)) : '') + '</div>'
@@ -1188,15 +1577,25 @@ export function liveJobs(state, data) {
 function renderStructuredSections(structured, copy, escape, activeSecIdx) {
   if (!structured || !Array.isArray(structured.sections) || !structured.sections.length) {
     return '<div class="cv-struct-empty cv-struct-container">'
-      + '<p class="subtle" style="font-size:12px;margin:8px 0">'
-      + escape(copy('Chưa có mục nội dung nào. Bạn có thể thêm mục hoặc chuyển sang tab Văn bản thô.', 'No sections yet. Add sections or switch to Raw text.')) + '</p>'
+      + '<div class="cv-empty-state">'
+      + '<span class="cv-empty-icon" aria-hidden="true">📄</span>'
+      + '<strong>' + escape(copy(
+          'CV của bạn chưa có nội dung',
+          'Your CV has no sections yet'
+        )) + '</strong>'
+      + '<p>' + escape(copy(
+          'Chọn một mục bên dưới để bắt đầu xây dựng hồ sơ.',
+          'Choose a section below to start building your resume.'
+        )) + '</p>'
+      + '</div>'
       + '<div class="cv-add-sec-bar">'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Experience">💼 + ' + copy('Kinh nghiệm', 'Experience') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Projects">🚀 + ' + copy('Dự án', 'Projects') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Skills">⚡ + ' + copy('Kỹ năng', 'Skills') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Education">🎓 + ' + copy('Học vấn', 'Education') + '</button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Experience">💼 ' + copy('Kinh nghiệm', 'Experience') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Projects">🚀 ' + copy('Dự án', 'Projects') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Skills">⚡ ' + copy('Kỹ năng', 'Skills') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Education">🎓 ' + copy('Học vấn', 'Education') + ' <span aria-hidden="true">＋</span></button>'
       + '</div></div>';
   }
+
 
   // FOCUSED SECTION VIEW (Chỉ mở form của section đang chọn)
   if (activeSecIdx !== null && activeSecIdx !== undefined && structured.sections[activeSecIdx]) {
@@ -1232,16 +1631,20 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
       }
     }).join('');
 
-    return '<div class="cv-focused-sec-editor cv-struct-container">'
-      + '<div class="cv-focused-sec-header">'
+    return '<div class="cv-focused-sec-editor cv-struct-container cv-section-card">'
+      + '<div class="cv-focused-sec-nav-bar">'
       + '<button type="button" class="button quiet small cv-nav-back-btn" data-act="cv-nav-back">'
       + '← ' + escape(copy('Quay lại danh sách mục', 'All Sections'))
       + '</button>'
+      + '<button type="button" class="button danger-subtle small cv-del-sec-btn" data-act="cv-del-section" data-sec="' + sIdx + '" title="' + escape(copy('Xóa phần này khỏi CV', 'Delete section from CV')) + '">'
+      + '🗑️ ' + copy('Xóa phần này', 'Delete section')
+      + '</button>'
+      + '</div>'
       + '<div class="cv-focused-sec-title">'
       + '<span class="cv-sec-icon">' + secIcon + '</span>'
       + '<input class="cv-struct-title cv-struct-field" data-sec="' + sIdx + '" value="' + escape(sec.title || '') + '" placeholder="' + escape(copy('Tên phần...', 'Section title...')) + '">'
       + '<span class="cv-sec-count-badge">' + (sec.entries?.length || 0) + ' ' + copy('mục', 'items') + '</span>'
-      + '</div></div>'
+      + '</div>'
       + '<div class="cv-struct-body">'
       + entriesHtml
       + '<div class="cv-sec-add-row">'
@@ -1259,16 +1662,16 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
     + '<div class="cv-sec-nav-container">'
     + structured.sections.map((sec, sIdx) => {
       const secIcon = getSectionIcon(sec.title);
-      return '<div class="cv-struct-section cv-sec-nav-card" data-act="cv-open-sec" data-sec="' + sIdx + '">'
+      return '<div class="cv-struct-section cv-sec-nav-card cv-section-card" data-act="cv-open-sec" data-sec="' + sIdx + '">'
         + '<div class="cv-sec-nav-main">'
         + '<span class="cv-sec-icon">' + secIcon + '</span>'
         + '<div class="cv-sec-nav-text">'
-        + '<strong class="cv-sec-nav-title">' + escape(sec.title || copy('Mục nội dung', 'Section')) + '</strong>'
+        + '<strong class="cv-sec-nav-title" title="' + escape(sec.title || '') + '">' + escape(sec.title || copy('Mục nội dung', 'Section')) + '</strong>'
         + '<span class="cv-sec-nav-meta">' + (sec.entries?.length || 0) + ' ' + copy('mục', 'items') + '</span>'
         + '</div></div>'
         + '<div class="cv-sec-nav-actions">'
-        + '<button type="button" class="button secondary small cv-add-entry-btn" data-act="cv-add-entry" data-sec="' + sIdx + '" title="' + escape(copy('Thêm mục vào phần này', 'Add item')) + '">+ ' + copy('Thêm mục', 'Add item') + '</button>'
         + '<button type="button" class="button quiet small cv-open-sec-btn" data-act="cv-open-sec" data-sec="' + sIdx + '">' + copy('Sửa →', 'Edit →') + '</button>'
+        + '<button type="button" class="button quiet small cv-del-sec-btn" data-act="cv-del-section" data-sec="' + sIdx + '" title="' + escape(copy('Xóa phần này khỏi CV', 'Delete section')) + '">✕</button>'
         + '</div></div>';
     }).join('')
     + '</div>'
@@ -1288,6 +1691,8 @@ export function liveCV(state, runtime, data) {
   const busy = data.busy.has('cv');
   const select = (label, id, options) => field(label, '<select id="' + id + '"><option value="">'
     + escape(copy('Chọn…', 'Select…')) + '</option>' + options + '</select>');
+  const customPicker = (label, currentId, currentLabel, items, action, glyph = 'file') =>
+    renderCustomPicker(label, currentId, currentLabel, items, action, glyph, copy);
   const ats = data.ats;
   const references = data.references;
 
@@ -1295,16 +1700,17 @@ export function liveCV(state, runtime, data) {
   const intelTab = data.intelTab || 'design';
   const zoom = data.zoomLevel || 'fit';
   const hasMentor = (typeof document !== 'undefined' && (document.body?.classList.contains('has-mentor') || document.querySelector('.workspace-body')?.classList.contains('has-mentor'))) || Boolean(runtime.mentorOpen);
-  const intelExplicitOpen = data.rightPanelExplicitOpen === true;
-  const intelCollapsed = hasMentor ? !intelExplicitOpen : (data.rightPanelCollapsed !== undefined ? Boolean(data.rightPanelCollapsed) : false);
+  const intelCollapsed = hasMentor ? true : (data.rightPanelCollapsed !== undefined ? Boolean(data.rightPanelCollapsed) : false);
+  const isFocusMode = Boolean(data.focusMode || runtime.cvFocusMode);
+  const isPreviewOnly = Boolean(data.previewOnly);
 
   const normalize = s => (s || '').replace(/\r\n/g, '\n').trim();
   const isSaved = doc && (draft.name || '').trim() === (doc.title || '').trim() && normalize(draft.body) === normalize(doc.lines.map(l => l.text).join('\n'));
   let saveStatusBadge = '';
   if (doc) {
     saveStatusBadge = isSaved
-      ? '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã lưu bản mới nhất (#' + doc.number + ')', 'Saved latest (#' + doc.number + ')') + '</span>'
-      : '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp có thay đổi chưa lưu', 'Unsaved draft changes') + '</span>';
+      ? '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã lưu mới nhất (#' + doc.number + ')', 'Saved latest (#' + doc.number + ')') + '</span>'
+      : '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp chưa lưu', 'Unsaved draft changes') + '</span>';
   } else if (cv) {
     saveStatusBadge = '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã tải lên CV #' + cv.id, 'Uploaded CV #' + cv.id) + '</span>';
   } else if (!draft.body.trim()) {
@@ -1313,29 +1719,29 @@ export function liveCV(state, runtime, data) {
     saveStatusBadge = '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp chưa lưu', 'Unsaved draft') + '</span>';
   }
 
-  // CV Top Toolbar (Reactive Resume v6 Style)
+  // CV Top Toolbar (Professional Single-Bar Workspace Header)
   const cvDocTitle = doc ? doc.title : (draft.name ? draft.name + ' - CV' : copy('Bản CV mới', 'New CV'));
   const cvCommandBar = '<section class="panel cv-command-bar cv-top-toolbar" aria-label="' + copy('Thanh công cụ CV', 'CV Action Bar') + '">'
     + '<div class="cv-command-inner">'
     + '<div class="cv-command-status">'
-    + '<span class="cv-toolbar-doc-icon">📄</span>'
+    + '<span class="cv-toolbar-doc-icon">' + icon('file') + '</span>'
     + '<div class="cv-toolbar-title-wrap">'
     + '<span class="cv-toolbar-title" title="' + escape(copy('Tiêu đề CV', 'CV Title')) + '">' + escape(cvDocTitle) + '</span>'
     + '</div>'
     + saveStatusBadge
-    + (doc && data.versions?.length ? '<span class="cv-command-sep">·</span><span class="cv-version-tag">' + copy('Phiên bản: ', 'Version: ') + '<strong>#' + doc.number + '</strong></span>' : '')
-    + '<small class="cv-command-doc-info" style="display:none">' + (doc ? escape(doc.title) : 'draft') + '</small>'
+    + (doc && data.versions?.length ? '<span class="cv-command-sep">·</span><span class="cv-version-tag">' + copy('Bản ', 'v') + '<strong>#' + doc.number + '</strong></span>' : '')
     + '</div>'
     + '<div class="cv-command-actions">'
-    + btn(icon('pulse') + ' ' + escape(copy('Chèn từ Git', 'Git Skills')), 'cv-insert-github', 'secondary small pulse-button', undefined, 'title="' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')) + '"')
-    + namedButton('✨ ' + copy('Tạo CV bằng AI', 'AI Generate'), 'cv-generate', 'secondary small', undefined, 'title="' + escape(copy('Tạo CV tối ưu theo JD từ dữ kiện thực tế', 'Generate CV matching JD with verified facts')) + '"')
-    + '<div class="cv-export-group">'
-    + (doc ? namedButton('PDF', 'cv-export', 'secondary small', 'pdf') + namedButton('DOCX', 'cv-export', 'secondary small', 'docx') : '')
-    + namedButton(t('cv.print'), 'cv-print', 'secondary small')
-    + '</div>'
-    + btn(icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')), 'cv-save-bar', 'primary small cv-save-btn', undefined, 'title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '"')
+    + btn(icon('pulse') + ' ' + escape(copy('Chèn từ Git', 'Git Evidence')), 'cv-insert-github', 'secondary small pulse-button', 'title="' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')) + '"')
+    + btn(icon('bot') + ' ' + escape(copy('Tạo bằng AI', 'AI Generate')), 'cv-generate', 'secondary small', 'title="' + escape(copy('Tạo CV tối ưu theo JD từ dữ kiện thực tế', 'Generate CV matching JD with verified facts')) + '"')
+    + '<button type="button" class="button secondary small cv-focus-btn' + (isFocusMode ? ' active' : '') + '" data-act="cv-toggle-focus" title="' + escape(copy('Bật/tắt chế độ tập trung (Esc)', 'Toggle Focus mode (Esc)')) + '">'
+    + icon('grid') + ' ' + copy(isFocusMode ? 'Thoát tập trung' : 'Tập trung', isFocusMode ? 'Exit focus' : 'Focus mode') + '</button>'
+    + '<button type="button" class="button primary small cv-save-btn" data-act="cv-save-bar" data-act-alias="cv-save" title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '">'
+    + icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')) + '</button>'
+    + '<button type="button" class="button secondary small cv-print-btn" data-act="cv-print" data-act-alias="cv-export-pdf" title="' + escape(copy('In hoặc lưu tệp PDF chuẩn A4', 'Print or export A4 PDF')) + '">'
+    + icon('file') + ' ' + copy('In / Xuất PDF', 'Print / PDF') + '</button>'
     + '<button type="button" class="button secondary small cv-toggle-intel-btn' + (!intelCollapsed ? ' active' : '') + '" data-act="cv-toggle-intel" title="' + escape(copy('Bật/tắt Bảng thiết kế & công cụ', 'Toggle design & tools hub')) + '">'
-    + '⚙️ ' + escape(copy(intelCollapsed ? 'Thiết kế & Công cụ' : 'Thu gọn', intelCollapsed ? 'Design & Tools' : 'Collapse')) + '</button>'
+    + icon('settings') + ' ' + escape(copy(intelCollapsed ? 'Công cụ' : 'Thu gọn', intelCollapsed ? 'Tools' : 'Collapse')) + '</button>'
     + '</div>'
     + '</div>'
     + '</section>';
@@ -1347,42 +1753,67 @@ export function liveCV(state, runtime, data) {
 
   const structured = parseCVForReference(draft.body, draft.name, draft.role);
 
-  // LEFT PANEL: EDITOR (Reactive Resume v6 Accordion Layout)
+  // LEFT PANEL: EDITOR (Collapsible Section Architecture, Zero Clutter)
   const editorPanel = '<article class="panel cv-editor cv-panel-editor">'
-    + '<div class="cv-editor-header">'
-    + '<div class="cv-editor-title"><h3>' + copy('Nội dung CV', 'Resume Content') + '</h3></div>'
-    + '<div class="cv-mode-tabs" role="group">'
-    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Sections') + '</button>'
-    + '<button type="button" class="button' + (editorMode === 'raw' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="raw">' + copy('📝 Văn bản thô', '📝 Raw Text') + '</button>'
-    + '</div></div>'
+    + '<div class="panel-head cv-editor-header">'
+    + '<h2 class="panel-title">' + copy('Nội dung CV', 'Resume Content') + '</h2>'
+    + '</div>'
+    + '<div class="cv-mode-tabs" role="tablist">'
+    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Structured Form') + '</button>'
+    + '<button type="button" class="button' + (editorMode === 'raw' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="raw">' + copy('📝 Văn bản thô', '📝 Raw Markdown') + '</button>'
+    + '</div>'
     + '<fieldset class="cv-controls"' + (busy ? ' disabled' : '') + '><form id="cv-form" class="cv-controls">'
     + '<div class="cv-basics-card">'
     + '<div class="field-row">'
     + field(t('cv.name'), '<input name="name" maxlength="120" placeholder="' + escape(copy('Họ và tên', 'Full Name')) + '" value="' + escape(draft.name) + '">')
     + field(t('cv.role'), '<input name="role" maxlength="70" placeholder="' + escape(copy('Chức danh chuyên môn', 'Professional Title')) + '" value="' + escape(draft.role) + '">')
     + '</div>'
-    + (editorMode === 'structured'
-      ? field(copy('Thông tin liên hệ', 'Contact info'), '<input name="cv-struct-contact" maxlength="150" placeholder="'
-          + escape(copy('Email | Số điện thoại | GitHub | Địa điểm...', 'Email | Phone | GitHub | Location...')) + '" value="' + escape(structured.contact || '') + '">')
-      : '')
+    + field(copy('Thông tin liên hệ', 'Contact info'), '<input name="cv-struct-contact" maxlength="150" placeholder="'
+        + escape(copy('Email | Số điện thoại | GitHub | Địa điểm...', 'Email | Phone | GitHub | Location...')) + '" value="' + escape(structured.contact || '') + '">')
     + '</div>'
     + (editorMode === 'structured'
       ? renderStructuredSections(structured, copy, escape, data.activeSection)
-        + '<div class="cv-raw-sync-wrap">'
-        + '<div class="cv-raw-sync-header">'
-        + '<span>📝 ' + copy('Đồng bộ văn bản thô (Markdown)', 'Raw Markdown Sync') + '</span>'
-        + '<small>' + copy('Tự động cập nhật hai chiều', 'Bidirectional sync') + '</small>'
-        + '</div>'
-        + '<textarea name="body" rows="3" class="cv-raw-sync-input" maxlength="20000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'
-        + '</div>'
-      : field(t('cv.content'), '<textarea name="body" rows="14" maxlength="20000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'))
+        + '<textarea name="body" class="cv-hidden-raw" style="display:none" maxlength="30000">' + escape(draft.body) + '</textarea>'
+      : field(t('cv.content'), '<textarea name="body" rows="20" class="auto-scale-textarea cv-raw-textarea" maxlength="30000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'))
     + '<details class="cv-drawer-card">'
     + '<summary class="cv-drawer-head">📁 ' + copy('Tải lên CV & Chọn bản đã lưu', 'Import File & Saved CVs') + '</summary>'
     + '<div class="cv-drawer-body">'
-    + field(t('cv.import'), '<input id="cv-upload" type="file" accept=".pdf,.docx">')
-    + select(copy('CV đã tải lên', 'Uploaded CVs'), 'live-cv-picker', data.cvList.map(item => option(item.id, 'CV #' + item.id, item.id === cv?.id ? item.id : undefined)).join(''))
-    + select(copy('CV Studio', 'CV Studio'), 'live-document-picker', data.documentList.map(item => option(item.document_id, item.title, doc?.document_id)).join(''))
-    + (doc ? select(copy('Phiên bản', 'Version'), 'live-version-picker', data.versions.map(item => option(item.number, '#' + item.number, doc.number)).join('')) : '')
+    + '<div class="field cv-file-field">'
+    + '<span class="filter-label">' + escape(t('cv.import')) + '</span>'
+    + '<label class="cv-file-upload-box" for="cv-upload">'
+    + '<input id="cv-upload" type="file" accept=".pdf,.docx" class="cv-file-input-hidden">'
+    + '<span class="filter-glyph">' + icon('file') + '</span>'
+    + '<span class="cv-upload-info">'
+    + '<strong>' + copy('Tải tệp CV lên (.pdf, .docx)', 'Upload CV file (.pdf, .docx)') + '</strong>'
+    + '<small>' + copy('Bấm để chọn tệp từ máy tính của bạn', 'Click to choose file from your computer') + '</small>'
+    + '</span>'
+    + '<span class="button secondary small cv-upload-browse-btn">' + copy('Chọn tệp', 'Browse') + '</span>'
+    + '</label>'
+    + '</div>'
+    + customPicker(
+        copy('CV đã tải lên', 'Uploaded CVs'),
+        cv?.id,
+        cv ? 'CV #' + cv.id : undefined,
+        data.cvList.map(item => ({ id: item.id, title: 'CV #' + item.id })),
+        'live-cv-select',
+        'file'
+      )
+    + customPicker(
+        copy('CV Studio', 'CV Studio'),
+        doc?.document_id,
+        doc?.title,
+        data.documentList.map(item => ({ id: item.document_id, title: item.title })),
+        'live-document-select',
+        'file'
+      )
+    + (doc ? customPicker(
+        copy('Phiên bản', 'Version'),
+        doc.number,
+        '#' + doc.number,
+        data.versions.map(item => ({ id: item.number, title: '#' + item.number })),
+        'live-version-select',
+        'clock'
+      ) : '')
     + '</div></details>'
     + '</form>'
     + '</fieldset></article>';
@@ -1390,14 +1821,22 @@ export function liveCV(state, runtime, data) {
   // CENTER PANEL: PREVIEW (Reactive Resume v6 Centered A4 Canvas)
   const previewPanel = '<article class="panel cv-preview cv-panel-preview">'
     + '<div class="cv-preview-header-bar">'
-    + '<div class="tabs" role="group" aria-label="' + copy('Chọn mẫu CV', 'Select template') + '">' + ['plain', 'tech', 'reference'].map(key => btn(escape(t('cv.' + key)), 'cv-template', '',
-      attr('id', key) + ' aria-pressed="' + (state.template === key) + '"')).join('') + '</div>'
-    + '<div class="cv-zoom-controls">'
-    + '<button type="button" class="button' + (zoom === '85' ? ' active' : '') + '" data-act="cv-zoom" data-id="85">85%</button>'
-    + '<button type="button" class="button' + (zoom === '100' ? ' active' : '') + '" data-act="cv-zoom" data-id="100">100%</button>'
-    + '<button type="button" class="button' + (zoom === '115' ? ' active' : '') + '" data-act="cv-zoom" data-id="115">115%</button>'
-    + '<button type="button" class="button' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom" data-id="fit" title="' + copy('Vừa chiều rộng màn hình', 'Fit to width') + '">' + copy('Vừa', 'Fit') + '</button>'
+    + '<div class="tabs cv-template-tabs" role="group" aria-label="' + copy('Chọn mẫu CV', 'Select template') + '">'
+    + [
+        ['reference', copy('Theo mẫu (Executive)', 'Executive')],
+        ['tech', copy('Kỹ thuật (Tech)', 'Tech')],
+        ['plain', copy('Tối giản (Classic)', 'Classic')]
+      ].map(([key, label]) => btn(escape(label), 'cv-template', (state.template === key ? 'active' : ''), attr('id', key) + ' aria-pressed="' + (state.template === key) + '"')).join('')
     + '</div>'
+    + '<div class="cv-zoom-controls">'
+    + '<button type="button" class="button quiet small cv-zoom-step-btn" data-act="cv-zoom-out" title="' + copy('Thu nhỏ (−)', 'Zoom out (−)') + '">−</button>'
+    + ['85', '100', '115', '125'].map(lvl => '<button type="button" class="button small' + (zoom === lvl ? ' active' : '') + '" data-act="cv-zoom" data-id="' + lvl + '">' + lvl + '%</button>').join('')
+    + '<button type="button" class="button small' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom" data-id="fit" title="' + copy('Vừa chiều rộng màn hình', 'Fit to width') + '">' + copy('Vừa', 'Fit') + '</button>'
+    + '<button type="button" class="button quiet small cv-zoom-step-btn" data-act="cv-zoom-in" title="' + copy('Phóng to (+)', 'Zoom in (+)') + '">+</button>'
+    + '</div>'
+    + '<button type="button" class="button secondary small cv-preview-only-btn' + (isPreviewOnly ? ' active' : '') + '" data-act="cv-toggle-preview-only" title="' + escape(copy('Xem riêng bản in (ẩn các thanh bên)', 'Preview only (hide side panels)')) + '">'
+    + icon('search') + ' ' + copy(isPreviewOnly ? 'Đóng xem in' : 'Xem bản in', isPreviewOnly ? 'Exit Preview' : 'Preview')
+    + '</button>'
     + '<span class="cv-page-indicator">📄 ' + copy('A4 Chuẩn', 'Standard A4') + '</span>'
     + '<span class="cv-direct-edit-tip">' + copy('✏️ Sửa trực tiếp trên CV', '✏️ Click on CV to edit') + '</span>'
     + '</div>'
@@ -1406,45 +1845,50 @@ export function liveCV(state, runtime, data) {
       ? renderReferenceCV(draft)
       : '<div class="cv-paper" data-template="' + escape(state.template) + '"><h2 id="cv-name" contenteditable="true" spellcheck="false">' + escape(draft.name)
         + '</h2><p id="cv-role" contenteditable="true" spellcheck="false">' + escape(draft.role) + '</p><div class="cv-body" id="cv-body" contenteditable="true" spellcheck="false">' + escape(draft.body || t('cv.empty')) + '</div></div>')
-    + '</div>'
-    + '<div class="action-row cv-exports">' + (doc ? namedButton('PDF', 'cv-export', 'secondary small', 'pdf') + namedButton('DOCX', 'cv-export', 'secondary small', 'docx') : '')
-    + namedButton(t('cv.print'), 'cv-print', 'secondary small') + '</div></article>';
+    + '</div></article>';
 
-  // RIGHT PANEL: DESIGN & TOOLS (Thiết kế & Công cụ)
+  // RIGHT PANEL: CONTEXTUAL DESIGN & TOOLS HUB (Thiết kế & Công cụ)
   const atsEnabled = (draft.body.trim().length > 0 || cv) && !busy;
 
   let intelBody = '';
   if (intelTab === 'design') {
     intelBody = '<div class="cv-intel-content cv-design-tab">'
       + '<div class="cv-design-section">'
-      + '<h4>' + copy('Mẫu giao diện CV', 'Resume Templates') + '</h4>'
+      + '<h4>' + copy('Kiểu chữ & Cỡ chữ chuẩn A4', 'A4 Typography Standards') + '</h4>'
+      + '<div class="cv-typography-guide">'
+      + '<p>' + copy('Các mẫu CV đã được tinh chỉnh tỷ lệ chữ (font-scale) chuẩn hóa quốc tế: Tiêu đề lớn 20pt, tên mục 12pt in hoa, nội dung 10pt với khoảng cách dòng 1.45 chống tràn trang khi xuất PDF.', 'Typography is calibrated to international standards: 20pt header, 12pt section titles, 10pt body text with 1.45 line-height preventing page overflows.') + '</p>'
+      + '</div>'
+      + '</div>'
+      + '<div class="cv-design-section">'
+      + '<h4>' + copy('Khoảng cách lề trang', 'Margins & Spacing') + '</h4>'
+      + '<div class="cv-typography-guide">'
+      + '<p>' + copy('Khổ giấy A4 210mm × 297mm với lề an toàn 18mm hai bên và 16mm trên dưới, đảm bảo máy in không bị cắt mất chữ.', 'Standard A4 210mm × 297mm with 18mm lateral margin and 16mm vertical safe area for zero-bleed printing.') + '</p>'
+      + '</div>'
+      + '</div>'
+      + '<div class="cv-ai-guide-card">'
+      + '<strong>💡 ' + copy('Mẹo xuất PDF chuẩn A4', 'A4 Export Tip') + '</strong>'
+      + '<p>' + copy('Dùng nút In / Xuất PDF trên thanh công cụ và chọn "Lưu dưới dạng PDF" với khổ giấy A4, tỷ lệ mặc định để có bản in sắc nét nhất.', 'Use Print / PDF on the toolbar and choose A4 paper size for the crispest vector output.') + '</p>'
+      + '</div>'
+      + '</div>';
+  } else if (intelTab === 'templates') {
+    intelBody = '<div class="cv-intel-content cv-design-tab">'
+      + '<div class="cv-design-section">'
+      + '<h4>' + copy('Chọn mẫu giao diện CV', 'Select Resume Template') + '</h4>'
       + '<div class="cv-template-cards">'
-      + '<div class="cv-tpl-card' + (state.template === 'reference' ? ' selected' : '') + '" data-act="cv-template" data-id="reference">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'reference' ? ' selected' : '') + '" data-act="cv-template" data-id="reference">'
       + '<div class="cv-tpl-badge">★ Recommended</div>'
       + '<strong>' + copy('Theo mẫu (Executive 2 Cột)', 'Executive 2-Column') + '</strong>'
       + '<p>' + copy('Chuẩn Executive quốc tế, chia cột thời gian & công ty tinh gọn, chống tràn trang khi xuất PDF.', 'Modern 2-column layout, clear timeline, prevents page overflow.') + '</p>'
       + '</div>'
-      + '<div class="cv-tpl-card' + (state.template === 'tech' ? ' selected' : '') + '" data-act="cv-template" data-id="tech">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'tech' ? ' selected' : '') + '" data-act="cv-template" data-id="tech">'
       + '<strong>' + copy('Kỹ thuật (Tech Modern)', 'Tech Modern') + '</strong>'
       + '<p>' + copy('Điểm nhấn hiện đại, font sans-serif & monospace dành cho lập trình viên.', 'Modern border accent, mono labels, designed for software engineers.') + '</p>'
       + '</div>'
-      + '<div class="cv-tpl-card' + (state.template === 'plain' ? ' selected' : '') + '" data-act="cv-template" data-id="plain">'
+      + '<div class="cv-tpl-card cv-template-card' + (state.template === 'plain' ? ' selected' : '') + '" data-act="cv-template" data-id="plain">'
       + '<strong>' + copy('Tối giản (Classic Plain)', 'Classic Plain') + '</strong>'
       + '<p>' + copy('Phong cách truyền thống, font có chân (Serif), chuẩn mực và trang nhã.', 'Traditional serif typography, clean and elegant.') + '</p>'
       + '</div>'
       + '</div></div>'
-      + '<div class="cv-design-section">'
-      + '<h4>' + copy('Thu phóng trang giấy', 'Canvas Zoom') + '</h4>'
-      + '<div class="cv-zoom-btn-group">'
-      + '<button type="button" class="button secondary small' + (zoom === '85' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="85">85%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === '100' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="100">100%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === '115' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="115">115%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="fit">' + copy('Vừa màn hình', 'Fit Width') + '</button>'
-      + '</div></div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>💡 ' + copy('Mẹo xuất PDF chuẩn A4', 'A4 Export Tip') + '</strong>'
-      + '<p>' + copy('Dùng nút In/Lưu PDF trên thanh công cụ và chọn "Lưu dưới dạng PDF" với khổ giấy A4, tỷ lệ mặc định để có bản in sắc nét nhất.', 'Use Print to PDF and choose A4 size for the crispest output.') + '</p>'
-      + '</div>'
       + '</div>';
   } else if (intelTab === 'github') {
     const verifiedScores = verifiedCVSkills(data.scores);
@@ -1489,19 +1933,6 @@ export function liveCV(state, runtime, data) {
           + muted(ats.disclaimer)
           + '<ul class="cv-checks">' + ats.suggestions.map(suggestion => '<li>' + escape(suggestion.message) + '</li>').join('') + '</ul>'
         : '') + '</div></div>';
-  } else if (intelTab === 'ai') {
-    intelBody = '<div class="cv-intel-content">'
-      + '<div style="margin-bottom:8px">' + namedButton(copy('✨ Tạo CV bằng AI', '✨ Generate CV with AI'), 'cv-generate', 'primary') + '</div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>🛡️ ' + copy('Nguyên tắc Anti-Hallucination', 'Anti-Hallucination Policy') + '</strong>'
-      + '<p>' + copy('Hệ thống chỉ tổng hợp kinh nghiệm từ CV nguồn đã lưu hoặc bằng chứng commit thực tế từ GitHub của bạn. AI không tự tạo thành tích giả.', 'The AI only synthesizes facts from your verified source CV or actual GitHub commits.') + '</p>'
-      + '</div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>💡 ' + copy('Công thức STAR viết Bullet Point', 'STAR Framework for Bullets') + '</strong>'
-      + '<p><strong>S / T:</strong> ' + copy('Bối cảnh & nhiệm vụ cụ thể.', 'Situation & specific task.') + '<br>'
-      + '<strong>A:</strong> ' + copy('Hành động & Công nghệ sử dụng.', 'Action & technologies used.') + '<br>'
-      + '<strong>R:</strong> ' + copy('Kết quả định lượng đo lường được.', 'Measurable quantitative results.') + '</p>'
-      + '</div></div>';
   } else {
     // References Tab
     intelBody = '<div class="cv-intel-content">'
@@ -1518,24 +1949,30 @@ export function liveCV(state, runtime, data) {
   }
 
   const intelPanel = '<article class="panel cv-intel cv-panel-intel">'
-    + '<div class="panel-head cv-intel-header" style="margin-bottom:6px">'
+    + '<div class="panel-head cv-intel-header">'
     + '<h2 class="panel-title">' + copy('Thiết kế & Công cụ', 'Design & Tools') + '</h2>'
     + '<button type="button" class="button quiet small cv-intel-close-btn" data-act="cv-toggle-intel" title="' + escape(copy('Đóng bảng công cụ', 'Close tools panel')) + '">✕ ' + copy('Đóng', 'Close') + '</button>'
     + '</div>'
     + '<div class="cv-intel-tabs" role="tablist">'
-    + '<button type="button" class="button' + (intelTab === 'design' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="design">' + copy('🎨 Thiết kế', 'Design') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng Git', 'Git Evidence') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', 'ATS Review') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ai' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ai">' + copy('✨ Trợ lý AI', 'AI Assistant') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Mẫu CV', 'References') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'design' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="design">' + copy('🎨 Thiết kế', '🎨 Design') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'templates' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="templates">' + copy('🖼️ Mẫu CV', '🖼️ Templates') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng', '📁 Git Evidence') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', '🎯 ATS') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Tham khảo', '🔍 References') + '</button>'
     + '</div>'
     + intelBody
     + '</article>';
 
+  const workspaceClassList = ['columns', 'cv-workspace-3col'];
+  if (intelCollapsed) workspaceClassList.push('intel-collapsed');
+  else workspaceClassList.push('intel-open');
+  if (isPreviewOnly) workspaceClassList.push('preview-only');
+  if (isFocusMode) workspaceClassList.push('in-focus-mode');
+
   return heading(t('nav.cv'), t('cv.intro')) + feedback(data, 'cv')
     + cvCommandBar
     + loadingNotice
-    + '<div class="columns cv-workspace-3col' + (intelCollapsed ? ' intel-collapsed' : ' intel-open' + (intelExplicitOpen ? ' intel-explicit-open' : '')) + '">'
+    + '<div class="' + workspaceClassList.join(' ') + '">'
     + editorPanel
     + previewPanel
     + intelPanel

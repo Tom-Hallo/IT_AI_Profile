@@ -456,6 +456,10 @@ function renderMentorPanel() {
   const splitter = $('#mentor-resize');
   $('#mentor-toggle').setAttribute('aria-expanded',String(open));
   body.classList.toggle('has-mentor',open);
+  document.querySelector('.studio')?.classList.toggle('mentor-open', open);
+  document.querySelector('.studio')?.classList.toggle('has-mentor', open);
+  document.body.classList.toggle('mentor-open', open);
+  document.body.classList.toggle('has-mentor', open);
   if (open) {
     clearTimeout(mentorCloseTimer);
     mentorCloseTimer = undefined;
@@ -1271,6 +1275,58 @@ const actions = {
       updateStudio();
     }
   },
+  'cv-del-section': button => {
+    const sIdx = Number(button.dataset.sec);
+    const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+    if (structured.sections?.[sIdx]) {
+      structured.sections.splice(sIdx, 1);
+      runtime.cvDraft.body = serializeCVFromSections(structured);
+      runtime.cvEdited = true;
+      if (runtime.activeSection === sIdx) {
+        runtime.activeSection = null;
+      } else if (runtime.activeSection > sIdx) {
+        runtime.activeSection -= 1;
+      }
+      updateStudio();
+    }
+  },
+  'live-cv-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const id = Number(button.dataset.id);
+    const item = runtime.cvList?.find(c => c.id === id);
+    if (item) {
+      runtime.cvDraft = { name: item.name || '', role: item.role || '', body: item.body || '' };
+      runtime.cv = item;
+      updateStudio();
+    }
+  },
+  'live-document-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const docId = button.dataset.id;
+    const item = runtime.documentList?.find(d => d.document_id === docId);
+    if (item) {
+      runtime.document = item;
+      updateStudio();
+    }
+  },
+  'live-version-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    updateStudio();
+  },
+  'road-goal-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const goal = button.dataset.id;
+    if (goal && Object.hasOwn(paths, goal)) {
+      state.goal = goal;
+      runtime.milestone = Math.max(0, nextStep(state));
+      save();
+      updateStudio();
+    }
+  },
+  'road-select-option': button => {
+    button.closest('details')?.removeAttribute('open');
+    updateStudio();
+  },
   'cv-add-entry': button => {
     const sIdx = Number(button.dataset.sec);
     const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
@@ -1582,7 +1638,37 @@ document.addEventListener('keydown',event => {
     event.preventDefault();
     changeThemeColor(field,true);
   }
-  if (!runtime.mentorOpen || dialog.open || event.defaultPrevented || event.key !== 'Escape') return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    const cvForm = document.getElementById('cv-form');
+    if (cvForm) {
+      event.preventDefault();
+      document.querySelector('[data-act="cv-save"], [data-act="cv-save-bar"]')?.click();
+      return;
+    }
+  }
+  if (event.defaultPrevented || event.key !== 'Escape') return;
+  if (dialog.open) return;
+  if (live && live.data) {
+    if (live.data.previewOnly) {
+      event.preventDefault();
+      live.data.previewOnly = false;
+      updateStudio();
+      setTimeout(updateCVFitScale, 50);
+      return;
+    }
+    if (live.data.focusMode) {
+      event.preventDefault();
+      live.data.focusMode = false;
+      runtime.cvFocusMode = false;
+      try { localStorage.setItem('cv_focus_mode', '0'); } catch (_) {}
+      document.querySelector('.studio')?.classList.remove('cv-focus-mode');
+      document.body.classList.remove('cv-focus-mode');
+      updateStudio();
+      setTimeout(updateCVFitScale, 50);
+      return;
+    }
+  }
+  if (!runtime.mentorOpen) return;
   event.preventDefault();
   closeMentor(true);
 });
@@ -1593,6 +1679,14 @@ window.addEventListener('afterprint',() => document.body.classList.remove('print
 window.addEventListener('hashchange',() => {
   const previous = route;
   const focusWasInMentor = mentorPanel.contains(document.activeElement);
+  if (location.hash !== '#studio/cv') {
+    document.querySelector('.studio')?.classList.remove('cv-focus-mode');
+    document.body.classList.remove('cv-focus-mode');
+    if (live && live.data) {
+      live.data.focusMode = false;
+      live.data.previewOnly = false;
+    }
+  }
   if (runtime.mentorOpen && compactMentor.matches && location.hash !== '#studio/mentor') closeMentor();
   renderRoute();
   if (location.hash === '#mentor-preview' && route.kind === 'about') {

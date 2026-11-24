@@ -166,352 +166,54 @@ async def analyze_repository_collaboration(
     auth_github_login: str | None = None
 
     client = custom_client if custom_client is not None else GitHubApiClient(token)
+    manage_client = type(client) is GitHubApiClient
+    if manage_client:
+        await client.__aenter__()
 
     try:
-        gh_user = await client.get_authenticated_user()
-        auth_github_login = gh_user.get("login")
-        if not auth_github_user_id and gh_user.get("id"):
-            auth_github_user_id = str(gh_user["id"])
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="GitHub token không hợp lệ hoặc đã bị thu hồi.",
-        ) from exc
-    except GitHubRateLimitError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="GitHub API rate limit đã đạt giới hạn.",
-        ) from exc
-    except (GitHubApiError, GitHubServerError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Lỗi khi kết nối GitHub API: {type(exc).__name__}",
-        ) from exc
-
-    coverage_status = "complete"
-    confidence = "high"
-    limitations: list[str] = []
-    collection_truncated = False
-
-    def mark_truncated() -> None:
-        nonlocal collection_truncated
-        collection_truncated = True
-
-    # 4. Thu thập Pull Requests
-    raw_prs: list[dict[str, Any]] = []
-    try:
-        raw_prs = await client.list_pull_requests(
-            owner=owner,
-            repo=repo_name,
-            state="all",
-            sort="created",
-            direction="desc",
-            per_page=100,
-            max_pages=2,
-            on_truncated=mark_truncated,
-        )
-    except GitHubTokenRevokedError as exc:
-        raise HTTPException(
-            401, "GitHub đã từ chối token. Vui lòng kết nối lại."
-        ) from exc
-    except GitHubRateLimitError:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(
-            "Đạt giới hạn GitHub API rate-limit trong quá trình thu thập PRs."
-        )
-    except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-        raw_prs = []
-    except (GitHubApiError, GitHubServerError) as exc:
-        coverage_status = "partial"
-        confidence = "uncertain"
-        limitations.append(f"Lỗi khi thu thập Pull Requests: {type(exc).__name__}.")
-
-    evidence_list: list[CollaborationEvidenceItem] = []
-    total_prs_analyzed = 0
-    merged_prs_count = 0
-    closed_unmerged_prs_count = 0
-    open_prs_count = 0
-    user_prs_count = 0
-    external_prs_count = 0
-
-    total_reviews_analyzed = 0
-    approved_reviews_count = 0
-    changes_requested_count = 0
-    commented_reviews_count = 0
-    dismissed_reviews_count = 0
-    user_reviews_conducted_count = 0
-    user_reviews_received_count = 0
-
-    total_checks_analyzed = 0
-    successful_checks_count = 0
-    failed_checks_count = 0
-    pending_checks_count = 0
-    other_checks_count = 0
-
-    prs_with_context: list[dict[str, Any]] = []
-
-    seen_prs = set()
-    for pr in raw_prs:
-        pr_num = pr.get("number")
-        if not pr_num or pr_num in seen_prs:
-            continue
-        seen_prs.add(pr_num)
-
-        # Lọc theo nhánh đích (base branch) của Pull Request.
-        if request.branch:
-            base_info = pr.get("base") or {}
-            if base_info.get("ref") != request.branch:
-                continue
-
-        created_at_dt = _parse_timestamp(pr.get("created_at"))
-        updated_at_dt = _parse_timestamp(pr.get("updated_at"))
-        closed_at_dt = _parse_timestamp(pr.get("closed_at"))
-        merged_at_dt = _parse_timestamp(pr.get("merged_at"))
-
-        if not any(
-            in_window(at)
-            for at in (created_at_dt, updated_at_dt, closed_at_dt, merged_at_dt)
-        ):
-            continue
-
-        total_prs_analyzed += 1
-
-        pr_user = pr.get("user") or {}
-        pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
-        pr_user_login = pr_user.get("login")
-
-        id_match = bool(
-            auth_github_user_id
-            and pr_user_id
-            and pr_user_id == str(auth_github_user_id)
-        )
-        login_match = bool(
-            auth_github_login
-            and pr_user_login
-            and pr_user_login.lower() == auth_github_login.lower()
-        )
-        is_pr_author = id_match or login_match
-
-        if is_pr_author:
-            user_prs_count += 1
-        else:
-            external_prs_count += 1
-
-        is_merged = bool(merged_at_dt or pr.get("merged"))
-        raw_state = pr.get("state", "open")
-        if until_dt and any(
-            at is not None and at >= until_dt for at in (merged_at_dt, closed_at_dt)
-        ):
-            is_merged = False
-            raw_state = "open"
-
-        if is_merged:
-            normalized_state = "merged"
-            merged_prs_count += 1
-            rationale = (
-                f"Pull Request #{pr_num} đã được merge vào nhánh "
-                f"'{(pr.get('base') or {}).get('ref', 'main')}'. "
-                "Ghi nhận đóng góp cộng tác được tích hợp."
-            )
-        elif raw_state == "closed":
-            normalized_state = "closed_unmerged"
-            closed_unmerged_prs_count += 1
-            rationale = (
-                f"Pull Request #{pr_num} đã đóng mà không merge. "
-                "Đóng PR chưa merge là hoạt động dự án bình thường "
-                "(đổi hướng kỹ thuật, tái cấu trúc hoặc giải pháp thay thế), "
-                "không phản ánh năng lực kém."
-            )
-        else:
-            normalized_state = "open"
-            open_prs_count += 1
-            rationale = f"Pull Request #{pr_num} đang mở (open)."
-
-        head_info = pr.get("head") or {}
-        head_sha = head_info.get("sha")
-
-        pr_evidence = CollaborationEvidenceItem(
-            evidence_type="pull_request",
-            target_identifier=f"PR #{pr_num}",
-            pr_number=pr_num,
-            commit_sha=head_sha,
-            state=normalized_state,
-            actor_login=pr_user_login,
-            actor_id=pr_user_id,
-            actor_type=pr_user.get("type", "User"),
-            is_profile_owner=is_pr_author,
-            html_url=pr.get("html_url"),
-            title_or_message=pr.get("title", ""),
-            recorded_at=pr.get("created_at"),
-            rationale=rationale,
-            metadata={
-                "number": pr_num,
-                "state": normalized_state,
-                "raw_state": raw_state,
-                "is_merged": is_merged,
-                "merged_at": pr.get("merged_at"),
-                "closed_at": pr.get("closed_at"),
-                "head_ref": head_info.get("ref"),
-                "base_ref": pr.get("base", {}).get("ref"),
-            },
-        )
-        evidence_list.append(pr_evidence)
-
-        prs_with_context.append(
-            {
-                "pr_num": pr_num,
-                "head_sha": head_sha,
-                "is_pr_author": is_pr_author,
-                "author_login": pr_user_login,
-                "state": normalized_state,
-                "created_at": created_at_dt,
-                "closed_at": closed_at_dt,
-                "merged_at": merged_at_dt,
-                "reviews": [],
-                "checks": [],
-                "statuses": [],
-            }
-        )
-
-    # 5. Thu thập Reviews và CI Checks cho các PR
-    prs_to_inspect = prs_with_context[:MAX_PRS_LIMIT]
-    if len(prs_with_context) > MAX_PRS_LIMIT:
-        mark_truncated()
-    ci_by_sha: dict[str, tuple[Any, Any]] = {}
-
-    for pr_ctx in prs_to_inspect:
-        pr_num = pr_ctx["pr_num"]
-        head_sha = pr_ctx["head_sha"]
-        is_pr_author = pr_ctx["is_pr_author"]
-
-        reviews_call = client.list_pull_request_reviews(
-            owner=owner,
-            repo=repo_name,
-            pull_number=pr_num,
-            per_page=MAX_REVIEWS_PER_PR,
-            max_pages=1,
-            on_truncated=mark_truncated,
-        )
-        count_ci = bool(head_sha and head_sha not in ci_by_sha)
-        if count_ci:
-            reviews, check_runs, statuses = await asyncio.gather(
-                reviews_call,
-                client.list_check_runs_for_ref(
-                    owner=owner,
-                    repo=repo_name,
-                    ref=head_sha,
-                    per_page=MAX_CHECKS_PER_COMMIT,
-                    max_pages=1,
-                    on_truncated=mark_truncated,
-                ),
-                client.list_commit_statuses_for_ref(
-                    owner=owner,
-                    repo=repo_name,
-                    ref=head_sha,
-                    per_page=MAX_CHECKS_PER_COMMIT,
-                    max_pages=1,
-                    on_truncated=mark_truncated,
-                ),
-                return_exceptions=True,
-            )
-            ci_by_sha[head_sha] = (check_runs, statuses)
-        else:
-            (reviews,) = await asyncio.gather(reviews_call, return_exceptions=True)
-            check_runs, statuses = ci_by_sha.get(head_sha, ([], []))
-
         try:
-            if isinstance(reviews, BaseException):
-                raise reviews
-            for rev in reviews:
-                rev_id = rev.get("id")
-                rev_user = rev.get("user") or {}
-                rev_login = rev_user.get("login")
-                rev_id_str = str(rev_user.get("id")) if rev_user.get("id") else None
-                rev_state = (rev.get("state") or "COMMENTED").upper()
-                rev_submitted_at = rev.get("submitted_at")
+            gh_user = await client.get_authenticated_user()
+            auth_github_login = gh_user.get("login")
+            if not auth_github_user_id and gh_user.get("id"):
+                auth_github_user_id = str(gh_user["id"])
+        except GitHubTokenRevokedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="GitHub token không hợp lệ hoặc đã bị thu hồi.",
+            ) from exc
+        except GitHubRateLimitError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="GitHub API rate limit đã đạt giới hạn.",
+            ) from exc
+        except (GitHubApiError, GitHubServerError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Lỗi khi kết nối GitHub API: {type(exc).__name__}",
+            ) from exc
 
-                if rev_state == "PENDING" or not in_window(rev_submitted_at):
-                    continue
-                is_rev_owner = bool(
-                    (rev_id_str and rev_id_str == auth_github_user_id)
-                    or (
-                        auth_github_login
-                        and rev_login
-                        and rev_login.lower() == auth_github_login.lower()
-                    )
-                )
+        coverage_status = "complete"
+        confidence = "high"
+        limitations: list[str] = []
+        collection_truncated = False
 
-                total_reviews_analyzed += 1
-                if rev_state == "APPROVED":
-                    approved_reviews_count += 1
-                    rev_rationale = (
-                        f"Review #{rev_id} trên PR #{pr_num} đã phê duyệt (APPROVED) "
-                        "mã nguồn."
-                    )
-                elif rev_state == "CHANGES_REQUESTED":
-                    changes_requested_count += 1
-                    rev_rationale = (
-                        f"Review #{rev_id} trên PR #{pr_num} yêu cầu điều chỉnh "
-                        "(CHANGES_REQUESTED). Yêu cầu thay đổi là phần chuẩn mực "
-                        "của quy trình phản biện chuyên nghiệp, không phản ánh "
-                        "năng lực kém."
-                    )
-                elif rev_state == "COMMENTED":
-                    commented_reviews_count += 1
-                    rev_rationale = (
-                        f"Review #{rev_id} trên PR #{pr_num} đóng góp nhận xét "
-                        "thảo luận."
-                    )
-                elif rev_state == "DISMISSED":
-                    dismissed_reviews_count += 1
-                    rev_rationale = (
-                        f"Review #{rev_id} trên PR #{pr_num} đã được bãi miễn "
-                        "(DISMISSED)."
-                    )
-                else:
-                    rev_rationale = (
-                        f"Review #{rev_id} trên PR #{pr_num} ở trạng thái {rev_state}."
-                    )
+        def mark_truncated() -> None:
+            nonlocal collection_truncated
+            collection_truncated = True
 
-                if is_rev_owner:
-                    user_reviews_conducted_count += 1
-                elif is_pr_author:
-                    user_reviews_received_count += 1
-
-                evidence_list.append(
-                    CollaborationEvidenceItem(
-                        evidence_type="review",
-                        target_identifier=f"Review #{rev_id} (PR #{pr_num})",
-                        pr_number=pr_num,
-                        commit_sha=rev.get("commit_id") or head_sha,
-                        state=rev_state,
-                        actor_login=rev_login,
-                        actor_id=rev_id_str,
-                        actor_type=rev_user.get("type", "User"),
-                        is_profile_owner=is_rev_owner,
-                        html_url=rev.get("html_url"),
-                        title_or_message=(rev.get("body") or "")[:200],
-                        recorded_at=rev_submitted_at,
-                        rationale=rev_rationale,
-                        metadata={
-                            "review_id": rev_id,
-                            "pr_number": pr_num,
-                            "state": rev_state,
-                            "commit_id": rev.get("commit_id"),
-                        },
-                    )
-                )
-
-                pr_ctx["reviews"].append(
-                    {
-                        "id": rev_id,
-                        "state": rev_state,
-                        "reviewer": rev_login,
-                        "is_reviewer_owner": is_rev_owner,
-                        "submitted_at": _parse_timestamp(rev_submitted_at),
-                    }
-                )
+        # 4. Thu thập Pull Requests
+        raw_prs: list[dict[str, Any]] = []
+        try:
+            raw_prs = await client.list_pull_requests(
+                owner=owner,
+                repo=repo_name,
+                state="all",
+                sort="created",
+                direction="desc",
+                per_page=100,
+                max_pages=2,
+                on_truncated=mark_truncated,
+            )
         except GitHubTokenRevokedError as exc:
             raise HTTPException(
                 401, "GitHub đã từ chối token. Vui lòng kết nối lại."
@@ -520,213 +222,583 @@ async def analyze_repository_collaboration(
             coverage_status = "partial"
             confidence = "uncertain"
             limitations.append(
-                f"Đạt giới hạn rate-limit khi lấy review của PR #{pr_num}."
+                "Đạt giới hạn GitHub API rate-limit trong quá trình thu thập PRs."
             )
         except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-            coverage_status = "partial"
-            confidence = "uncertain"
-            limitations.append(f"Không thể xác minh đầy đủ reviews của PR #{pr_num}.")
+            raw_prs = []
         except (GitHubApiError, GitHubServerError) as exc:
             coverage_status = "partial"
             confidence = "uncertain"
-            limitations.append(
-                f"Lỗi khi lấy review của PR #{pr_num}: {type(exc).__name__}."
+            limitations.append(f"Lỗi khi thu thập Pull Requests: {type(exc).__name__}.")
+
+        evidence_list: list[CollaborationEvidenceItem] = []
+        total_prs_analyzed = 0
+        merged_prs_count = 0
+        closed_unmerged_prs_count = 0
+        open_prs_count = 0
+        user_prs_count = 0
+        external_prs_count = 0
+
+        total_reviews_analyzed = 0
+        approved_reviews_count = 0
+        changes_requested_count = 0
+        commented_reviews_count = 0
+        dismissed_reviews_count = 0
+        user_reviews_conducted_count = 0
+        user_reviews_received_count = 0
+
+        total_checks_analyzed = 0
+        successful_checks_count = 0
+        failed_checks_count = 0
+        pending_checks_count = 0
+        other_checks_count = 0
+
+        prs_with_context: list[dict[str, Any]] = []
+
+        seen_prs = set()
+        for pr in raw_prs:
+            pr_num = pr.get("number")
+            if not pr_num or pr_num in seen_prs:
+                continue
+            seen_prs.add(pr_num)
+
+            # Lọc theo nhánh đích (base branch) của Pull Request.
+            if request.branch:
+                base_info = pr.get("base") or {}
+                if base_info.get("ref") != request.branch:
+                    continue
+
+            created_at_dt = _parse_timestamp(pr.get("created_at"))
+            updated_at_dt = _parse_timestamp(pr.get("updated_at"))
+            closed_at_dt = _parse_timestamp(pr.get("closed_at"))
+            merged_at_dt = _parse_timestamp(pr.get("merged_at"))
+
+            if not any(
+                in_window(at)
+                for at in (created_at_dt, updated_at_dt, closed_at_dt, merged_at_dt)
+            ):
+                continue
+
+            total_prs_analyzed += 1
+
+            pr_user = pr.get("user") or {}
+            pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
+            pr_user_login = pr_user.get("login")
+
+            id_match = bool(
+                auth_github_user_id
+                and pr_user_id
+                and pr_user_id == str(auth_github_user_id)
+            )
+            login_match = bool(
+                auth_github_login
+                and pr_user_login
+                and pr_user_login.lower() == auth_github_login.lower()
+            )
+            is_pr_author = id_match or login_match
+
+            if is_pr_author:
+                user_prs_count += 1
+            else:
+                external_prs_count += 1
+
+            is_merged = bool(merged_at_dt or pr.get("merged"))
+            raw_state = pr.get("state", "open")
+            if until_dt and any(
+                at is not None and at >= until_dt for at in (merged_at_dt, closed_at_dt)
+            ):
+                is_merged = False
+                raw_state = "open"
+
+            if is_merged:
+                normalized_state = "merged"
+                merged_prs_count += 1
+                rationale = (
+                    f"Pull Request #{pr_num} đã được merge vào nhánh "
+                    f"'{(pr.get('base') or {}).get('ref', 'main')}'. "
+                    "Ghi nhận đóng góp cộng tác được tích hợp."
+                )
+            elif raw_state == "closed":
+                normalized_state = "closed_unmerged"
+                closed_unmerged_prs_count += 1
+                rationale = (
+                    f"Pull Request #{pr_num} đã đóng mà không merge. "
+                    "Đóng PR chưa merge là hoạt động dự án bình thường "
+                    "(đổi hướng kỹ thuật, tái cấu trúc hoặc giải pháp thay thế), "
+                    "không phản ánh năng lực kém."
+                )
+            else:
+                normalized_state = "open"
+                open_prs_count += 1
+                rationale = f"Pull Request #{pr_num} đang mở (open)."
+
+            head_info = pr.get("head") or {}
+            head_sha = head_info.get("sha")
+
+            pr_evidence = CollaborationEvidenceItem(
+                evidence_type="pull_request",
+                target_identifier=f"PR #{pr_num}",
+                pr_number=pr_num,
+                commit_sha=head_sha,
+                state=normalized_state,
+                actor_login=pr_user_login,
+                actor_id=pr_user_id,
+                actor_type=pr_user.get("type", "User"),
+                is_profile_owner=is_pr_author,
+                html_url=pr.get("html_url"),
+                title_or_message=pr.get("title", ""),
+                recorded_at=pr.get("created_at"),
+                rationale=rationale,
+                metadata={
+                    "number": pr_num,
+                    "state": normalized_state,
+                    "raw_state": raw_state,
+                    "is_merged": is_merged,
+                    "merged_at": pr.get("merged_at"),
+                    "closed_at": pr.get("closed_at"),
+                    "head_ref": head_info.get("ref"),
+                    "base_ref": pr.get("base", {}).get("ref"),
+                },
+            )
+            evidence_list.append(pr_evidence)
+
+            prs_with_context.append(
+                {
+                    "pr_num": pr_num,
+                    "head_sha": head_sha,
+                    "is_pr_author": is_pr_author,
+                    "author_login": pr_user_login,
+                    "state": normalized_state,
+                    "created_at": created_at_dt,
+                    "closed_at": closed_at_dt,
+                    "merged_at": merged_at_dt,
+                    "reviews": [],
+                    "checks": [],
+                    "statuses": [],
+                }
             )
 
-        # B. Thu thập CI Checks và Statuses cho commit SHA của PR
-        if head_sha:
-            # 1. Checks API (Check Runs)
-            try:
-                if isinstance(check_runs, BaseException):
-                    raise check_runs
-                for run in check_runs:
-                    run_id = run.get("id")
-                    run_name = run.get("name", "check")
-                    run_status = run.get("status", "completed")
-                    run_conclusion = run.get("conclusion")
-                    run_completed_at = run.get("completed_at") or run.get("started_at")
+        # 5. Thu thập Reviews và CI Checks cho các PR
+        prs_to_inspect = prs_with_context[:MAX_PRS_LIMIT]
+        if len(prs_with_context) > MAX_PRS_LIMIT:
+            mark_truncated()
 
-                    if not in_window(run_completed_at):
+        sem_collab = asyncio.Semaphore(10)
+        ci_lock = asyncio.Lock()
+        ci_tasks: dict[str, asyncio.Task[tuple[Any, Any]]] = {}
+        ci_counted_shas: set[str] = set()
+
+        async def _fetch_ci_for_sha(sha: str) -> tuple[Any, Any]:
+            async with sem_collab:
+                return await asyncio.gather(
+                    client.list_check_runs_for_ref(
+                        owner=owner,
+                        repo=repo_name,
+                        ref=sha,
+                        per_page=MAX_CHECKS_PER_COMMIT,
+                        max_pages=1,
+                        on_truncated=mark_truncated,
+                    ),
+                    client.list_commit_statuses_for_ref(
+                        owner=owner,
+                        repo=repo_name,
+                        ref=sha,
+                        per_page=MAX_CHECKS_PER_COMMIT,
+                        max_pages=1,
+                        on_truncated=mark_truncated,
+                    ),
+                    return_exceptions=True,
+                )
+
+        async def _inspect_pr_ctx(
+            pr_ctx: dict[str, Any],
+        ) -> list[CollaborationEvidenceItem]:
+            nonlocal \
+                total_reviews_analyzed, \
+                approved_reviews_count, \
+                changes_requested_count
+            nonlocal \
+                commented_reviews_count, \
+                dismissed_reviews_count, \
+                user_reviews_conducted_count
+            nonlocal \
+                user_reviews_received_count, \
+                total_checks_analyzed, \
+                successful_checks_count
+            nonlocal failed_checks_count, pending_checks_count, other_checks_count
+            nonlocal coverage_status, confidence
+
+            pr_evidence_items: list[CollaborationEvidenceItem] = []
+            pr_num = pr_ctx["pr_num"]
+            head_sha = pr_ctx["head_sha"]
+            is_pr_author = pr_ctx["is_pr_author"]
+
+            reviews_call = client.list_pull_request_reviews(
+                owner=owner,
+                repo=repo_name,
+                pull_number=pr_num,
+                per_page=MAX_REVIEWS_PER_PR,
+                max_pages=1,
+                on_truncated=mark_truncated,
+            )
+
+            ci_task = None
+            if head_sha:
+                async with ci_lock:
+                    if head_sha not in ci_tasks:
+                        ci_tasks[head_sha] = asyncio.create_task(
+                            _fetch_ci_for_sha(head_sha)
+                        )
+                    ci_task = ci_tasks[head_sha]
+
+            async with sem_collab:
+                try:
+                    reviews = await reviews_call
+                except Exception as rev_err:
+                    reviews = rev_err
+
+            if ci_task is not None:
+                check_runs, statuses = await ci_task
+                async with ci_lock:
+                    count_ci = head_sha not in ci_counted_shas
+                    if count_ci:
+                        ci_counted_shas.add(head_sha)
+            else:
+                check_runs, statuses = [], []
+                count_ci = False
+
+            try:
+                if isinstance(reviews, BaseException):
+                    raise reviews
+                for rev in reviews:
+                    rev_id = rev.get("id")
+                    rev_user = rev.get("user") or {}
+                    rev_login = rev_user.get("login")
+                    rev_id_str = str(rev_user.get("id")) if rev_user.get("id") else None
+                    rev_state = (rev.get("state") or "COMMENTED").upper()
+                    rev_submitted_at = rev.get("submitted_at")
+
+                    if rev_state == "PENDING" or not in_window(rev_submitted_at):
                         continue
-                    total_checks_analyzed += int(count_ci)
-                    if run_conclusion == "success":
-                        successful_checks_count += int(count_ci)
-                        check_rationale = (
-                            f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
-                            "thành công."
+                    is_rev_owner = bool(
+                        (rev_id_str and rev_id_str == auth_github_user_id)
+                        or (
+                            auth_github_login
+                            and rev_login
+                            and rev_login.lower() == auth_github_login.lower()
                         )
-                    elif run_conclusion in ("failure", "timed_out", "action_required"):
-                        failed_checks_count += int(count_ci)
-                        check_rationale = (
-                            f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
-                            f"thất bại ({run_conclusion}). Thất bại trong CI là "
-                            "cơ chế phát hiện lỗi sớm (fail-fast) chuẩn mực, "
-                            "không phản ánh năng lực kém."
+                    )
+
+                    total_reviews_analyzed += 1
+                    if rev_state == "APPROVED":
+                        approved_reviews_count += 1
+                        rev_rationale = (
+                            f"Review #{rev_id} trên PR #{pr_num} "
+                            "đã phê duyệt (APPROVED) mã nguồn."
                         )
-                    elif run_status in ("queued", "in_progress", "waiting"):
-                        pending_checks_count += int(count_ci)
-                        check_rationale = (
-                            f"Kiểm tra CI '{run_name}' đang thực thi ({run_status})."
+                    elif rev_state == "CHANGES_REQUESTED":
+                        changes_requested_count += 1
+                        rev_rationale = (
+                            f"Review #{rev_id} trên PR #{pr_num} yêu cầu điều chỉnh "
+                            "(CHANGES_REQUESTED). Yêu cầu thay đổi là phần chuẩn mực "
+                            "của quy trình phản biện chuyên nghiệp, không phản ánh "
+                            "năng lực kém."
+                        )
+                    elif rev_state == "COMMENTED":
+                        commented_reviews_count += 1
+                        rev_rationale = (
+                            f"Review #{rev_id} trên PR #{pr_num} đóng góp nhận xét "
+                            "thảo luận."
+                        )
+                    elif rev_state == "DISMISSED":
+                        dismissed_reviews_count += 1
+                        rev_rationale = (
+                            f"Review #{rev_id} trên PR #{pr_num} đã được bãi miễn "
+                            "(DISMISSED)."
                         )
                     else:
-                        other_checks_count += int(count_ci)
-                        check_rationale = (
-                            f"Kiểm tra CI '{run_name}' có kết quả "
-                            f"'{run_conclusion or run_status}'."
+                        rev_rationale = (
+                            f"Review #{rev_id} trên PR #{pr_num} "
+                            f"ở trạng thái {rev_state}."
                         )
 
-                    evidence_list.append(
+                    if is_rev_owner:
+                        user_reviews_conducted_count += 1
+                    elif is_pr_author:
+                        user_reviews_received_count += 1
+
+                    pr_evidence_items.append(
                         CollaborationEvidenceItem(
-                            evidence_type="check_run",
-                            target_identifier=f"CheckRun #{run_id} ({run_name})",
+                            evidence_type="review",
+                            target_identifier=f"Review #{rev_id} (PR #{pr_num})",
                             pr_number=pr_num,
-                            commit_sha=head_sha,
-                            check_name=run_name,
-                            state=run_status,
-                            conclusion=run_conclusion,
-                            is_profile_owner=is_pr_author,
-                            html_url=run.get("html_url"),
-                            title_or_message=run.get("output", {}).get("title")
-                            if isinstance(run.get("output"), dict)
-                            else None,
-                            recorded_at=run_completed_at,
-                            rationale=check_rationale,
+                            commit_sha=rev.get("commit_id") or head_sha,
+                            state=rev_state,
+                            actor_login=rev_login,
+                            actor_id=rev_id_str,
+                            actor_type=rev_user.get("type", "User"),
+                            is_profile_owner=is_rev_owner,
+                            html_url=rev.get("html_url"),
+                            title_or_message=(rev.get("body") or "")[:200],
+                            recorded_at=rev_submitted_at,
+                            rationale=rev_rationale,
                             metadata={
-                                "check_run_id": run_id,
-                                "source_api": "checks_api",
+                                "review_id": rev_id,
+                                "pr_number": pr_num,
+                                "state": rev_state,
+                                "commit_id": rev.get("commit_id"),
+                            },
+                        )
+                    )
+
+                    pr_ctx["reviews"].append(
+                        {
+                            "id": rev_id,
+                            "state": rev_state,
+                            "reviewer": rev_login,
+                            "is_reviewer_owner": is_rev_owner,
+                            "submitted_at": _parse_timestamp(rev_submitted_at),
+                        }
+                    )
+            except GitHubTokenRevokedError as exc:
+                raise HTTPException(
+                    401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+                ) from exc
+            except GitHubRateLimitError:
+                coverage_status = "partial"
+                confidence = "uncertain"
+                limitations.append(
+                    f"Đạt giới hạn rate-limit khi lấy review của PR #{pr_num}."
+                )
+            except (GitHubEmptyRepositoryError, GitHubNotFoundError):
+                coverage_status = "partial"
+                confidence = "uncertain"
+                limitations.append(
+                    f"Không thể xác minh đầy đủ reviews của PR #{pr_num}."
+                )
+            except (GitHubApiError, GitHubServerError) as exc:
+                coverage_status = "partial"
+                confidence = "uncertain"
+                limitations.append(
+                    f"Lỗi khi lấy review của PR #{pr_num}: {type(exc).__name__}."
+                )
+
+            # B. Thu thập CI Checks và Statuses cho commit SHA của PR
+            if head_sha:
+                # 1. Checks API (Check Runs)
+                try:
+                    if isinstance(check_runs, BaseException):
+                        raise check_runs
+                    for run in check_runs:
+                        run_id = run.get("id")
+                        run_name = run.get("name", "check")
+                        run_status = run.get("status", "completed")
+                        run_conclusion = run.get("conclusion")
+                        run_completed_at = run.get("completed_at") or run.get(
+                            "started_at"
+                        )
+
+                        if not in_window(run_completed_at):
+                            continue
+                        total_checks_analyzed += int(count_ci)
+                        if run_conclusion == "success":
+                            successful_checks_count += int(count_ci)
+                            check_rationale = (
+                                f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
+                                "thành công."
+                            )
+                        elif run_conclusion in (
+                            "failure",
+                            "timed_out",
+                            "action_required",
+                        ):
+                            failed_checks_count += int(count_ci)
+                            check_rationale = (
+                                f"Kiểm tra CI '{run_name}' cho commit {head_sha[:7]} "
+                                f"thất bại ({run_conclusion}). Thất bại trong CI là "
+                                "cơ chế phát hiện lỗi sớm (fail-fast) chuẩn mực, "
+                                "không phản ánh năng lực kém."
+                            )
+                        elif run_status in ("queued", "in_progress", "waiting"):
+                            pending_checks_count += int(count_ci)
+                            check_rationale = (
+                                f"Kiểm tra CI '{run_name}' đang thực thi "
+                                f"({run_status})."
+                            )
+                        else:
+                            other_checks_count += int(count_ci)
+                            check_rationale = (
+                                f"Kiểm tra CI '{run_name}' có kết quả "
+                                f"'{run_conclusion or run_status}'."
+                            )
+
+                        pr_evidence_items.append(
+                            CollaborationEvidenceItem(
+                                evidence_type="check_run",
+                                target_identifier=f"CheckRun #{run_id} ({run_name})",
+                                pr_number=pr_num,
+                                commit_sha=head_sha,
+                                check_name=run_name,
+                                state=run_status,
+                                conclusion=run_conclusion,
+                                is_profile_owner=is_pr_author,
+                                html_url=run.get("html_url"),
+                                title_or_message=run.get("output", {}).get("title")
+                                if isinstance(run.get("output"), dict)
+                                else None,
+                                recorded_at=run_completed_at,
+                                rationale=check_rationale,
+                                metadata={
+                                    "check_run_id": run_id,
+                                    "source_api": "checks_api",
+                                    "name": run_name,
+                                    "status": run_status,
+                                    "conclusion": run_conclusion,
+                                    "started_at": run.get("started_at"),
+                                    "completed_at": run.get("completed_at"),
+                                },
+                            )
+                        )
+
+                        pr_ctx["checks"].append(
+                            {
+                                "id": run_id,
                                 "name": run_name,
                                 "status": run_status,
                                 "conclusion": run_conclusion,
-                                "started_at": run.get("started_at"),
-                                "completed_at": run.get("completed_at"),
-                            },
+                                "completed_at": _parse_timestamp(run_completed_at),
+                            }
                         )
+                except GitHubTokenRevokedError as exc:
+                    raise HTTPException(
+                        401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+                    ) from exc
+                except GitHubRateLimitError:
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        "Đạt giới hạn rate-limit khi lấy check runs của commit "
+                        f"{head_sha[:7]}."
+                    )
+                except (GitHubEmptyRepositoryError, GitHubNotFoundError):
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        f"Không thể xác minh check runs của commit {head_sha[:7]}."
+                    )
+                except (GitHubApiError, GitHubServerError) as exc:
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        f"Lỗi khi lấy check runs của commit {head_sha[:7]}: "
+                        f"{type(exc).__name__}."
                     )
 
-                    pr_ctx["checks"].append(
-                        {
-                            "id": run_id,
-                            "name": run_name,
-                            "status": run_status,
-                            "conclusion": run_conclusion,
-                            "completed_at": _parse_timestamp(run_completed_at),
-                        }
-                    )
-            except GitHubTokenRevokedError as exc:
-                raise HTTPException(
-                    401, "GitHub đã từ chối token. Vui lòng kết nối lại."
-                ) from exc
-            except GitHubRateLimitError:
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    "Đạt giới hạn rate-limit khi lấy check runs của commit "
-                    f"{head_sha[:7]}."
-                )
-            except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    f"Không thể xác minh check runs của commit {head_sha[:7]}."
-                )
-            except (GitHubApiError, GitHubServerError) as exc:
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    f"Lỗi khi lấy check runs của commit {head_sha[:7]}: "
-                    f"{type(exc).__name__}."
-                )
+                # 2. Status API (Commit Statuses)
+                try:
+                    if isinstance(statuses, BaseException):
+                        raise statuses
+                    for st in statuses:
+                        st_id = st.get("id")
+                        st_context = st.get("context", "ci")
+                        st_state = st.get("state", "pending")
+                        st_created_at = st.get("created_at")
 
-            # 2. Status API (Commit Statuses)
-            try:
-                if isinstance(statuses, BaseException):
-                    raise statuses
-                for st in statuses:
-                    st_id = st.get("id")
-                    st_context = st.get("context", "ci")
-                    st_state = st.get("state", "pending")
-                    st_created_at = st.get("created_at")
+                        if not in_window(st_created_at):
+                            continue
+                        total_checks_analyzed += int(count_ci)
+                        if st_state == "success":
+                            successful_checks_count += int(count_ci)
+                            st_rationale = (
+                                f"Commit status '{st_context}' cho "
+                                f"commit {head_sha[:7]} thành công."
+                            )
+                        elif st_state in ("failure", "error"):
+                            failed_checks_count += int(count_ci)
+                            st_rationale = (
+                                f"Commit status '{st_context}' cho "
+                                f"commit {head_sha[:7]} báo lỗi ({st_state}). "
+                                "Cảnh báo kiểm thử commit giúp ngăn ngừa lỗi, "
+                                "không phản ánh năng lực kém."
+                            )
+                        elif st_state == "pending":
+                            pending_checks_count += int(count_ci)
+                            st_rationale = (
+                                f"Commit status '{st_context}' đang chờ xử lý."
+                            )
+                        else:
+                            other_checks_count += int(count_ci)
+                            st_rationale = (
+                                f"Commit status '{st_context}' ở trạng thái {st_state}."
+                            )
 
-                    if not in_window(st_created_at):
-                        continue
-                    total_checks_analyzed += int(count_ci)
-                    if st_state == "success":
-                        successful_checks_count += int(count_ci)
-                        st_rationale = (
-                            f"Commit status '{st_context}' cho commit {head_sha[:7]} "
-                            "thành công."
-                        )
-                    elif st_state in ("failure", "error"):
-                        failed_checks_count += int(count_ci)
-                        st_rationale = (
-                            f"Commit status '{st_context}' cho commit {head_sha[:7]} "
-                            f"báo lỗi ({st_state}). Cảnh báo kiểm thử commit giúp "
-                            "ngăn ngừa lỗi, không phản ánh năng lực kém."
-                        )
-                    elif st_state == "pending":
-                        pending_checks_count += int(count_ci)
-                        st_rationale = f"Commit status '{st_context}' đang chờ xử lý."
-                    else:
-                        other_checks_count += int(count_ci)
-                        st_rationale = (
-                            f"Commit status '{st_context}' ở trạng thái {st_state}."
+                        pr_evidence_items.append(
+                            CollaborationEvidenceItem(
+                                evidence_type="commit_status",
+                                target_identifier=f"Status #{st_id} ({st_context})",
+                                pr_number=pr_num,
+                                commit_sha=head_sha,
+                                check_name=st_context,
+                                state=st_state,
+                                conclusion=st_state,
+                                is_profile_owner=is_pr_author,
+                                html_url=st.get("target_url"),
+                                title_or_message=st.get("description"),
+                                recorded_at=st_created_at,
+                                rationale=st_rationale,
+                                metadata={
+                                    "status_id": st_id,
+                                    "source_api": "status_api",
+                                    "context": st_context,
+                                    "state": st_state,
+                                },
+                            )
                         )
 
-                    evidence_list.append(
-                        CollaborationEvidenceItem(
-                            evidence_type="commit_status",
-                            target_identifier=f"Status #{st_id} ({st_context})",
-                            pr_number=pr_num,
-                            commit_sha=head_sha,
-                            check_name=st_context,
-                            state=st_state,
-                            conclusion=st_state,
-                            is_profile_owner=is_pr_author,
-                            html_url=st.get("target_url"),
-                            title_or_message=st.get("description"),
-                            recorded_at=st_created_at,
-                            rationale=st_rationale,
-                            metadata={
-                                "status_id": st_id,
-                                "source_api": "status_api",
+                        pr_ctx["statuses"].append(
+                            {
+                                "id": st_id,
                                 "context": st_context,
                                 "state": st_state,
-                            },
+                                "created_at": _parse_timestamp(st_created_at),
+                            }
                         )
+                except GitHubTokenRevokedError as exc:
+                    raise HTTPException(
+                        401, "GitHub đã từ chối token. Vui lòng kết nối lại."
+                    ) from exc
+                except GitHubRateLimitError:
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        f"Đạt giới hạn rate-limit khi lấy statuses của commit "
+                        f"{head_sha[:7]}."
+                    )
+                except (GitHubEmptyRepositoryError, GitHubNotFoundError):
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        f"Không thể xác minh commit statuses của {head_sha[:7]}."
+                    )
+                except (GitHubApiError, GitHubServerError) as exc:
+                    coverage_status = "partial"
+                    confidence = "uncertain"
+                    limitations.append(
+                        f"Lỗi khi lấy statuses của commit {head_sha[:7]}: "
+                        f"{type(exc).__name__}."
                     )
 
-                    pr_ctx["statuses"].append(
-                        {
-                            "id": st_id,
-                            "context": st_context,
-                            "state": st_state,
-                            "created_at": _parse_timestamp(st_created_at),
-                        }
-                    )
-            except GitHubTokenRevokedError as exc:
-                raise HTTPException(
-                    401, "GitHub đã từ chối token. Vui lòng kết nối lại."
-                ) from exc
-            except GitHubRateLimitError:
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    f"Đạt giới hạn rate-limit khi lấy statuses của commit "
-                    f"{head_sha[:7]}."
-                )
-            except (GitHubEmptyRepositoryError, GitHubNotFoundError):
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    f"Không thể xác minh commit statuses của {head_sha[:7]}."
-                )
-            except (GitHubApiError, GitHubServerError) as exc:
-                coverage_status = "partial"
-                confidence = "uncertain"
-                limitations.append(
-                    f"Lỗi khi lấy statuses của commit {head_sha[:7]}: "
-                    f"{type(exc).__name__}."
-                )
+            return pr_evidence_items
+
+        if prs_to_inspect:
+            pr_results = await asyncio.gather(
+                *[_inspect_pr_ctx(pr_ctx) for pr_ctx in prs_to_inspect]
+            )
+            for pr_evidence in pr_results:
+                evidence_list.extend(pr_evidence)
+    finally:
+        if manage_client:
+            await client.__aexit__(None, None, None)
 
     # 6. Phát hiện chuỗi xử lý lỗi & chu kỳ lặp phản biện
     problem_solving_sequences: list[ProblemSolvingSequence] = []

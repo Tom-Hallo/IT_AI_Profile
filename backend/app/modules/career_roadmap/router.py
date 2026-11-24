@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -28,11 +28,19 @@ class GenerateRequest(BaseModel):
     goal: Literal["backend", "frontend", "fullstack", "devops"]
 
 
-def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
+def _serialize(
+    item: Roadmap,
+    db: Session,
+    user_id: int,
+    permitted: set[int] | None = None,
+    assessments: list[dict[str, Any]] | None = None,
+) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
     data = dict(item.data) if isinstance(item.data, dict) else {}
-    permitted = public_repo_ids(db, user_id)
-    assessments = RealAssessmentProvider().load(db, user_id)
+    if permitted is None:
+        permitted = public_repo_ids(db, user_id)
+    if assessments is None:
+        assessments = RealAssessmentProvider().load(db, user_id)
     if (
         not data.get("milestones")
         and isinstance(data.get("steps"), list)
@@ -106,7 +114,7 @@ def create_roadmap(
     )
     db.commit()
     db.refresh(item)
-    return _serialize(item, db, user.id)
+    return _serialize(item, db, user.id, assessments=assessments)
 
 
 @router.get("")
@@ -119,7 +127,12 @@ def list_roadmaps(
         .where(Roadmap.user_id == user.id)
         .order_by(Roadmap.created_at.asc(), Roadmap.id.asc())
     ).all()
-    return [_serialize(item, db, user.id) for item in items]
+    permitted = public_repo_ids(db, user.id)
+    assessments = RealAssessmentProvider().load(db, user.id)
+    return [
+        _serialize(item, db, user.id, permitted=permitted, assessments=assessments)
+        for item in items
+    ]
 
 
 @router.get("/{roadmap_id}")
