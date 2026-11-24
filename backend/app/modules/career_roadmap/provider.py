@@ -42,6 +42,8 @@ class RealAssessmentProvider:
                     "id": ref.evidence_id or ref.dedup_key,
                     "repository_id": ref.repository_id,
                     "commit_sha": ref.commit_sha,
+                    "pr_number": ref.pr_number,
+                    "finding_type": ref.finding_type,
                     "file_path": ref.file_path,
                 }
                 for ref in item.evidence_refs
