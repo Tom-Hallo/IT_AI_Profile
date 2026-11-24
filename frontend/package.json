@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test:evidence": "node --test tests/evidence-url.test.js",
-    "test:roadmap": "node --test tests/roadmap-reevaluation.test.js tests/roadmap-connectors.test.js"
+    "test:roadmap": "node --test tests/roadmap-reevaluation.test.js tests/roadmap-connectors.test.js tests/roadmap-selection.test.js"
   },
   "dependencies": {
     "react": "19.3.1",
