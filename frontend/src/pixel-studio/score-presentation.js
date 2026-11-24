@@ -38,3 +38,9 @@ export function verifiedCVSkills(items = []) {
 export function cvSkillKey(item) {
   return JSON.stringify([item.repo.id,item.report_id,item.kind,item.technology]);
 }
+
+/** Role totals are valid only when the backend explicitly marks them as scored. */
+export function verifiedRoleScore(item) {
+  const value = numericScore(item?.role_score);
+  return item?.status === 'SCORED' && value !== null && value >= 0 && value <= 100 ? value : null;
+}

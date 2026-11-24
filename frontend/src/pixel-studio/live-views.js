@@ -4,7 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, reportBackedSkillScore, verifiedCVSkills, cvSkillKey} from './score-presentation.js';
+import {numericScore, reportBackedSkillScore, verifiedCVSkills, cvSkillKey, verifiedRoleScore} from './score-presentation.js';
 import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metrics.js';
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
@@ -113,9 +113,10 @@ function scoreStatusLabel(status) {
   return status || '—';
 }
 
-function scoreRow(title, value, action, id, active) {
+function scoreRow(title, value, action, id, active, unavailableLabel = '') {
   return '<button type="button" class="score-row" data-act="' + action + '"' + attr('id', id)
-    + ' aria-pressed="' + active + '"><span>' + escape(title) + '</span><b>' + number(value)
+    + ' aria-pressed="' + active + '"><span>' + escape(title) + '</span><b>'
+    + (value == null && unavailableLabel ? '<small>' + escape(unavailableLabel) + '</small>' : number(value))
     + (value == null ? '' : '<small>/100</small>') + '</b>'
     + (value == null ? '' : '<span class="score-track" aria-hidden="true">' + progress(value, title) + '</span>') + '</button>';
 }
@@ -176,9 +177,15 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
   } else if (runtime.scoreTab === 'roles') {
     const selection = data.roles.find(item => item.key === data.roleKey) ?? data.roles[0];
     const selected = selection?.score;
-    scores = data.roles.map(item => scoreRow(item.name, numericScore(item.score?.role_score), 'role-score', item.key, selection === item)).join('');
+    scores = data.roles.map(item => {
+      const value = verifiedRoleScore(item.score);
+      const label = item.loadError ? copy('Lỗi tải điểm', 'Score load failed')
+        : item.available === false ? copy('Không khả dụng', 'Unavailable')
+          : item.score ? scoreStatusLabel(item.score.status) : copy('Chưa có dữ liệu', 'No data');
+      return scoreRow(item.name, value, 'role-score', item.key, selection === item, label);
+    }).join('');
     if (selected) {
-      const selectedValue = selected.status === 'SCORED' ? numericScore(selected.role_score) : null;
+      const selectedValue = verifiedRoleScore(selected);
       const coverage = Number.isFinite(selected.coverage)
         ? Math.round(selected.coverage * 100) + '%' : '—';
       const confidence = Number.isFinite(selected.confidence)
@@ -213,6 +220,8 @@ function dashboardScores(state, runtime, data, analyzedCount = 1) {
         + [...new Set(refsUsed.map(ref => ref.repository_id).filter(Boolean))]
           .map(id => namedButton(copy('Mở repo #', 'Open repo #') + id + ' ↗', 'evidence', 'secondary small', id)).join(' ')
         + '</div>';
+    } else if (selection?.loadError) {
+      evidence = muted(copy('Không tải được điểm vai trò từ máy chủ. Hãy thử tải lại Dashboard.', 'Unable to load the role score from the server. Reload the Dashboard and try again.'));
     } else if (selection?.limitations?.length) {
       evidence = selection.limitations.map(item => muted(item.message ?? item.code)).join('');
     }

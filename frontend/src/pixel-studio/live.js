@@ -438,11 +438,11 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const result = scoped[index];
       if (result.status === 'rejected') {
         data.dashboardLoadErrors.push(errorText(result.reason));
-        return {key:role.role_key,name:role.name,score:null,limitations:[]};
+        return {key:role.role_key,name:role.name,score:null,loadError:true,limitations:[]};
       }
       return {
         key:role.role_key,name:role.name,
-        ...(result.value?.[state.scope] ?? {score:null,limitations:[]})
+        ...(result.value?.[state.scope] ?? {score:null,loadError:true,limitations:[]})
       };
     });
 

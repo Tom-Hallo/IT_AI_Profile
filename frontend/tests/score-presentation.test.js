@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {numericScore, reportBackedSkillScore, verifiedSkillScore} from '../src/pixel-studio/score-presentation.js';
+import {numericScore, reportBackedSkillScore, verifiedSkillScore, verifiedRoleScore} from '../src/pixel-studio/score-presentation.js';
 import {verifiedCVSkills,cvSkillKey} from '../src/pixel-studio/score-presentation.js';
 
 test('insufficient or unknown evidence must not appear as zero out of 100', () => {
@@ -42,4 +42,14 @@ test('CV only inserts report-backed personally verified skills', () => {
     {...good,status:'Insufficient'}, {...good,breakdown:[{evidence_kind:'manifest',evidence_ids:[11]}]}]),[good,other]);
   assert.notEqual(cvSkillKey(good),cvSkillKey(other));
   assert.deepEqual(verifiedCVSkills(null),[]);
+});
+
+
+test('role totals require a scored status and preserve a genuine zero', () => {
+  assert.equal(verifiedRoleScore({status:'SCORED',role_score:0}),0);
+  assert.equal(verifiedRoleScore({status:'SCORED',role_score:75}),75);
+  assert.equal(verifiedRoleScore({status:'INSUFFICIENT',role_score:75}),null);
+  assert.equal(verifiedRoleScore({status:'SCORED',role_score:null}),null);
+  assert.equal(verifiedRoleScore({status:'SCORED',role_score:101}),null);
+  assert.equal(verifiedRoleScore(null),null);
 });
