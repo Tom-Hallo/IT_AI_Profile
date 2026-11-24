@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.modules.analysis.models import RepositoryVerification, VerificationEvidence
 from app.modules.role_scoring.access import DbRepositoryAccessGuard
 from app.modules.role_scoring.architecture_provider import (
     ArchitectureEvidencePolicy,
@@ -314,8 +315,6 @@ def test_evidence_row_limit_is_enforced_and_reported(world, db):
 def test_structural_evidence_requires_personal_report_file_change(
     world, db, same_report, same_path, is_merge, expected
 ):
-    from app.modules.analysis.models import RepositoryVerification, VerificationEvidence
-
     user = world.user("layered-role@example.test")
     repo = world.repo(user)
     world.verification(user, repo)

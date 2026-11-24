@@ -64,7 +64,7 @@ MAX_REPOSITORIES = 50
 
 @dataclass(frozen=True)
 class ArchitectureEvidencePolicy:
-    # Nguồn evidence KHÔNG được dùng làm bằng chứng (suy ra từ tên thư mục).
+    # Không dùng cấu trúc suy từ tên thư mục nếu thiếu thay đổi đã xác minh.
     excluded_evidence_sources: frozenset[str] = frozenset({DIRECTORY_STRUCTURE_SOURCE})
     # Chỉ coi evidence là verified khi PBI-013 xác nhận đóng góp thực tế.
     require_verified_contribution: bool = True
@@ -341,8 +341,13 @@ class DbArchitectureEvidenceProvider:
 
     def _verified_changed_paths(self, report: AnalysisReport) -> set[str]:
         """Use only personal, report-bound changes, never a repository-wide flag."""
-        events = self._db.scalars(
-            select(VerificationEvidence)
+        events = self._db.execute(
+            select(
+                VerificationEvidence.actor_type,
+                VerificationEvidence.evidence_type,
+                VerificationEvidence.is_merge,
+                VerificationEvidence.metadata_,
+            )
             .join(
                 RepositoryVerification,
                 RepositoryVerification.id == VerificationEvidence.verification_id,
@@ -351,6 +356,7 @@ class DbArchitectureEvidenceProvider:
                 RepositoryVerification.report_id == report.id,
                 RepositoryVerification.repository_id == report.repository_id,
                 RepositoryVerification.user_id == self._user_id,
+                RepositoryVerification.verification_status == "verified",
                 VerificationEvidence.repository_id == report.repository_id,
                 VerificationEvidence.user_id == self._user_id,
                 VerificationEvidence.verification_status == "verified",

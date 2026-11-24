@@ -4,7 +4,7 @@ import { radarView } from './radar.js';
 import { safeLink } from './live-api.js';
 import {currentEvaluationSuggestions} from './reevaluation.js';
 import {submittedEvidenceLinks} from './roadmap-evidence.js';
-import {numericScore, reportBackedSkillScore, verifiedCVSkills, cvSkillKey, verifiedRoleScore} from './score-presentation.js';
+import {reportBackedSkillScore, verifiedCVSkills, cvSkillKey, verifiedRoleScore} from './score-presentation.js';
 import {githubRadarMetrics, RADAR_RUBRIC_VERSION} from './dashboard-github-metrics.js';
 import { renderReferenceCV, parseCVForReference, getSectionIcon } from './cv-renderer.js';
 
