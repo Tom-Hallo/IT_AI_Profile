@@ -8,8 +8,11 @@ export function summarizeReevaluation(result, tracking) {
 
   const pending = (Array.isArray(tracking?.suggestions) ? tracking.suggestions : [])
     .filter(item => item.state === 'pending' && item.snapshot_id === snapshotId);
-  const verifiedSkills = Math.max(0, Number(result.evaluation?.verified_skill_count) || 0);
-  const checkedMilestones = Math.max(0, Number(result.evaluation?.checked_milestones) || 0);
+  const verifiedSkills = result.evaluation?.verified_skill_count;
+  const checkedMilestones = result.evaluation?.checked_milestones;
+  if (![verifiedSkills, checkedMilestones].every(n => Number.isSafeInteger(n) && n >= 0)) {
+    throw new Error('Roadmap evaluation returned incomplete counts');
+  }
 
   return {
     snapshotId,
