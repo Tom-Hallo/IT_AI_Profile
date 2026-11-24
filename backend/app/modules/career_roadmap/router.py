@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.session import get_session
 from app.modules.consent.router import csrf
+from app.modules.roadmap_tracking.evidence_policy import visible_milestone
 from app.modules.roadmap_tracking.models import Milestone
 from app.modules.roadmaps.models import Roadmap
 from app.modules.scoring.snapshots import VERSION
@@ -31,6 +32,7 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     """Recheck evidence visibility on every read (including after consent revoke)."""
     data = dict(item.data) if isinstance(item.data, dict) else {}
     permitted = public_repo_ids(db, user_id)
+    assessments = RealAssessmentProvider().load(db, user_id)
     if (
         not data.get("milestones")
         and isinstance(data.get("steps"), list)
@@ -61,30 +63,7 @@ def _serialize(item: Roadmap, db: Session, user_id: int) -> dict:
     for original in saved_milestones:
         m = dict(original) if isinstance(original, dict) else {}
         m.setdefault("gap_type", "missing_evidence")
-        evidence = m.get("evidence")
-        if not isinstance(evidence, list):
-            evidence = []
-        links = [
-            e
-            for e in evidence
-            if isinstance(e, str)
-            or (
-                isinstance(e, dict)
-                and (
-                    e.get("repository_id") is None
-                    or e.get("repository_id") in permitted
-                )
-            )
-        ]
-        if len(links) != len(evidence) or (
-            m.get("gap_type") == "skill_gap" and not links
-        ):
-            m["evidence"] = links
-            m["current_score"] = None
-            m["confidence"] = "unknown"
-            m["gap_type"] = "missing_evidence"
-            m["gap"] = None
-        m["evidence"] = links
+        m = visible_milestone(m, permitted, assessments)
         milestones.append(m)
     data["milestones"] = milestones
     data["evidence_gaps"] = [
