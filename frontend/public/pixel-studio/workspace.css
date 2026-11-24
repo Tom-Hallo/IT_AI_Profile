@@ -1568,3 +1568,8 @@
     white-space: normal;
   }
 }
+
+/* Missing GitHub scores stay visibly unscored rather than being drawn as zero. */
+.radar-indicator.is-unscored .radar-dot{opacity:.32}
+.radar-indicator.is-unscored .radar-number{color:var(--muted)}
+.radar-indicator.is-unscored .radar-label{opacity:.75}
