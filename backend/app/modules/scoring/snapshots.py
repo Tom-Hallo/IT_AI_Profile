@@ -281,9 +281,7 @@ def skill_evidence_diagnostics(
     observed_ids = {
         ref for metric in raw_metrics.values() for ref in metric.evidence_ids
     }
-    used_ids = {
-        ref for part in score["breakdown"] for ref in part["evidence_ids"]
-    }
+    used_ids = {ref for part in score["breakdown"] for ref in part["evidence_ids"]}
     paths = (
         framework_source_paths(name, framework_evidence)
         if kind == "framework"
@@ -316,12 +314,14 @@ def skill_evidence_diagnostics(
                 used_files.add(item["path"])
     return {
         "missing_metrics": score["missing_metrics"],
-        "matched_commits": commits,
-        "matched_prs": prs,
-        "matched_files": len(matched_files),
+        "matched_commits": commits if complete else None,
+        "matched_prs": prs if complete else None,
+        "matched_files": len(matched_files) if complete else None,
         "used_events": len(used_ids),
         "used_files": len(used_files),
-        "framework_source_files": len(paths) if kind == "framework" else None,
+        "framework_source_files": (
+            len(paths) if kind == "framework" and complete else None
+        ),
         "collection_complete": complete,
         "file_collection_partial": summary.get("scoring_files_partial"),
         "eligible_pr_files": summary.get("eligible_pr_files"),
