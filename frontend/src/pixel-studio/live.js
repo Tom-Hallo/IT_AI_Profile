@@ -3,7 +3,7 @@ import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
-import {chooseRoadmap, chooseMilestone} from './roadmap-selection.js';
+import {resolveRoadmapView} from './roadmap-selection.js';
 import {parseCVForReference, serializeCVFromSections} from './cv-renderer.js';
 import {verifiedCVSkills, cvSkillKey} from './score-presentation.js';
 import {updateCVFitScale} from './live-views.js';
@@ -500,52 +500,41 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   async function road(targetId) {
-    // A Skill Gap navigation is one-shot; normal roadmap opening keeps its old behavior.
-    const pendingFocus = !targetId ? data.pendingRoadmapFocus : null;
+    // A Skill Gap navigation is one-shot; stage the entire view before updating it.
+    const pendingFocus = targetId == null ? data.pendingRoadmapFocus : null;
     data.pendingRoadmapFocus = null;
     const items = await request('/career-roadmaps');
-    data.roadmaps = Array.isArray(items) ? items : [];
     let storedId = null;
     try {
       storedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || null;
     } catch {}
-    data.road = chooseRoadmap(data.roadmaps, {targetId, currentId:data.road?.id, storedId, goal:data.goal, goalWasChosen});
+    const view = await resolveRoadmapView(items, {
+      targetId, currentId:data.road?.id, storedId, goal:data.goal, goalWasChosen,
+      pendingFocus, previousMilestone:data.milestone
+    }, id => request('/roadmap-tracking/' + id), id => {
+      try { return Number(sessionStorage.getItem('ita-studio-selected-milestone:' + id)) || null; }
+      catch { return null; }
+    });
 
-    if (pendingFocus) {
-      const targetRoadmap = data.roadmaps.find(item => String(item?.id) === String(pendingFocus.roadmapId));
-      if (!targetRoadmap) {
-        data.messages.road = copy('Lộ trình được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected roadmap no longer exists. Please check again.');
-        return;
-      }
-      const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
-      const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
-      const targetMilestone = milestones.find(item => String(item?.id) === String(pendingFocus.milestoneId));
-      if (!targetMilestone) {
-        data.messages.road = copy('Mốc kỹ năng được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected skill milestone no longer exists. Please check again.');
-        return;
-      }
-      data.road = targetRoadmap;
-      data.goal = targetRoadmap.goal;
-      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(targetRoadmap.id)); } catch {}
-      data.tracking = tracking;
-      data.reevaluation = null;
-      data.milestone = targetMilestone.id;
-      try { sessionStorage.setItem('ita-studio-selected-milestone:' + targetRoadmap.id, String(targetMilestone.id)); } catch {}
-      data.history = []; data.historyLoaded = false;
-      return;
+    Object.assign(data, {
+      roadmaps:view.roads, road:view.road, tracking:view.tracking, milestone:view.milestone,
+      reevaluation:null, history:[], historyLoaded:false
+    });
+    if (view.road) {
+      data.goal = view.road.goal || data.goal;
+      try {
+        sessionStorage.setItem('ita-studio-selected-roadmap', String(view.road.id));
+        if (view.milestone != null) sessionStorage.setItem('ita-studio-selected-milestone:' + view.road.id, String(view.milestone));
+        else sessionStorage.removeItem('ita-studio-selected-milestone:' + view.road.id);
+      } catch {}
+    } else {
+      try { sessionStorage.removeItem('ita-studio-selected-roadmap'); } catch {}
     }
-
-    if (data.road) {
-      data.goal = data.road.goal || data.goal;
-      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
+    if (view.focusError === 'roadmap') {
+      data.messages.road = copy('Lộ trình được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected roadmap no longer exists. Please check again.');
+    } else if (view.focusError === 'milestone') {
+      data.messages.road = copy('Mốc kỹ năng được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected skill milestone no longer exists. Please check again.');
     }
-    const previousMilestone = data.milestone;
-    let storedMilestone = null;
-    try { storedMilestone = Number(sessionStorage.getItem('ita-studio-selected-milestone:' + data.road?.id)) || null; } catch {}
-    data.tracking = data.road ? await request(trackingPath()) : null;
-    data.reevaluation = null;
-    data.milestone = chooseMilestone(data.tracking?.milestones, previousMilestone, storedMilestone);
-    data.history = []; data.historyLoaded = false;
   }
 
   async function roadCreate() {
