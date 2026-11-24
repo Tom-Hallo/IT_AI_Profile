@@ -132,3 +132,127 @@ def test_explicit_job_search_reaches_provider(world, make_client, monkeypatch):
     response = make_client(user).post(path, json={"query": "python"}, headers=ORIGIN)
     assert response.status_code == 200
     assert requests == ["python"]
+
+
+def test_roadmap_submission_relevance_dedup_and_revoked_visibility(
+    db, world, make_client
+):
+    user = world.user("roadmap-evidence@example.test")
+    repo = world.repo(user)
+    repo.full_name = "example/roadmap"
+    report = world.report(repo, [])
+    report.scope = "public"
+    world.verification(user, repo)
+    verification = db.scalar(
+        select(RepositoryVerification).where(RepositoryVerification.user_id == user.id)
+    )
+    pg_fixtures.add_skill(db, user, repo, report, verification, score=70)
+    skill = db.scalar(select(SkillScore).where(SkillScore.report_id == report.id))
+    skill.rubric_id = db.scalar(
+        select(RubricVersion.id).where(
+            RubricVersion.kind == "language", RubricVersion.version == VERSION
+        )
+    )
+    db.commit()
+    client = make_client(user)
+    road = client.post(
+        f"{API}/career-roadmaps", json={"goal": "backend"}, headers=ORIGIN
+    ).json()
+    base = f"{API}/roadmap-tracking/{road['id']}"
+    tracked = client.get(base).json()["milestones"]
+    python = next(m for m in tracked if m["external_key"] == "python")
+    docker = next(m for m in tracked if m["external_key"] == "docker")
+    url = f"https://github.com/example/roadmap/commit/{report.commit_sha}"
+    python_path = f"{base}/milestones/{python['id']}"
+    docker_path = f"{base}/milestones/{docker['id']}"
+
+    low = client.post(
+        f"{python_path}/evidence", json={"evidence_url": url}, headers=ORIGIN
+    )
+    assert low.status_code == 200, low.text
+    assert low.json()["verification_status"] == "self_reported"
+    assert low.json()["status"] == "in_progress"
+
+    skill.score = 88
+    db.commit()
+    wrong = client.post(
+        f"{docker_path}/evidence", json={"evidence_url": url}, headers=ORIGIN
+    )
+    assert wrong.json()["verification_status"] == "self_reported"
+    assert wrong.json()["status"] == "in_progress"
+
+    verified = client.post(
+        f"{python_path}/evidence", json={"evidence_url": url}, headers=ORIGIN
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verification_status"] == "verified"
+    assert verified.json()["status"] == "completed"
+    assert verified.json()["duplicate"] is True
+    duplicate = client.post(
+        f"{python_path}/evidence",
+        json={"evidence_url": url.replace("example", "Example") + "/"},
+        headers=ORIGIN,
+    )
+    assert duplicate.json()["duplicate"] is True
+    tracking = client.get(base).json()
+    current = next(m for m in tracking["milestones"] if m["id"] == python["id"])
+    assert len([e for e in current["evidence"] if e.get("url")]) == 1
+    assert current["verification_status"] == "verified"
+    history = client.get(f"{python_path}/history").json()
+    assert len(history) == 2
+
+    repo.private = True
+    db.commit()
+    tracking = client.get(base)
+    assert tracking.status_code == 200, tracking.text
+    assert url not in tracking.text
+    current = next(
+        m for m in tracking.json()["milestones"] if m["id"] == python["id"]
+    )
+    assert current["verification_status"] != "verified"
+    career = client.get(f"{API}/career-roadmaps/{road['id']}")
+    assert url not in career.text
+    history = client.get(f"{python_path}/history")
+    assert url not in history.text
+
+
+def test_roadmap_stale_suggestion_rejected_after_snapshot_changes(
+    db, world, make_client
+):
+    user = world.user("roadmap-stale@example.test")
+    repo = world.repo(user)
+    report = world.report(repo, [])
+    report.scope = "public"
+    world.verification(user, repo)
+    verification = db.scalar(
+        select(RepositoryVerification).where(RepositoryVerification.user_id == user.id)
+    )
+    pg_fixtures.add_skill(db, user, repo, report, verification, score=70)
+    skill = db.scalar(select(SkillScore).where(SkillScore.report_id == report.id))
+    skill.rubric_id = db.scalar(
+        select(RubricVersion.id).where(
+            RubricVersion.kind == "language", RubricVersion.version == VERSION
+        )
+    )
+    db.commit()
+    client = make_client(user)
+    road = client.post(
+        f"{API}/career-roadmaps", json={"goal": "backend"}, headers=ORIGIN
+    ).json()
+    base = f"{API}/roadmap-tracking/{road['id']}"
+    skill.score = 88
+    db.commit()
+    result = client.post(f"{base}/re-evaluate", headers=ORIGIN)
+    assert result.status_code == 200, result.text
+    suggestion = result.json()["suggestions"][0]
+    skill.score = 60
+    db.commit()
+    response = client.post(
+        f"{base}/suggestions/{suggestion['id']}/apply", headers=ORIGIN
+    )
+    assert response.status_code == 409, response.text
+    tracking = client.get(base).json()
+    current = next(s for s in tracking["suggestions"] if s["id"] == suggestion["id"])
+    assert current["state"] == "stale"
+    assert current["evidence"] == []
+    assert all(m["status"] != "completed" for m in tracking["milestones"])
