@@ -640,7 +640,10 @@ def resolve(
     s.state = decision
     s.resolved_at = datetime.now(UTC)
     db.commit()
-    return serialize_suggestion(s)
+    result = serialize_suggestion(s)
+    if decision == "rejected" and s.snapshot_key != current_snapshot(db, user.id).key:
+        result["evidence"] = []
+    return result
 
 
 @router.post(
