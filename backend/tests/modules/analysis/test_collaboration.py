@@ -1033,9 +1033,10 @@ def test_10_api_endpoints_trigger_and_get(in_memory_db, monkeypatch):
     get_200 = client.get(f"/api/v1/repositories/{repo.id}/collaboration")
     assert get_200.status_code == 200
     assert get_200.json()["total_prs_analyzed"] == 1
-    assert client.get(
+    get_wrong_report = client.get(
         f"/api/v1/repositories/{repo.id}/collaboration", params={"report_id": 13}
-    ).status_code == 404
+    )
+    assert get_wrong_report.status_code == 404
 
     # 4. Evidence list GET returns 200
     ev_res = client.get(f"/api/v1/repositories/{repo.id}/collaboration/evidence")
