@@ -38,3 +38,18 @@ test('reject incompatible rubric versions and absent provenance', () => {
 test('do not use server totals without individual criterion evidence', () => {
   assert.equal(githubRadarMetrics([report('collaboration',[])])[3].score,null);
 });
+
+
+test('coverage UI shows criterion counts and distinguishes missing axes from a real zero', () => {
+  const html = radarView([
+    {key:'code',label:'Code',score:50,observed:1,total:2},
+    {key:'architecture',label:'Architecture',score:null,observed:0,total:3}
+  ],1,'Public','90 days',{},'',true);
+  assert.match(html,/radar-panel is-coverage/);
+  assert.match(html,/1\/2 /);
+  assert.match(html,/0\/3 /);
+  assert.match(html,/radar-axis-missing/);
+  assert.match(html,/width:50%/);
+  assert.doesNotMatch(html,/width:0%/);
+  assert.match(html,/radar-coverage-legend/);
+});

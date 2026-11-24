@@ -3632,3 +3632,26 @@ body.print-cv .cv-paper {
 .radar-indicator.is-unscored .radar-dot{opacity:.32}
 .radar-indicator.is-unscored .radar-number{color:var(--muted)}
 .radar-indicator.is-unscored .radar-label{opacity:.75}
+
+
+/* Evidence coverage Radar: keep missing observations distinct from real zero. */
+.radar-panel.is-coverage .radar-body{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:center}
+.radar-panel.is-coverage .radar-plot{height:320px;background:radial-gradient(ellipse at center,var(--accent-glow),transparent 68%),var(--inset)}
+.radar-panel.is-coverage .radar-indicators{gap:6px;padding:0}
+.radar-panel.is-coverage .radar-indicator{grid-template-columns:8px minmax(0,1fr) auto;column-gap:9px;row-gap:5px;min-height:52px;padding:8px 10px;border:1px solid var(--line);background:var(--surface-2)}
+.radar-panel.is-coverage .radar-indicator:hover,.radar-panel.is-coverage .radar-indicator[aria-expanded=true]{border-color:var(--accent-border);background:var(--accent-wash)}
+.radar-panel.is-coverage .radar-label{display:grid;gap:3px;font-weight:600}
+.radar-criterion-count,.radar-axis-missing{font-size:10px;font-weight:400;color:var(--muted)}
+.radar-panel.is-coverage .radar-number{flex-direction:column;align-items:flex-end;gap:2px}
+.radar-axis-track{grid-column:2/-1;display:block;height:4px;overflow:hidden;border-radius:99px;background:var(--line)}
+.radar-axis-fill{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+.radar-panel.is-coverage .is-unscored .radar-axis-track{background:repeating-linear-gradient(90deg,var(--line) 0 5px,transparent 5px 9px)}
+.radar-coverage-legend{display:flex;align-items:center;flex-wrap:wrap;gap:7px 14px;padding:10px 2px 0;color:var(--muted);font-size:11px}
+.radar-coverage-legend span{display:inline-flex;align-items:center;gap:6px}
+.radar-coverage-legend i{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.radar-coverage-legend span:nth-child(2) i{background:transparent;border:1px dashed var(--muted)}
+.radar-coverage-legend strong{margin-left:auto;color:var(--ink);font-size:11px;font-weight:600}
+@container (max-width:660px){
+  .radar-panel.is-coverage .radar-body{grid-template-columns:1fr;gap:12px}
+  .radar-panel.is-coverage .radar-plot{height:282px}
+}
