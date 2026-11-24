@@ -898,6 +898,32 @@ function roadmapLoadingSkeleton() {
     + '<section class="panel road-detail ita-skeleton-card ita-skeleton-detail" aria-hidden="true">' + lines + lines + '</section></div></div>';
 }
 
+function renderCustomPicker(label, currentId, currentLabel, items, action, glyph = 'file', copy) {
+  const displayText = currentLabel || (copy ? copy('Chọn…', 'Select…') : 'Chọn…');
+  const title = '<span class="filter-glyph">' + icon(glyph) + '</span>'
+    + '<span class="filter-value">' + escape(displayText) + '</span>'
+    + '<span class="filter-chevron" aria-hidden="true"></span>';
+  const menuItems = items.map(item => {
+    const isSelected = String(item.id) === String(currentId);
+    return '<button type="button" class="filter-option" data-act="' + action + '" data-id="' + escape(item.id) + '" aria-pressed="' + isSelected + '">'
+      + '<span>' + escape(item.title) + '</span>'
+      + (isSelected ? icon('check') : '')
+      + '</button>';
+  }).join('');
+
+  return '<div class="filter-field cv-filter-field">'
+    + '<span class="filter-label">' + escape(label) + '</span>'
+    + '<details class="filter-dropdown cv-picker-dropdown">'
+    + '<summary class="filter-trigger" aria-label="' + escape(label + ': ' + displayText) + '">' + title + '</summary>'
+    + '<div class="filter-menu" role="group" aria-label="' + escape(label) + '">'
+    + (items.length > 0
+      ? menuItems
+      : '<div class="cv-picker-empty" style="padding:8px 12px;font-size:12px;color:var(--muted)">' + (copy ? copy('Chưa có dữ liệu', 'No items yet') : 'Chưa có dữ liệu') + '</div>')
+    + '</div>'
+    + '</details>'
+    + '</div>';
+}
+
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
   const busy = data.busy.has('road');
@@ -920,17 +946,33 @@ export function liveRoadmap(data) {
     metric: copy('Hoàn thành mục tiêu của cột mốc này và nộp minh chứng.', 'Complete the objective of this milestone and submit evidence.'),
     evidence: selected.evidence || []
   } : null);
-  const picker = field(t('road.goal'), '<select id="road-goal"' + disabled + '>' + [
+  const goalEntries = [
     ['backend', 'Backend'], ['frontend', 'Frontend'], ['fullstack', 'Full-stack'], ['devops', 'DevOps']
-  ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
+  ];
+  const currentGoalLabel = goalEntries.find(([k]) => k === data.goal)?.[1] || 'Backend';
+  const picker = renderCustomPicker(
+    t('road.goal'),
+    data.goal,
+    currentGoalLabel,
+    goalEntries.map(([key, label]) => ({ id: key, title: label })),
+    'road-goal-select',
+    'branch',
+    copy
+  );
   const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
-    ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select"' + disabled + '>'
-      + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
-      + '</select>')
+    ? renderCustomPicker(
+        copy('Đổi lộ trình', 'Switch roadmap'),
+        data.road?.id,
+        data.road ? `${displayRoadmapTitle(data.road.title, data.road.goal)} (#${data.road.id})` : undefined,
+        data.roadmaps.map(r => ({ id: r.id, title: `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})` })),
+        'road-select-option',
+        'repo',
+        copy
+      )
     : '';
 
   if (data.busy.has('road') && data.roadmaps === undefined) {
-    return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + roadmapLoadingSkeleton();
+    return heading(t('road.heading'), t('road.intro')) + '<div class="road-pickers-row">' + picker + roadPicker + '</div>' + roadmapLoadingSkeleton();
   }
 
   const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
@@ -1093,7 +1135,7 @@ export function liveRoadmap(data) {
     + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', detailTitle)) + '</div>'
     + pending.map(suggestion => '<div class="notice">' + paragraph(suggestionText(suggestion))
       + ['apply', 'reject'].map(decision => roadButton(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small', 'suggestion:' + suggestion.id + ':' + decision, attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
-  return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + (data.errors.road || data.messages.road || loading('load') ? feedback(data, 'road') : '')
+  return heading(t('road.heading'), t('road.intro')) + '<div class="road-pickers-row">' + picker + roadPicker + '</div>' + (data.errors.road || data.messages.road || loading('load') ? feedback(data, 'road') : '')
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
     + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
     + (goal ? paragraph(displayObjective(goal.objective, next?.external_key)) : '') + '</div>'
@@ -1188,15 +1230,25 @@ export function liveJobs(state, data) {
 function renderStructuredSections(structured, copy, escape, activeSecIdx) {
   if (!structured || !Array.isArray(structured.sections) || !structured.sections.length) {
     return '<div class="cv-struct-empty cv-struct-container">'
-      + '<p class="subtle" style="font-size:12px;margin:8px 0">'
-      + escape(copy('Chưa có mục nội dung nào. Bạn có thể thêm mục hoặc chuyển sang tab Văn bản thô.', 'No sections yet. Add sections or switch to Raw text.')) + '</p>'
+      + '<div class="cv-empty-state">'
+      + '<span class="cv-empty-icon" aria-hidden="true">📄</span>'
+      + '<strong>' + escape(copy(
+          'CV của bạn chưa có nội dung',
+          'Your CV has no sections yet'
+        )) + '</strong>'
+      + '<p>' + escape(copy(
+          'Chọn một mục bên dưới để bắt đầu xây dựng hồ sơ.',
+          'Choose a section below to start building your resume.'
+        )) + '</p>'
+      + '</div>'
       + '<div class="cv-add-sec-bar">'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Experience">💼 + ' + copy('Kinh nghiệm', 'Experience') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Projects">🚀 + ' + copy('Dự án', 'Projects') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Skills">⚡ + ' + copy('Kỹ năng', 'Skills') + '</button>'
-      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Education">🎓 + ' + copy('Học vấn', 'Education') + '</button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Experience">💼 ' + copy('Kinh nghiệm', 'Experience') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Projects">🚀 ' + copy('Dự án', 'Projects') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Skills">⚡ ' + copy('Kỹ năng', 'Skills') + ' <span aria-hidden="true">＋</span></button>'
+      + '<button type="button" class="button secondary small" data-act="cv-add-section" data-type="Education">🎓 ' + copy('Học vấn', 'Education') + ' <span aria-hidden="true">＋</span></button>'
       + '</div></div>';
   }
+
 
   // FOCUSED SECTION VIEW (Chỉ mở form của section đang chọn)
   if (activeSecIdx !== null && activeSecIdx !== undefined && structured.sections[activeSecIdx]) {
@@ -1233,15 +1285,19 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
     }).join('');
 
     return '<div class="cv-focused-sec-editor cv-struct-container">'
-      + '<div class="cv-focused-sec-header">'
+      + '<div class="cv-focused-sec-nav-bar">'
       + '<button type="button" class="button quiet small cv-nav-back-btn" data-act="cv-nav-back">'
       + '← ' + escape(copy('Quay lại danh sách mục', 'All Sections'))
       + '</button>'
+      + '<button type="button" class="button danger-subtle small cv-del-sec-btn" data-act="cv-del-section" data-sec="' + sIdx + '" title="' + escape(copy('Xóa phần này khỏi CV', 'Delete section from CV')) + '">'
+      + '🗑️ ' + copy('Xóa phần này', 'Delete section')
+      + '</button>'
+      + '</div>'
       + '<div class="cv-focused-sec-title">'
       + '<span class="cv-sec-icon">' + secIcon + '</span>'
       + '<input class="cv-struct-title cv-struct-field" data-sec="' + sIdx + '" value="' + escape(sec.title || '') + '" placeholder="' + escape(copy('Tên phần...', 'Section title...')) + '">'
       + '<span class="cv-sec-count-badge">' + (sec.entries?.length || 0) + ' ' + copy('mục', 'items') + '</span>'
-      + '</div></div>'
+      + '</div>'
       + '<div class="cv-struct-body">'
       + entriesHtml
       + '<div class="cv-sec-add-row">'
@@ -1269,6 +1325,7 @@ function renderStructuredSections(structured, copy, escape, activeSecIdx) {
         + '<div class="cv-sec-nav-actions">'
         + '<button type="button" class="button secondary small cv-add-entry-btn" data-act="cv-add-entry" data-sec="' + sIdx + '" title="' + escape(copy('Thêm mục vào phần này', 'Add item')) + '">+ ' + copy('Thêm mục', 'Add item') + '</button>'
         + '<button type="button" class="button quiet small cv-open-sec-btn" data-act="cv-open-sec" data-sec="' + sIdx + '">' + copy('Sửa →', 'Edit →') + '</button>'
+        + '<button type="button" class="button quiet small cv-del-sec-btn" data-act="cv-del-section" data-sec="' + sIdx + '" title="' + escape(copy('Xóa phần này khỏi CV', 'Delete section')) + '">✕</button>'
         + '</div></div>';
     }).join('')
     + '</div>'
@@ -1288,6 +1345,8 @@ export function liveCV(state, runtime, data) {
   const busy = data.busy.has('cv');
   const select = (label, id, options) => field(label, '<select id="' + id + '"><option value="">'
     + escape(copy('Chọn…', 'Select…')) + '</option>' + options + '</select>');
+  const customPicker = (label, currentId, currentLabel, items, action, glyph = 'file') =>
+    renderCustomPicker(label, currentId, currentLabel, items, action, glyph, copy);
   const ats = data.ats;
   const references = data.references;
 
@@ -1349,12 +1408,13 @@ export function liveCV(state, runtime, data) {
 
   // LEFT PANEL: EDITOR (Reactive Resume v6 Accordion Layout)
   const editorPanel = '<article class="panel cv-editor cv-panel-editor">'
-    + '<div class="cv-editor-header">'
-    + '<div class="cv-editor-title"><h3>' + copy('Nội dung CV', 'Resume Content') + '</h3></div>'
-    + '<div class="cv-mode-tabs" role="group">'
-    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Sections') + '</button>'
-    + '<button type="button" class="button' + (editorMode === 'raw' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="raw">' + copy('📝 Văn bản thô', '📝 Raw Text') + '</button>'
-    + '</div></div>'
+    + '<div class="panel-head cv-editor-header" style="margin-bottom:6px">'
+    + '<h2 class="panel-title">' + copy('Nội dung CV', 'Resume Content') + '</h2>'
+    + '</div>'
+    + '<div class="cv-mode-tabs" role="tablist">'
+    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Form Sections') + '</button>'
+    + '<button type="button" class="button' + (editorMode === 'raw' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="raw">' + copy('📝 Văn bản thô', '📝 Raw Markdown') + '</button>'
+    + '</div>'
     + '<fieldset class="cv-controls"' + (busy ? ' disabled' : '') + '><form id="cv-form" class="cv-controls">'
     + '<div class="cv-basics-card">'
     + '<div class="field-row">'
@@ -1379,10 +1439,42 @@ export function liveCV(state, runtime, data) {
     + '<details class="cv-drawer-card">'
     + '<summary class="cv-drawer-head">📁 ' + copy('Tải lên CV & Chọn bản đã lưu', 'Import File & Saved CVs') + '</summary>'
     + '<div class="cv-drawer-body">'
-    + field(t('cv.import'), '<input id="cv-upload" type="file" accept=".pdf,.docx">')
-    + select(copy('CV đã tải lên', 'Uploaded CVs'), 'live-cv-picker', data.cvList.map(item => option(item.id, 'CV #' + item.id, item.id === cv?.id ? item.id : undefined)).join(''))
-    + select(copy('CV Studio', 'CV Studio'), 'live-document-picker', data.documentList.map(item => option(item.document_id, item.title, doc?.document_id)).join(''))
-    + (doc ? select(copy('Phiên bản', 'Version'), 'live-version-picker', data.versions.map(item => option(item.number, '#' + item.number, doc.number)).join('')) : '')
+    + '<div class="field cv-file-field">'
+    + '<span class="filter-label">' + escape(t('cv.import')) + '</span>'
+    + '<label class="cv-file-upload-box" for="cv-upload">'
+    + '<input id="cv-upload" type="file" accept=".pdf,.docx" class="cv-file-input-hidden">'
+    + '<span class="filter-glyph">' + icon('file') + '</span>'
+    + '<span class="cv-upload-info">'
+    + '<strong>' + copy('Tải tệp CV lên (.pdf, .docx)', 'Upload CV file (.pdf, .docx)') + '</strong>'
+    + '<small>' + copy('Bấm để chọn tệp từ máy tính của bạn', 'Click to choose file from your computer') + '</small>'
+    + '</span>'
+    + '<span class="button secondary small cv-upload-browse-btn">' + copy('Chọn tệp', 'Browse') + '</span>'
+    + '</label>'
+    + '</div>'
+    + customPicker(
+        copy('CV đã tải lên', 'Uploaded CVs'),
+        cv?.id,
+        cv ? 'CV #' + cv.id : undefined,
+        data.cvList.map(item => ({ id: item.id, title: 'CV #' + item.id })),
+        'live-cv-select',
+        'file'
+      )
+    + customPicker(
+        copy('CV Studio', 'CV Studio'),
+        doc?.document_id,
+        doc?.title,
+        data.documentList.map(item => ({ id: item.document_id, title: item.title })),
+        'live-document-select',
+        'file'
+      )
+    + (doc ? customPicker(
+        copy('Phiên bản', 'Version'),
+        doc.number,
+        '#' + doc.number,
+        data.versions.map(item => ({ id: item.number, title: '#' + item.number })),
+        'live-version-select',
+        'clock'
+      ) : '')
     + '</div></details>'
     + '</form>'
     + '</fieldset></article>';
@@ -1523,11 +1615,11 @@ export function liveCV(state, runtime, data) {
     + '<button type="button" class="button quiet small cv-intel-close-btn" data-act="cv-toggle-intel" title="' + escape(copy('Đóng bảng công cụ', 'Close tools panel')) + '">✕ ' + copy('Đóng', 'Close') + '</button>'
     + '</div>'
     + '<div class="cv-intel-tabs" role="tablist">'
-    + '<button type="button" class="button' + (intelTab === 'design' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="design">' + copy('🎨 Thiết kế', 'Design') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng Git', 'Git Evidence') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', 'ATS Review') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ai' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ai">' + copy('✨ Trợ lý AI', 'AI Assistant') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Mẫu CV', 'References') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'design' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="design">' + copy('🎨 Thiết kế', '🎨 Design') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng Git', '📁 Git Evidence') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', '🎯 ATS Review') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'ai' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ai">' + copy('✨ Trợ lý AI', '✨ AI Assistant') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Mẫu CV', '🔍 References') + '</button>'
     + '</div>'
     + intelBody
     + '</article>';

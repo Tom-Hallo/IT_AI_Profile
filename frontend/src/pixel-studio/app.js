@@ -1271,6 +1271,58 @@ const actions = {
       updateStudio();
     }
   },
+  'cv-del-section': button => {
+    const sIdx = Number(button.dataset.sec);
+    const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+    if (structured.sections?.[sIdx]) {
+      structured.sections.splice(sIdx, 1);
+      runtime.cvDraft.body = serializeCVFromSections(structured);
+      runtime.cvEdited = true;
+      if (runtime.activeSection === sIdx) {
+        runtime.activeSection = null;
+      } else if (runtime.activeSection > sIdx) {
+        runtime.activeSection -= 1;
+      }
+      updateStudio();
+    }
+  },
+  'live-cv-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const id = Number(button.dataset.id);
+    const item = runtime.cvList?.find(c => c.id === id);
+    if (item) {
+      runtime.cvDraft = { name: item.name || '', role: item.role || '', body: item.body || '' };
+      runtime.cv = item;
+      updateStudio();
+    }
+  },
+  'live-document-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const docId = button.dataset.id;
+    const item = runtime.documentList?.find(d => d.document_id === docId);
+    if (item) {
+      runtime.document = item;
+      updateStudio();
+    }
+  },
+  'live-version-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    updateStudio();
+  },
+  'road-goal-select': button => {
+    button.closest('details')?.removeAttribute('open');
+    const goal = button.dataset.id;
+    if (goal && Object.hasOwn(paths, goal)) {
+      state.goal = goal;
+      runtime.milestone = Math.max(0, nextStep(state));
+      save();
+      updateStudio();
+    }
+  },
+  'road-select-option': button => {
+    button.closest('details')?.removeAttribute('open');
+    updateStudio();
+  },
   'cv-add-entry': button => {
     const sIdx = Number(button.dataset.sec);
     const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);

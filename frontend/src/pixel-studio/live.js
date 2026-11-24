@@ -1055,6 +1055,58 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         setTimeout(updateCVFitScale, 0);
       }
     },
+    'cv-del-section': button => {
+      const sIdx = Number(button.dataset.sec);
+      const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
+      if (structured.sections?.[sIdx]) {
+        structured.sections.splice(sIdx, 1);
+        runtime.cvDraft.body = serializeCVFromSections(structured);
+        runtime.cvEdited = true;
+        if (data.activeSection === sIdx) {
+          data.activeSection = null;
+        } else if (data.activeSection > sIdx) {
+          data.activeSection -= 1;
+        }
+        render();
+        setTimeout(updateCVFitScale, 0);
+      }
+    },
+    'live-cv-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const id = button.dataset.id;
+      if (id) void work('cv', async () => { setCV(await request('/cvs/' + Number(id))); });
+    },
+    'live-document-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const doc = data.documentList.find(item => item.document_id === button.dataset.id);
+      if (doc) void work('cv', async () => {
+        setDocument(await request(cvPath(doc) + '/versions/' + doc.number));
+        data.versions = await request(cvPath(doc) + '/versions');
+      });
+    },
+    'live-version-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      if (!data.document) return;
+      const path = cvPath(data.document);
+      const number = Number(button.dataset.id);
+      void work('cv', async () => { setDocument(await request(path + '/versions/' + number)); });
+    },
+    'road-goal-select': button => {
+      button.closest('details')?.removeAttribute('open');
+      const goal = button.dataset.id;
+      if (goal) {
+        data.goal = goal;
+        goalWasChosen = true;
+        void loads.road();
+      }
+    },
+    'road-select-option': button => {
+      button.closest('details')?.removeAttribute('open');
+      const id = Number(button.dataset.id);
+      if (id) {
+        void work('road', () => road(id));
+      }
+    },
     'cv-add-entry': button => {
       const sIdx = Number(button.dataset.sec);
       const structured = parseCVForReference(runtime.cvDraft.body, runtime.cvDraft.name, runtime.cvDraft.role);
