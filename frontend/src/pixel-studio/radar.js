@@ -1,5 +1,5 @@
 import {escape, icon, labelAttr, link} from './ui.js';
-import {getLanguage, t} from './i18n.js';
+import {t} from './i18n.js';
 
 export function radarView(scores, reportCount, scope, range, comparison, insights='', coverage=false) {
   const header = '<header class="radar-header"><div><h2 id="radar-title">' + escape(t(coverage ? 'radar.coverageTitle' : 'radar.title'))
@@ -11,38 +11,24 @@ export function radarView(scores, reportCount, scope, range, comparison, insight
       + link(escape(t('action.openRepo')),'repos','secondary small') + '</div></section>';
   }
 
-  const copy = (vi,en) => getLanguage() === 'en' ? en : vi;
-  const hasScore = score => typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 100;
-  const measured = scores.filter(item => hasScore(item.score)).length;
-  const indicators = scores.map(({key,label,score,observed,total},index) => {
-    const valid = hasScore(score);
-    const counts = coverage && Number.isInteger(observed) && Number.isInteger(total) && total > 0
-      ? '<span class="radar-criterion-count">' + observed + '/' + total + ' ' + escape(copy('tiêu chí','criteria')) + '</span>' : '';
-    const bar = coverage ? '<span class="radar-axis-track" aria-hidden="true">'
-      + (valid ? '<span class="radar-axis-fill" style="width:' + score + '%"></span>' : '')
-      + '</span>' : '';
+  const indicators = scores.map(({key,label,score},index) => {
+    const valid = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 100;
     const trend = valid ? comparison?.[key] : null;
     const change = trend?.delta ? (trend.delta > 0 ? '+' + trend.delta : '−' + Math.abs(trend.delta)) : null;
     return '<li><button type="button" class="radar-indicator' + (valid ? '' : ' is-unscored')
       + '" data-radar-axis="' + index + '" data-score="' + (valid ? score : '') + '"'
       + (trend ? ' data-previous="' + trend.before + '"' : '')
       + ' aria-controls="radar-detail-' + key + '" aria-expanded="false">'
-      + '<span class="radar-dot" aria-hidden="true"></span><span class="radar-label">' + escape(label)
-      + counts + '</span>'
+      + '<span class="radar-dot" aria-hidden="true"></span><span class="radar-label">' + escape(label) + '</span>'
       + '<span class="radar-number"><strong>' + (valid ? score + (coverage ? '<small>%</small>' : '<small>/100</small>') : '—') + '</strong>'
       + (change ? '<span class="radar-change" data-change="' + Math.sign(trend.delta) + '" title="' + escape(t('radar.delta',{change})) + '">'
         + '<span class="sr-only">' + escape(t('radar.delta',{change})) + '</span><span aria-hidden="true">' + change + '</span></span>' : '')
-      + (coverage && !valid ? '<span class="radar-axis-missing">' + escape(copy('Chưa có minh chứng','Not observed')) + '</span>' : '')
-      + '</span>' + bar + '</button></li>';
+      + '</span></button></li>';
   }).join('');
   const legend = Object.keys(comparison ?? {}).length === scores.length
     ? '<div class="radar-legend"><span>' + escape(t('radar.current')) + '</span><span>' + escape(t('radar.prior')) + '</span></div>' : '';
-  const coverageLegend = coverage ? '<div class="radar-coverage-legend"><span><i></i>'
-    + escape(copy('Có minh chứng','Evidence observed')) + '</span><span><i></i>'
-    + escape(copy('Chưa có minh chứng','Not observed')) + '</span><strong>'
-    + measured + '/' + scores.length + ' ' + escape(copy('trục có dữ liệu','axes observed')) + '</strong></div>' : '';
-  return '<section class="panel radar-panel' + (coverage ? ' is-coverage' : '') + '" aria-labelledby="radar-title">' + header
-    + '<div class="radar-body"><div class="radar-chart"><div class="radar-plot"><canvas aria-hidden="true"></canvas></div>' + legend + coverageLegend + '</div>'
+  return '<section class="panel radar-panel" aria-labelledby="radar-title">' + header
+    + '<div class="radar-body"><div class="radar-chart"><div class="radar-plot"><canvas aria-hidden="true"></canvas></div>' + legend + '</div>'
     + '<div class="radar-values"><p>' + escape(t(coverage ? 'radar.coverageCaption' : 'radar.caption',{count:reportCount})) + '</p>'
     + '<ul class="radar-indicators"' + labelAttr(t('radar.axes')) + '>' + indicators + '</ul>'
     + '<p class="subtle">' + escape(t(coverage ? 'radar.coverageMissing' : 'radar.missingAxes')) + '</p></div></div>' + insights + '</section>';
@@ -54,7 +40,6 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
   const ctx = canvas?.getContext('2d');
   if (!ctx) return null;
 
-  const coverage = panel.classList.contains('is-coverage');
   const axes = [...panel.querySelectorAll('[data-radar-axis]')];
   const insights = axes.map(axis => document.getElementById(axis.getAttribute('aria-controls')));
   const values = axes.map(axis =>
@@ -63,7 +48,7 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
   const previous = axes.map(axis =>
     axis.dataset.previous === undefined ? null : Number(axis.dataset.previous) / 100
   );
-  const labels = axes.map(axis => axis.querySelector('.radar-label').firstChild.textContent);
+  const labels = axes.map(axis => axis.querySelector('.radar-label').textContent);
   const angles = axes.map((_, i) => (i / axes.length) * Math.PI * 2 - Math.PI / 2);
   const ringValues = [.25,.5,.75,1].map(level => axes.map(() => level));
   let active = selectedAxis;
@@ -86,10 +71,10 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
     const centerX = width / 2;
     const centerY = height / 2 + 4;
     const showLabels = width >= 285;
-    ctx.font = (width < 370 ? '11px' : '12px') + ' Inter, system-ui, sans-serif';
+    ctx.font = (width < 370 ? '10px' : '11px') + ' Inter, system-ui, sans-serif';
     const sideLabel = Math.max(ctx.measureText(labels[1]).width, ctx.measureText(labels[2]).width,
       ctx.measureText(labels[3]).width, ctx.measureText(labels[4]).width);
-    const radius = Math.min((width - (showLabels ? 2 * (sideLabel + 13) : 44)) / 2, (height - (coverage ? 64 : 48)) / 2, coverage ? 150 : 116);
+    const radius = Math.min((width - (showLabels ? 2 * (sideLabel + 13) : 44)) / 2, (height - 48) / 2, 116);
     if (radius < 24) return;
     geometry = {centerX,centerY,radius};
 
@@ -116,9 +101,7 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
       ctx.moveTo(centerX,centerY);
       ctx.lineTo(...point(angle,radius));
       ctx.strokeStyle = i === active ? highlight : grid + '49';
-      if (coverage && values[i] === null) ctx.setLineDash([4,4]);
       ctx.stroke();
-      ctx.setLineDash([]);
     });
 
     const complete = values.every(value => typeof value === 'number' && Number.isFinite(value));
@@ -187,11 +170,7 @@ export function mountRadar(panel, selectedAxis, selectAxis) {
       const side = Math.cos(angle);
       ctx.textAlign = Math.abs(side) < .1 ? 'center' : side > 0 ? 'left' : 'right';
       ctx.fillStyle = i === active ? color('--ink') : color('--muted');
-      ctx.fillText(labels[i],x,y - (coverage ? 6 : 0));
-      if (coverage) {
-        ctx.fillStyle = values[i] === null ? color('--muted') : highlight;
-        ctx.fillText(values[i] === null ? '—' : Math.round(values[i] * 100) + '%', x, y + 8);
-      }
+      ctx.fillText(labels[i],x,y);
     });
   }
 
