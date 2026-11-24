@@ -290,7 +290,7 @@ export const messages = {
   'road.evidenceScope':['Bằng chứng liên quan trong phạm vi','Relevant evidence in scope'],
   'mentor.name':['IT Talent Mentor','IT Talent Mentor'],
   'mentor.ready':['Sẵn sàng','Ready'],
-  'mentor.thinking':['Đang đọc nguồn…','Reading sources…'],
+  'mentor.thinking':['Đang đọc nguồn','Reading sources'],
   'mentor.happy':['Đã trả lời','Replied'],
   'mentor.curious':['Cần thêm thông tin','Needs more information'],
   'mentor.review':['Chờ bạn xác nhận','Awaiting your approval'],
