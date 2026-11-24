@@ -110,6 +110,90 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(paragraphs)
 
 
+SECTION_RE = re.compile(
+    r"^(Education\s*(and|&)?\s*Qualifications|Work\s*Experience|Experience|"
+    r"Professional\s*Experience|Employment\s*History|Additional\s*Information|"
+    r"Additional\s*Info|Projects|Key\s*Projects|Technical\s*Skills|Skills|"
+    r"Certifications|Summary|Professional\s*Summary|Profile|"
+    r"Học\s*vấn(?:\s*(&|và)?\s*bằng\s*cấp)?|Kinh\s*nghiệm(?:\s*làm\s*việc)?|"
+    r"Thông\s*tin\s*(bổ\s*sung|thêm)|Dự\s*án(?:\s*tiêu\s*biểu)?|"
+    r"Kỹ\s*năng(?:\s*chuyên\s*môn)?|Chứng\s*chỉ|Tóm\s*tắt(?:\s*chuyên\s*môn)?|"
+    r"Mục\s*tiêu\s*nghề\s*nghiệp)$",
+    re.IGNORECASE,
+)
+DATE_RE = re.compile(
+    r"^((?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/ ]*\d{2,4}|"
+    r"\d{1,2}/\d{2,4}|\d{4})\s*(?:[–—\-]|to|đến)\s*"
+    r"(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/ ]*\d{2,4}|"
+    r"\d{1,2}/\d{2,4}|\d{4}|Present|Current|Hiện tại|Nay)\b|"
+    r"\d{4}\s*[-–—]\s*\d{4}|\d{4}\b)",
+    re.IGNORECASE,
+)
+LABEL_RE = re.compile(r"^([A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\s]{1,24}):\s*(.*)$")
+
+
+def format_cv_text(text: str) -> str:
+    # Chuẩn hóa các ký tự bullet từ Symbol / Wingdings font sang bullet Unicode chuẩn
+    text = re.sub(r"[\uf0b7\u25cf\u25cb\u25aa\u25fe\u2023\u2043\u2219]", "• ", text)
+    text = re.sub(r"•\s+", "• ", text)
+
+    lines = [line.strip() for line in text.splitlines()]
+    cleaned_lines: list[str] = []
+    in_achievements = False
+
+    for line in lines:
+        if not line:
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            continue
+
+        if SECTION_RE.match(line):
+            in_achievements = False
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            cleaned_lines.append(line)
+            cleaned_lines.append("")
+            continue
+
+        label_match = LABEL_RE.match(line)
+        if label_match:
+            label_name = label_match.group(1).lower()
+            in_achievements = "achievement" in label_name or "thành tích" in label_name
+            cleaned_lines.append(line)
+            continue
+
+        if in_achievements:
+            is_bullet = line.startswith("• ") or line.startswith("- ")
+            cleaned_lines.append(line if is_bullet else f"• {line}")
+            continue
+
+        if cleaned_lines and cleaned_lines[-1] != "":
+            prev = cleaned_lines[-1]
+            is_bullet = line.startswith("• ") or line.startswith("- ")
+            is_date = bool(DATE_RE.match(line))
+            is_label = bool(LABEL_RE.match(line))
+
+            # Nối các dòng bị ngắt giữa chừng do PDF stream
+            if (
+                not is_bullet
+                and not is_date
+                and not is_label
+                and not SECTION_RE.match(line)
+            ):
+                if prev.startswith("• ") or any(
+                    prev.startswith(prefix)
+                    for prefix in ("Interests:", "Nationality:", "Languages:")
+                ):
+                    cleaned_lines[-1] = f"{prev} {line}"
+                    continue
+
+        cleaned_lines.append(line)
+
+    result = "\n".join(cleaned_lines)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
+
+
 def extract_text(data: bytes, media_type: str) -> str:
     if media_type not in (PDF, DOCX):
         raise InvalidCV
@@ -121,7 +205,7 @@ def extract_text(data: bytes, media_type: str) -> str:
     text = CONTROL_CHARS.sub("", text).strip()
     if not text:
         raise InvalidCV
-    return text
+    return format_cv_text(text)
 
 
 def main() -> None:
