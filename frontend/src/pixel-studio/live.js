@@ -547,13 +547,14 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.goal = data.road.goal || data.goal;
       try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
     }
-    const previousMilestone = data.milestone ?? (() => {
-      try { return Number(sessionStorage.getItem('ita-studio-selected-milestone:' + data.road?.id)) || null; } catch { return null; }
-    })();
+    const previousMilestone = data.milestone;
+    let storedMilestone = null;
+    try { storedMilestone = Number(sessionStorage.getItem('ita-studio-selected-milestone:' + data.road?.id)) || null; } catch {}
     data.tracking = data.road ? await request(trackingPath()) : null;
     data.reevaluation = null;
-    data.milestone = data.tracking?.milestones?.some(m => m.id === previousMilestone)
-      ? previousMilestone : data.tracking?.milestones?.[0]?.id ?? null;
+    data.milestone = data.tracking?.milestones?.find(m => m.id === previousMilestone)?.id
+      ?? data.tracking?.milestones?.find(m => m.id === storedMilestone)?.id
+      ?? data.tracking?.milestones?.[0]?.id ?? null;
     data.history = []; data.historyLoaded = false;
   }
 
