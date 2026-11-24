@@ -276,7 +276,9 @@ function getLiveRadar(state, data) {
         + '<span class="tag-badge ' + (ref ? 'green' : 'yellow') + '">'
         + escape(ref ? copy('Đã ghi nhận','Observed') : copy('Chưa có minh chứng','Not observed')) + '</span>'
         + (ref ? muted((ref.kind === 'collaboration' ? 'PBI-014' : 'PBI-013') +
-          ' #' + ref.evidence_id + ' · ' + (ref.target || '') + (ref.path ? ' · ' + ref.path : '')) : '')
+          ' #' + ref.evidence_id + ' · ' + (ref.target || '') + (ref.path ? ' · ' + ref.path : '')
+          + (ref.finding_id ? ' · PBI-012 #' + ref.finding_id : '')
+          + ' · ' + copy('Báo cáo #','Report #') + ref.report_id) : '')
         + (repo ? btn(escape(repo.full_name || repo.name), 'metric-evidence', 'secondary small',
           attr('id', repo.id) + attr('tab', tab)) : '') + '</li>';
     }).join('');

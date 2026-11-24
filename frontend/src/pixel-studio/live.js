@@ -940,7 +940,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     data.dashboardRadar = [];
     data.roles = [];
     data.dashboardRepos = null;
-    data.dashboardRadar = [];
     data.dashboardPartial = false;
     data.dashboardLoadErrors = [];
     data.jobMatch = null;
@@ -975,7 +974,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.dashboardRadar = [];
       data.repoData = {};
       data.dashboardRepos = null;
-      data.dashboardRadar = [];
       data.dashboardPartial = false;
       data.dashboardLoadErrors = [];
       return location.hash === '#studio/dashboard' ? loads.dashboard() : loads.repos();

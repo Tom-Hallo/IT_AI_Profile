@@ -110,7 +110,13 @@ def radar_coverage(
     changes: dict[str, Any] = {}
     authored_prs: set[int] = set()
 
-    def record(key: str, event: Any, kind: str, path: str | None = None) -> None:
+    def record(
+        key: str,
+        event: Any,
+        kind: str,
+        path: str | None = None,
+        finding_id: int | None = None,
+    ) -> None:
         observed.setdefault(
             key,
             {
@@ -120,6 +126,7 @@ def radar_coverage(
                 "kind": kind,
                 "target": event.target_identifier,
                 "path": path,
+                "finding_id": finding_id,
             },
         )
 
@@ -147,10 +154,10 @@ def radar_coverage(
                 record("merged_pr", event, "verification")
         for path in _paths(event):
             changes.setdefault(path, event)
-            if _is_test(path):
-                record("test_change", event, "verification", path)
-            elif path.lower().split("/")[-1] in TEST_CONFIGS:
+            if path.lower().split("/")[-1] in TEST_CONFIGS:
                 record("test_config", event, "verification", path)
+            elif _is_test(path):
+                record("test_change", event, "verification", path)
             elif _is_source(path):
                 record("source_change", event, "verification", path)
             if _is_workflow(path):
@@ -168,7 +175,7 @@ def radar_coverage(
             finding.finding_type == "framework"
             and finding.evidence_source == "source_code"
         ):
-            record("framework_source", event, "verification", path)
+            record("framework_source", event, "verification", path, finding.id)
         elif (
             finding.finding_type == "architecture"
             and finding.evidence_source in {"source_code", "configuration"}
@@ -182,7 +189,7 @@ def radar_coverage(
             }
             key = groups.get(finding.classification)
             if key:
-                record(key, event, "verification", path)
+                record(key, event, "verification", path, finding.id)
     # Directory findings are matched by path prefix, never by repo ownership alone.
     for finding in findings:
         if (
@@ -196,7 +203,9 @@ def radar_coverage(
                 continue
             for path, event in changes.items():
                 if _is_source(path) and path.startswith(prefix + "/"):
-                    record("structure_design", event, "verification", path)
+                    record(
+                        "structure_design", event, "verification", path, finding.id
+                    )
                     break
 
     collab = list(collaboration)

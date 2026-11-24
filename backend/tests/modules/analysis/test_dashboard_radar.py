@@ -82,6 +82,7 @@ def test_authored_pr_and_checks_are_distinct_from_proficiency():
 def test_architecture_requires_exact_report_file_overlap():
     changed = event(metadata_={"changed_files": [{"path": "api.py", "changes": 1}]})
     finding = SimpleNamespace(
+        id=10,
         confidence="high",
         file_path="api.py",
         finding_type="architecture",
@@ -91,3 +92,29 @@ def test_architecture_requires_exact_report_file_overlap():
     assert score([changed], [finding])["architecture"] == 33
     finding.file_path = "unrelated.py"
     assert score([changed], [finding])["architecture"] is None
+
+
+def test_configuration_and_peer_review_need_independent_evidence():
+    config = event(
+        metadata_={"changed_files": [{"path": "tests/conftest.py", "changes": 1}]}
+    )
+    assert score([config])["testing"] == 50
+    review = SimpleNamespace(
+        id=2,
+        evidence_type="review",
+        is_profile_owner=True,
+        actor_type="User",
+        pr_number=12,
+        state="APPROVED",
+        target_identifier="Review #2",
+    )
+    external = SimpleNamespace(
+        id=3,
+        evidence_type="pull_request",
+        is_profile_owner=False,
+        actor_type="User",
+        pr_number=12,
+        target_identifier="PR #12",
+    )
+    assert score([], collab=[review])["collaboration"] is None
+    assert score([], collab=[external, review])["collaboration"] == 33
