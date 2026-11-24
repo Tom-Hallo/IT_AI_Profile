@@ -1634,7 +1634,37 @@ document.addEventListener('keydown',event => {
     event.preventDefault();
     changeThemeColor(field,true);
   }
-  if (!runtime.mentorOpen || dialog.open || event.defaultPrevented || event.key !== 'Escape') return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    const cvForm = document.getElementById('cv-form');
+    if (cvForm) {
+      event.preventDefault();
+      document.querySelector('[data-act="cv-save-bar"]')?.click();
+      return;
+    }
+  }
+  if (event.defaultPrevented || event.key !== 'Escape') return;
+  if (dialog.open) return;
+  if (live && live.data) {
+    if (live.data.previewOnly) {
+      event.preventDefault();
+      live.data.previewOnly = false;
+      live.render();
+      setTimeout(live.updateCVFitScale, 50);
+      return;
+    }
+    if (live.data.focusMode) {
+      event.preventDefault();
+      live.data.focusMode = false;
+      runtime.cvFocusMode = false;
+      try { localStorage.setItem('cv_focus_mode', '0'); } catch (_) {}
+      document.querySelector('.studio')?.classList.remove('cv-focus-mode');
+      document.body.classList.remove('cv-focus-mode');
+      live.render();
+      setTimeout(live.updateCVFitScale, 50);
+      return;
+    }
+  }
+  if (!runtime.mentorOpen) return;
   event.preventDefault();
   closeMentor(true);
 });
@@ -1645,6 +1675,14 @@ window.addEventListener('afterprint',() => document.body.classList.remove('print
 window.addEventListener('hashchange',() => {
   const previous = route;
   const focusWasInMentor = mentorPanel.contains(document.activeElement);
+  if (location.hash !== '#studio/cv') {
+    document.querySelector('.studio')?.classList.remove('cv-focus-mode');
+    document.body.classList.remove('cv-focus-mode');
+    if (live && live.data) {
+      live.data.focusMode = false;
+      live.data.previewOnly = false;
+    }
+  }
   if (runtime.mentorOpen && compactMentor.matches && location.hash !== '#studio/mentor') closeMentor();
   renderRoute();
   if (location.hash === '#mentor-preview' && route.kind === 'about') {

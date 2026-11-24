@@ -277,6 +277,9 @@ def run_analysis(
                     if user_record is None:
                         raise PermissionError("User no longer exists")
 
+                    def _on_verification_progress(step: str, progress: int) -> None:
+                        checkpoint(job_uuid, token, step, progress)
+
                     verification_result = asyncio.run(
                         verify_repository_contributions(
                             db=verif_db,
@@ -285,6 +288,7 @@ def run_analysis(
                             request=verification_request,
                             job_id=str(job_uuid),
                             persist=False,
+                            on_progress=_on_verification_progress,
                         )
                     )
 

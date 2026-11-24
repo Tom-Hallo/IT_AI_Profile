@@ -1354,16 +1354,17 @@ export function liveCV(state, runtime, data) {
   const intelTab = data.intelTab || 'design';
   const zoom = data.zoomLevel || 'fit';
   const hasMentor = (typeof document !== 'undefined' && (document.body?.classList.contains('has-mentor') || document.querySelector('.workspace-body')?.classList.contains('has-mentor'))) || Boolean(runtime.mentorOpen);
-  const intelExplicitOpen = data.rightPanelExplicitOpen === true;
-  const intelCollapsed = hasMentor ? !intelExplicitOpen : (data.rightPanelCollapsed !== undefined ? Boolean(data.rightPanelCollapsed) : false);
+  const intelCollapsed = hasMentor ? true : (data.rightPanelCollapsed !== undefined ? Boolean(data.rightPanelCollapsed) : false);
+  const isFocusMode = Boolean(data.focusMode || runtime.cvFocusMode);
+  const isPreviewOnly = Boolean(data.previewOnly);
 
   const normalize = s => (s || '').replace(/\r\n/g, '\n').trim();
   const isSaved = doc && (draft.name || '').trim() === (doc.title || '').trim() && normalize(draft.body) === normalize(doc.lines.map(l => l.text).join('\n'));
   let saveStatusBadge = '';
   if (doc) {
     saveStatusBadge = isSaved
-      ? '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã lưu bản mới nhất (#' + doc.number + ')', 'Saved latest (#' + doc.number + ')') + '</span>'
-      : '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp có thay đổi chưa lưu', 'Unsaved draft changes') + '</span>';
+      ? '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã lưu mới nhất (#' + doc.number + ')', 'Saved latest (#' + doc.number + ')') + '</span>'
+      : '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp chưa lưu', 'Unsaved draft changes') + '</span>';
   } else if (cv) {
     saveStatusBadge = '<span class="status-pill green">' + icon('check') + ' ' + copy('Đã tải lên CV #' + cv.id, 'Uploaded CV #' + cv.id) + '</span>';
   } else if (!draft.body.trim()) {
@@ -1372,29 +1373,28 @@ export function liveCV(state, runtime, data) {
     saveStatusBadge = '<span class="status-pill amber">' + icon('pulse') + ' ' + copy('Bản nháp chưa lưu', 'Unsaved draft') + '</span>';
   }
 
-  // CV Top Toolbar (Reactive Resume v6 Style)
+  // CV Top Toolbar (Professional Single-Bar Workspace Header)
   const cvDocTitle = doc ? doc.title : (draft.name ? draft.name + ' - CV' : copy('Bản CV mới', 'New CV'));
   const cvCommandBar = '<section class="panel cv-command-bar cv-top-toolbar" aria-label="' + copy('Thanh công cụ CV', 'CV Action Bar') + '">'
     + '<div class="cv-command-inner">'
     + '<div class="cv-command-status">'
-    + '<span class="cv-toolbar-doc-icon">📄</span>'
+    + '<span class="cv-toolbar-doc-icon">' + icon('file') + '</span>'
     + '<div class="cv-toolbar-title-wrap">'
     + '<span class="cv-toolbar-title" title="' + escape(copy('Tiêu đề CV', 'CV Title')) + '">' + escape(cvDocTitle) + '</span>'
     + '</div>'
     + saveStatusBadge
-    + (doc && data.versions?.length ? '<span class="cv-command-sep">·</span><span class="cv-version-tag">' + copy('Phiên bản: ', 'Version: ') + '<strong>#' + doc.number + '</strong></span>' : '')
-    + '<small class="cv-command-doc-info" style="display:none">' + (doc ? escape(doc.title) : 'draft') + '</small>'
+    + (doc && data.versions?.length ? '<span class="cv-command-sep">·</span><span class="cv-version-tag">' + copy('Bản ', 'v') + '<strong>#' + doc.number + '</strong></span>' : '')
     + '</div>'
     + '<div class="cv-command-actions">'
-    + btn(icon('pulse') + ' ' + escape(copy('Chèn từ Git', 'Git Skills')), 'cv-insert-github', 'secondary small pulse-button', undefined, 'title="' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')) + '"')
-    + namedButton('✨ ' + copy('Tạo CV bằng AI', 'AI Generate'), 'cv-generate', 'secondary small', undefined, 'title="' + escape(copy('Tạo CV tối ưu theo JD từ dữ kiện thực tế', 'Generate CV matching JD with verified facts')) + '"')
-    + '<div class="cv-export-group">'
-    + (doc ? namedButton('PDF', 'cv-export', 'secondary small', 'pdf') + namedButton('DOCX', 'cv-export', 'secondary small', 'docx') : '')
-    + namedButton(t('cv.print'), 'cv-print', 'secondary small')
-    + '</div>'
-    + btn(icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')), 'cv-save-bar', 'primary small cv-save-btn', undefined, 'title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '"')
+    + btn(icon('pulse') + ' ' + escape(copy('Chèn từ Git', 'Git Evidence')), 'cv-insert-github', 'secondary small pulse-button', 'title="' + escape(copy('Chèn kỹ năng có bằng chứng từ GitHub', 'Insert evidence-backed GitHub skills')) + '"')
+    + btn(icon('bot') + ' ' + escape(copy('Tạo bằng AI', 'AI Generate')), 'cv-generate', 'secondary small', 'title="' + escape(copy('Tạo CV tối ưu theo JD từ dữ kiện thực tế', 'Generate CV matching JD with verified facts')) + '"')
+    + '<button type="button" class="button secondary small cv-focus-btn' + (isFocusMode ? ' active' : '') + '" data-act="cv-toggle-focus" title="' + escape(copy('Bật/tắt chế độ tập trung (Esc)', 'Toggle Focus mode (Esc)')) + '">'
+    + icon('grid') + ' ' + copy(isFocusMode ? 'Thoát tập trung' : 'Tập trung', isFocusMode ? 'Exit focus' : 'Focus mode') + '</button>'
+    + btn(icon('check') + ' ' + escape(copy('Lưu CV', 'Save CV')), 'cv-save-bar', 'primary small cv-save-btn', 'title="' + escape(copy('Lưu CV (Ctrl+S)', 'Save CV (Ctrl+S)')) + '"')
+    + '<button type="button" class="button secondary small cv-print-btn" data-act="cv-print" title="' + escape(copy('In hoặc lưu tệp PDF chuẩn A4', 'Print or export A4 PDF')) + '">'
+    + icon('file') + ' ' + copy('In / Xuất PDF', 'Print / PDF') + '</button>'
     + '<button type="button" class="button secondary small cv-toggle-intel-btn' + (!intelCollapsed ? ' active' : '') + '" data-act="cv-toggle-intel" title="' + escape(copy('Bật/tắt Bảng thiết kế & công cụ', 'Toggle design & tools hub')) + '">'
-    + '⚙️ ' + escape(copy(intelCollapsed ? 'Thiết kế & Công cụ' : 'Thu gọn', intelCollapsed ? 'Design & Tools' : 'Collapse')) + '</button>'
+    + icon('settings') + ' ' + escape(copy(intelCollapsed ? 'Công cụ' : 'Thu gọn', intelCollapsed ? 'Tools' : 'Collapse')) + '</button>'
     + '</div>'
     + '</div>'
     + '</section>';
@@ -1406,13 +1406,13 @@ export function liveCV(state, runtime, data) {
 
   const structured = parseCVForReference(draft.body, draft.name, draft.role);
 
-  // LEFT PANEL: EDITOR (Reactive Resume v6 Accordion Layout)
+  // LEFT PANEL: EDITOR (Collapsible Section Architecture, Zero Clutter)
   const editorPanel = '<article class="panel cv-editor cv-panel-editor">'
-    + '<div class="panel-head cv-editor-header" style="margin-bottom:6px">'
+    + '<div class="panel-head cv-editor-header">'
     + '<h2 class="panel-title">' + copy('Nội dung CV', 'Resume Content') + '</h2>'
     + '</div>'
     + '<div class="cv-mode-tabs" role="tablist">'
-    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Form Sections') + '</button>'
+    + '<button type="button" class="button' + (editorMode === 'structured' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="structured">' + copy('📋 Form cấu trúc', '📋 Structured Form') + '</button>'
     + '<button type="button" class="button' + (editorMode === 'raw' ? ' active' : '') + '" data-act="cv-editor-mode" data-id="raw">' + copy('📝 Văn bản thô', '📝 Raw Markdown') + '</button>'
     + '</div>'
     + '<fieldset class="cv-controls"' + (busy ? ' disabled' : '') + '><form id="cv-form" class="cv-controls">'
@@ -1421,21 +1421,13 @@ export function liveCV(state, runtime, data) {
     + field(t('cv.name'), '<input name="name" maxlength="120" placeholder="' + escape(copy('Họ và tên', 'Full Name')) + '" value="' + escape(draft.name) + '">')
     + field(t('cv.role'), '<input name="role" maxlength="70" placeholder="' + escape(copy('Chức danh chuyên môn', 'Professional Title')) + '" value="' + escape(draft.role) + '">')
     + '</div>'
-    + (editorMode === 'structured'
-      ? field(copy('Thông tin liên hệ', 'Contact info'), '<input name="cv-struct-contact" maxlength="150" placeholder="'
-          + escape(copy('Email | Số điện thoại | GitHub | Địa điểm...', 'Email | Phone | GitHub | Location...')) + '" value="' + escape(structured.contact || '') + '">')
-      : '')
+    + field(copy('Thông tin liên hệ', 'Contact info'), '<input name="cv-struct-contact" maxlength="150" placeholder="'
+        + escape(copy('Email | Số điện thoại | GitHub | Địa điểm...', 'Email | Phone | GitHub | Location...')) + '" value="' + escape(structured.contact || '') + '">')
     + '</div>'
     + (editorMode === 'structured'
       ? renderStructuredSections(structured, copy, escape, data.activeSection)
-        + '<div class="cv-raw-sync-wrap">'
-        + '<div class="cv-raw-sync-header">'
-        + '<span>📝 ' + copy('Đồng bộ văn bản thô (Markdown)', 'Raw Markdown Sync') + '</span>'
-        + '<small>' + copy('Tự động cập nhật hai chiều', 'Bidirectional sync') + '</small>'
-        + '</div>'
-        + '<textarea name="body" rows="3" class="cv-raw-sync-input" maxlength="20000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'
-        + '</div>'
-      : field(t('cv.content'), '<textarea name="body" rows="14" maxlength="20000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'))
+        + '<textarea name="body" class="cv-hidden-raw" style="display:none" maxlength="30000">' + escape(draft.body) + '</textarea>'
+      : field(t('cv.content'), '<textarea name="body" rows="20" class="auto-scale-textarea cv-raw-textarea" maxlength="30000" placeholder="' + escape(t('cv.placeholder')) + '" required>' + escape(draft.body) + '</textarea>'))
     + '<details class="cv-drawer-card">'
     + '<summary class="cv-drawer-head">📁 ' + copy('Tải lên CV & Chọn bản đã lưu', 'Import File & Saved CVs') + '</summary>'
     + '<div class="cv-drawer-body">'
@@ -1482,14 +1474,22 @@ export function liveCV(state, runtime, data) {
   // CENTER PANEL: PREVIEW (Reactive Resume v6 Centered A4 Canvas)
   const previewPanel = '<article class="panel cv-preview cv-panel-preview">'
     + '<div class="cv-preview-header-bar">'
-    + '<div class="tabs" role="group" aria-label="' + copy('Chọn mẫu CV', 'Select template') + '">' + ['plain', 'tech', 'reference'].map(key => btn(escape(t('cv.' + key)), 'cv-template', '',
-      attr('id', key) + ' aria-pressed="' + (state.template === key) + '"')).join('') + '</div>'
-    + '<div class="cv-zoom-controls">'
-    + '<button type="button" class="button' + (zoom === '85' ? ' active' : '') + '" data-act="cv-zoom" data-id="85">85%</button>'
-    + '<button type="button" class="button' + (zoom === '100' ? ' active' : '') + '" data-act="cv-zoom" data-id="100">100%</button>'
-    + '<button type="button" class="button' + (zoom === '115' ? ' active' : '') + '" data-act="cv-zoom" data-id="115">115%</button>'
-    + '<button type="button" class="button' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom" data-id="fit" title="' + copy('Vừa chiều rộng màn hình', 'Fit to width') + '">' + copy('Vừa', 'Fit') + '</button>'
+    + '<div class="tabs cv-template-tabs" role="group" aria-label="' + copy('Chọn mẫu CV', 'Select template') + '">'
+    + [
+        ['reference', copy('Theo mẫu (Executive)', 'Executive')],
+        ['tech', copy('Kỹ thuật (Tech)', 'Tech')],
+        ['plain', copy('Tối giản (Classic)', 'Classic')]
+      ].map(([key, label]) => btn(escape(label), 'cv-template', (state.template === key ? 'active' : ''), attr('id', key) + ' aria-pressed="' + (state.template === key) + '"')).join('')
     + '</div>'
+    + '<div class="cv-zoom-controls">'
+    + '<button type="button" class="button quiet small cv-zoom-step-btn" data-act="cv-zoom-out" title="' + copy('Thu nhỏ (−)', 'Zoom out (−)') + '">−</button>'
+    + ['85', '100', '115', '125'].map(lvl => '<button type="button" class="button small' + (zoom === lvl ? ' active' : '') + '" data-act="cv-zoom" data-id="' + lvl + '">' + lvl + '%</button>').join('')
+    + '<button type="button" class="button small' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom" data-id="fit" title="' + copy('Vừa chiều rộng màn hình', 'Fit to width') + '">' + copy('Vừa', 'Fit') + '</button>'
+    + '<button type="button" class="button quiet small cv-zoom-step-btn" data-act="cv-zoom-in" title="' + copy('Phóng to (+)', 'Zoom in (+)') + '">+</button>'
+    + '</div>'
+    + '<button type="button" class="button secondary small cv-preview-only-btn' + (isPreviewOnly ? ' active' : '') + '" data-act="cv-toggle-preview-only" title="' + escape(copy('Xem riêng bản in (ẩn các thanh bên)', 'Preview only (hide side panels)')) + '">'
+    + icon('search') + ' ' + copy(isPreviewOnly ? 'Đóng xem in' : 'Xem bản in', isPreviewOnly ? 'Exit Preview' : 'Preview')
+    + '</button>'
     + '<span class="cv-page-indicator">📄 ' + copy('A4 Chuẩn', 'Standard A4') + '</span>'
     + '<span class="cv-direct-edit-tip">' + copy('✏️ Sửa trực tiếp trên CV', '✏️ Click on CV to edit') + '</span>'
     + '</div>'
@@ -1498,18 +1498,35 @@ export function liveCV(state, runtime, data) {
       ? renderReferenceCV(draft)
       : '<div class="cv-paper" data-template="' + escape(state.template) + '"><h2 id="cv-name" contenteditable="true" spellcheck="false">' + escape(draft.name)
         + '</h2><p id="cv-role" contenteditable="true" spellcheck="false">' + escape(draft.role) + '</p><div class="cv-body" id="cv-body" contenteditable="true" spellcheck="false">' + escape(draft.body || t('cv.empty')) + '</div></div>')
-    + '</div>'
-    + '<div class="action-row cv-exports">' + (doc ? namedButton('PDF', 'cv-export', 'secondary small', 'pdf') + namedButton('DOCX', 'cv-export', 'secondary small', 'docx') : '')
-    + namedButton(t('cv.print'), 'cv-print', 'secondary small') + '</div></article>';
+    + '</div></article>';
 
-  // RIGHT PANEL: DESIGN & TOOLS (Thiết kế & Công cụ)
+  // RIGHT PANEL: CONTEXTUAL DESIGN & TOOLS HUB (Thiết kế & Công cụ)
   const atsEnabled = (draft.body.trim().length > 0 || cv) && !busy;
 
   let intelBody = '';
   if (intelTab === 'design') {
     intelBody = '<div class="cv-intel-content cv-design-tab">'
       + '<div class="cv-design-section">'
-      + '<h4>' + copy('Mẫu giao diện CV', 'Resume Templates') + '</h4>'
+      + '<h4>' + copy('Kiểu chữ & Cỡ chữ chuẩn A4', 'A4 Typography Standards') + '</h4>'
+      + '<div class="cv-typography-guide">'
+      + '<p>' + copy('Các mẫu CV đã được tinh chỉnh tỷ lệ chữ (font-scale) chuẩn hóa quốc tế: Tiêu đề lớn 20pt, tên mục 12pt in hoa, nội dung 10pt với khoảng cách dòng 1.45 chống tràn trang khi xuất PDF.', 'Typography is calibrated to international standards: 20pt header, 12pt section titles, 10pt body text with 1.45 line-height preventing page overflows.') + '</p>'
+      + '</div>'
+      + '</div>'
+      + '<div class="cv-design-section">'
+      + '<h4>' + copy('Khoảng cách lề trang', 'Margins & Spacing') + '</h4>'
+      + '<div class="cv-typography-guide">'
+      + '<p>' + copy('Khổ giấy A4 210mm × 297mm với lề an toàn 18mm hai bên và 16mm trên dưới, đảm bảo máy in không bị cắt mất chữ.', 'Standard A4 210mm × 297mm with 18mm lateral margin and 16mm vertical safe area for zero-bleed printing.') + '</p>'
+      + '</div>'
+      + '</div>'
+      + '<div class="cv-ai-guide-card">'
+      + '<strong>💡 ' + copy('Mẹo xuất PDF chuẩn A4', 'A4 Export Tip') + '</strong>'
+      + '<p>' + copy('Dùng nút In / Xuất PDF trên thanh công cụ và chọn "Lưu dưới dạng PDF" với khổ giấy A4, tỷ lệ mặc định để có bản in sắc nét nhất.', 'Use Print / PDF on the toolbar and choose A4 paper size for the crispest vector output.') + '</p>'
+      + '</div>'
+      + '</div>';
+  } else if (intelTab === 'templates') {
+    intelBody = '<div class="cv-intel-content cv-design-tab">'
+      + '<div class="cv-design-section">'
+      + '<h4>' + copy('Chọn mẫu giao diện CV', 'Select Resume Template') + '</h4>'
       + '<div class="cv-template-cards">'
       + '<div class="cv-tpl-card' + (state.template === 'reference' ? ' selected' : '') + '" data-act="cv-template" data-id="reference">'
       + '<div class="cv-tpl-badge">★ Recommended</div>'
@@ -1525,18 +1542,6 @@ export function liveCV(state, runtime, data) {
       + '<p>' + copy('Phong cách truyền thống, font có chân (Serif), chuẩn mực và trang nhã.', 'Traditional serif typography, clean and elegant.') + '</p>'
       + '</div>'
       + '</div></div>'
-      + '<div class="cv-design-section">'
-      + '<h4>' + copy('Thu phóng trang giấy', 'Canvas Zoom') + '</h4>'
-      + '<div class="cv-zoom-btn-group">'
-      + '<button type="button" class="button secondary small' + (zoom === '85' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="85">85%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === '100' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="100">100%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === '115' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="115">115%</button>'
-      + '<button type="button" class="button secondary small' + (zoom === 'fit' ? ' active' : '') + '" data-act="cv-zoom-panel" data-id="fit">' + copy('Vừa màn hình', 'Fit Width') + '</button>'
-      + '</div></div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>💡 ' + copy('Mẹo xuất PDF chuẩn A4', 'A4 Export Tip') + '</strong>'
-      + '<p>' + copy('Dùng nút In/Lưu PDF trên thanh công cụ và chọn "Lưu dưới dạng PDF" với khổ giấy A4, tỷ lệ mặc định để có bản in sắc nét nhất.', 'Use Print to PDF and choose A4 size for the crispest output.') + '</p>'
-      + '</div>'
       + '</div>';
   } else if (intelTab === 'github') {
     const verifiedScores = verifiedCVSkills(data.scores);
@@ -1581,19 +1586,6 @@ export function liveCV(state, runtime, data) {
           + muted(ats.disclaimer)
           + '<ul class="cv-checks">' + ats.suggestions.map(suggestion => '<li>' + escape(suggestion.message) + '</li>').join('') + '</ul>'
         : '') + '</div></div>';
-  } else if (intelTab === 'ai') {
-    intelBody = '<div class="cv-intel-content">'
-      + '<div style="margin-bottom:8px">' + namedButton(copy('✨ Tạo CV bằng AI', '✨ Generate CV with AI'), 'cv-generate', 'primary') + '</div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>🛡️ ' + copy('Nguyên tắc Anti-Hallucination', 'Anti-Hallucination Policy') + '</strong>'
-      + '<p>' + copy('Hệ thống chỉ tổng hợp kinh nghiệm từ CV nguồn đã lưu hoặc bằng chứng commit thực tế từ GitHub của bạn. AI không tự tạo thành tích giả.', 'The AI only synthesizes facts from your verified source CV or actual GitHub commits.') + '</p>'
-      + '</div>'
-      + '<div class="cv-ai-guide-card">'
-      + '<strong>💡 ' + copy('Công thức STAR viết Bullet Point', 'STAR Framework for Bullets') + '</strong>'
-      + '<p><strong>S / T:</strong> ' + copy('Bối cảnh & nhiệm vụ cụ thể.', 'Situation & specific task.') + '<br>'
-      + '<strong>A:</strong> ' + copy('Hành động & Công nghệ sử dụng.', 'Action & technologies used.') + '<br>'
-      + '<strong>R:</strong> ' + copy('Kết quả định lượng đo lường được.', 'Measurable quantitative results.') + '</p>'
-      + '</div></div>';
   } else {
     // References Tab
     intelBody = '<div class="cv-intel-content">'
@@ -1610,24 +1602,30 @@ export function liveCV(state, runtime, data) {
   }
 
   const intelPanel = '<article class="panel cv-intel cv-panel-intel">'
-    + '<div class="panel-head cv-intel-header" style="margin-bottom:6px">'
+    + '<div class="panel-head cv-intel-header">'
     + '<h2 class="panel-title">' + copy('Thiết kế & Công cụ', 'Design & Tools') + '</h2>'
     + '<button type="button" class="button quiet small cv-intel-close-btn" data-act="cv-toggle-intel" title="' + escape(copy('Đóng bảng công cụ', 'Close tools panel')) + '">✕ ' + copy('Đóng', 'Close') + '</button>'
     + '</div>'
     + '<div class="cv-intel-tabs" role="tablist">'
     + '<button type="button" class="button' + (intelTab === 'design' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="design">' + copy('🎨 Thiết kế', '🎨 Design') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng Git', '📁 Git Evidence') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', '🎯 ATS Review') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'ai' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ai">' + copy('✨ Trợ lý AI', '✨ AI Assistant') + '</button>'
-    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Mẫu CV', '🔍 References') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'templates' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="templates">' + copy('🖼️ Mẫu CV', '🖼️ Templates') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'github' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="github">' + copy('📁 Minh chứng', '📁 Git Evidence') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'ats' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="ats">' + copy('🎯 Tối ưu ATS', '🎯 ATS') + '</button>'
+    + '<button type="button" class="button' + (intelTab === 'references' ? ' active' : '') + '" data-act="cv-intel-tab" data-id="references">' + copy('🔍 Tham khảo', '🔍 References') + '</button>'
     + '</div>'
     + intelBody
     + '</article>';
 
+  const workspaceClassList = ['columns', 'cv-workspace-3col'];
+  if (intelCollapsed) workspaceClassList.push('intel-collapsed');
+  else workspaceClassList.push('intel-open');
+  if (isPreviewOnly) workspaceClassList.push('preview-only');
+  if (isFocusMode) workspaceClassList.push('in-focus-mode');
+
   return heading(t('nav.cv'), t('cv.intro')) + feedback(data, 'cv')
     + cvCommandBar
     + loadingNotice
-    + '<div class="columns cv-workspace-3col' + (intelCollapsed ? ' intel-collapsed' : ' intel-open' + (intelExplicitOpen ? ' intel-explicit-open' : '')) + '">'
+    + '<div class="' + workspaceClassList.join(' ') + '">'
     + editorPanel
     + previewPanel
     + intelPanel

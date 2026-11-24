@@ -12,8 +12,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b",
+    "test": "npm run test:evidence && npm run test:roadmap && npm run test:cv",
     "test:evidence": "node --test tests/evidence-url.test.js",
-    "test:roadmap": "node --test tests/roadmap-reevaluation.test.js tests/roadmap-connectors.test.js tests/roadmap-selection.test.js tests/roadmap-render.test.js"
+    "test:roadmap": "node --test tests/roadmap-reevaluation.test.js tests/roadmap-connectors.test.js tests/roadmap-selection.test.js tests/roadmap-render.test.js",
+    "test:cv": "node --test tests/cv-studio-regression.test.js"
   },
   "dependencies": {
     "react": "19.3.1",

@@ -454,72 +454,126 @@
    CV STUDIO 3-PANEL WORKSPACE & REDESIGN
    ========================================================================== */
 
+.studio:has(.cv-workspace-3col) .page-heading {
+  display: none !important;
+}
+.studio:has(.cv-workspace-3col) .workspace-content {
+  padding: 10px 18px !important;
+  overflow: hidden !important;
+}
+
 .cv-workspace-3col {
   display: grid;
-  grid-template-columns: minmax(320px, 32%) minmax(460px, 1fr) minmax(300px, 28%);
+  grid-template-columns: minmax(320px, 28%) minmax(460px, 48%) minmax(280px, 24%);
   gap: 16px;
-  align-items: start;
-  margin-top: 14px;
+  align-items: stretch;
+  height: calc(100vh - 128px);
+  max-height: calc(100vh - 128px);
+  min-height: 540px;
+  margin-top: 10px;
   position: relative;
 }
 
 .cv-workspace-3col.intel-collapsed {
-  grid-template-columns: minmax(340px, 35%) 1fr;
+  grid-template-columns: minmax(340px, 32%) 1fr;
 }
 .cv-workspace-3col.intel-collapsed .cv-panel-intel {
   display: none !important;
 }
 
-/* Mentor Focus Mode: When AI Mentor is open, keep clean 2-column workspace (Editor ~38% + A4 Preview ~62%) */
+/* Preview Only Mode: hides both side panels to inspect document full-width */
+.cv-workspace-3col.preview-only {
+  grid-template-columns: 1fr !important;
+}
+.cv-workspace-3col.preview-only .cv-panel-editor,
+.cv-workspace-3col.preview-only .cv-panel-intel {
+  display: none !important;
+}
+.cv-workspace-3col.preview-only .cv-panel-preview {
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* AI Mentor Coexistence: spacious 2-column workspace (Editor ~35% + A4 Preview ~65%) */
 .workspace-body.has-mentor .cv-workspace-3col {
-  grid-template-columns: minmax(320px, 38%) 1fr !important;
+  grid-template-columns: minmax(320px, 35%) 1fr !important;
   position: relative;
 }
 .workspace-body.has-mentor .cv-workspace-3col .cv-panel-intel {
   display: none !important;
 }
 
-/* Slide-over Flyout Drawer: When user explicitly opens tools while AI Chatbot is active */
-.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open {
-  grid-template-columns: minmax(320px, 38%) 1fr !important;
+/* Distraction-free Focus Mode */
+.studio.cv-focus-mode {
+  grid-template-columns: 1fr !important;
 }
-.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open .cv-panel-intel {
-  display: flex !important;
-  position: absolute !important;
-  top: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 380px !important;
-  max-width: calc(100% - 24px) !important;
-  z-index: 45 !important;
-  background: var(--surface) !important;
-  border: 1px solid var(--accent) !important;
-  border-radius: 12px !important;
-  box-shadow: -10px 0 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(139, 92, 246, 0.25) !important;
-  overflow-y: auto !important;
-  padding: 16px !important;
-  animation: cv-drawer-slide 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+.studio.cv-focus-mode .sidebar {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
-.workspace-body.has-mentor .cv-workspace-3col.intel-explicit-open .cv-panel-intel .cv-intel-close-btn {
-  display: inline-flex !important;
+.studio.cv-focus-mode .workspace {
+  width: 100vw !important;
+  max-width: 100vw !important;
 }
-
-@keyframes cv-drawer-slide {
-  from {
-    opacity: 0;
-    transform: translateX(36px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.studio.cv-focus-mode .workspace-top {
+  padding: 4px 16px !important;
+  min-height: 38px !important;
+}
+.studio.cv-focus-mode .workspace-content {
+  padding: 8px 16px 16px !important;
+}
+.studio.cv-focus-mode .page-heading {
+  display: none !important;
+}
+.studio.cv-focus-mode .cv-workspace-3col {
+  height: calc(100vh - 84px) !important;
+  max-height: calc(100vh - 84px) !important;
 }
 
 /* Panel Headers & Sub-tabs */
 .cv-panel-editor, .cv-panel-preview, .cv-panel-intel {
   min-width: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.cv-panel-editor {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+}
+
+.cv-panel-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+.cv-panel-intel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
 }
 
 .cv-intel-header {
@@ -620,37 +674,36 @@ form.cv-controls {
 
 /* Responsive Segmented Tabs in Intel Panel (Chống tràn tab) */
 .cv-intel-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   width: 100%;
   min-width: 0;
-  padding: 5px;
+  padding: 4px;
   background: var(--inset);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   margin-bottom: 14px;
   overflow: visible;
 }
 
 .cv-intel-tabs .button {
+  flex: 1 1 calc(33.333% - 4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 0;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 4px;
+  min-width: 68px;
+  min-height: 34px;
+  padding: 6px 4px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
   text-align: center;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
   cursor: pointer;
   transition: background .2s, color .2s, border-color .2s;
 }
@@ -1159,34 +1212,76 @@ form.cv-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.cv-template-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--inset);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.cv-template-tabs .button {
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+}
+.cv-template-tabs .button.active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .cv-zoom-controls {
   display: flex;
+  align-items: center;
   gap: 2px;
   background: var(--inset);
-  padding: 2px;
-  border-radius: 6px;
+  padding: 2px 4px;
+  border-radius: 8px;
   border: 1px solid var(--line);
 }
 
 .cv-zoom-controls button {
-  padding: 2px 8px;
+  padding: 3px 8px;
   font-size: 11px;
   background: transparent;
   border: none;
   color: var(--muted);
   cursor: pointer;
   border-radius: 4px;
+  transition: all 0.15s ease;
 }
 
 .cv-zoom-controls button.active {
   background: var(--surface);
   color: var(--ink);
   font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.cv-zoom-step-btn {
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  padding: 2px 6px !important;
+  min-width: 22px;
+}
+
+.cv-focus-btn.active,
+.cv-preview-only-btn.active {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+  border-color: var(--accent) !important;
 }
 
 .cv-page-indicator {
@@ -1201,20 +1296,20 @@ form.cv-controls {
   border: 1px solid var(--line);
 }
 
-.cv-page-indicator.overflow {
-  color: var(--amber);
-  border-color: rgba(245, 158, 11, 0.4);
+.cv-direct-edit-tip {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.8;
 }
 
 .cv-preview-viewport {
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 16px 12px;
-  max-height: calc(100vh - 210px);
-  min-height: 580px;
-  background: rgba(0, 0, 0, 0.28);
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  padding: 24px 16px;
+  background: #090d16;
+  border: none;
   display: flex;
   justify-content: safe center;
   align-items: flex-start;
@@ -3768,7 +3863,7 @@ body.print-cv .cv-paper {
 }
 .evidence-action-row.modal-action-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   margin-top: 16px;
   padding-top: 12px;

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -56,6 +57,7 @@ logger = logging.getLogger(__name__)
 MAX_COMMITS_LIMIT = 1000
 MAX_PRS_LIMIT = 500
 MAX_PR_FILE_REQUESTS = 100
+MAX_COMMIT_FILE_REQUESTS = 100
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
@@ -115,6 +117,7 @@ async def verify_repository_contributions(
     job_id: str | None = None,
     report_id: int | None = None,
     persist: bool = True,
+    on_progress: Callable[[str, int], None] | None = None,
 ) -> RepositoryVerificationResponse:
     """Xác minh fork, quyền sở hữu và đóng góp thực tế từ GitHub API."""
     if request is None:
@@ -267,6 +270,9 @@ async def verify_repository_contributions(
         collection_truncated = True
 
     try:
+        if on_progress:
+            on_progress("verifying_fork_and_authorship", 26)
+
         raw_commits = await api_client.list_commits(
             owner=owner,
             repo=repo_name,
@@ -278,7 +284,56 @@ async def verify_repository_contributions(
             on_truncated=mark_collection_truncated,
         )
 
+        if on_progress:
+            on_progress("verifying_fork_and_authorship", 27)
+
         sem = asyncio.Semaphore(10)
+
+        # Pre-select bounded commits for detailed file inspections
+        commits_to_fetch_details: set[str] = set()
+        if collect_score_files:
+            for c in raw_commits:
+                sha = c.get("sha", "")
+                if not sha:
+                    continue
+                author_obj = c.get("author")
+                author_id = (
+                    str(author_obj.get("id"))
+                    if isinstance(author_obj, dict) and author_obj.get("id")
+                    else None
+                )
+                author_login = (
+                    author_obj.get("login") if isinstance(author_obj, dict) else None
+                )
+                author_type = (
+                    author_obj.get("type", "User")
+                    if isinstance(author_obj, dict)
+                    else "User"
+                )
+                commit_meta = c.get("commit") or {}
+                git_author = commit_meta.get("author") or {}
+                git_author_name = git_author.get("name", "")
+                is_bot = (
+                    author_type.lower() == "bot"
+                    or (author_login and "[bot]" in author_login.lower())
+                    or "[bot]" in git_author_name.lower()
+                )
+                is_merge = len(c.get("parents", [])) > 1
+                id_match = bool(
+                    auth_github_user_id
+                    and author_id
+                    and author_id == str(auth_github_user_id)
+                )
+                login_match = bool(
+                    auth_github_login
+                    and author_login
+                    and author_login.lower() == auth_github_login.lower()
+                )
+                if (id_match or login_match) and not is_bot and not is_merge:
+                    if len(commits_to_fetch_details) < MAX_COMMIT_FILE_REQUESTS:
+                        commits_to_fetch_details.add(sha)
+                    else:
+                        scoring_files_partial = True
 
         async def _inspect_commit(
             c: dict[str, Any],
@@ -350,6 +405,18 @@ async def verify_repository_contributions(
             ):
                 additions = int(c_stats.get("additions", 0))
                 deletions = int(c_stats.get("deletions", 0))
+            elif not is_fork and not is_author_verified:
+                additions = 0
+                deletions = 0
+            elif (
+                collect_score_files
+                and is_author_verified
+                and not is_merge
+                and sha not in commits_to_fetch_details
+            ):
+                additions = 0
+                deletions = 0
+                scoring_files_partial = True
             else:
                 try:
                     async with sem:
@@ -496,6 +563,9 @@ async def verify_repository_contributions(
     completed_pr_files = 0
 
     try:
+        if on_progress:
+            on_progress("verifying_fork_and_authorship", 28)
+
         raw_prs = await api_client.list_pull_requests(
             owner=owner,
             repo=repo_name,
@@ -507,8 +577,11 @@ async def verify_repository_contributions(
             on_truncated=mark_collection_truncated,
         )
 
-        requested_pr_files = 0
         pr_file_rate_limited = False
+        sem_pr = asyncio.Semaphore(10)
+
+        # Pre-filter PRs by number and time window
+        filtered_prs = []
         for pr in raw_prs:
             pr_num = pr.get("number")
             if not pr_num or pr_num in seen_pr_numbers:
@@ -523,6 +596,43 @@ async def verify_repository_contributions(
                         continue
                     if end_utc and parsed_dt >= end_utc:
                         continue
+            filtered_prs.append(pr)
+
+        # Pre-determine which PRs get files fetched to respect MAX_PR_FILE_REQUESTS cleanly
+        prs_to_fetch_files: set[int] = set()
+        if collect_score_files:
+            for pr in filtered_prs:
+                pr_user = pr.get("user") or {}
+                pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
+                pr_user_login = pr_user.get("login")
+                base_data = pr.get("base") or {}
+                id_match = bool(
+                    auth_github_user_id
+                    and pr_user_id
+                    and pr_user_id == str(auth_github_user_id)
+                )
+                login_match = bool(
+                    auth_github_login
+                    and pr_user_login
+                    and pr_user_login.lower() == auth_github_login.lower()
+                )
+                if (
+                    (id_match or login_match)
+                    and pr_user.get("type") != "Bot"
+                    and base_data.get("ref") == target_branch
+                ):
+                    eligible_pr_files += 1
+                    if len(prs_to_fetch_files) < MAX_PR_FILE_REQUESTS:
+                        pr_num_val = pr.get("number")
+                        if pr_num_val is not None:
+                            prs_to_fetch_files.add(int(pr_num_val))
+                    else:
+                        scoring_files_partial = True
+
+        async def _inspect_pr(pr: dict[str, Any]) -> VerificationEvidenceItem:
+            nonlocal completed_pr_files, pr_file_rate_limited, scoring_files_partial
+            pr_num = pr.get("number")
+            created_at_str = pr.get("created_at")
 
             pr_user = pr.get("user") or {}
             pr_user_id = str(pr_user.get("id")) if pr_user.get("id") else None
@@ -554,28 +664,20 @@ async def verify_repository_contributions(
                     f"Pull Request #{pr_num} do người dùng tạo "
                     f"({pr_state}, {merge_text})."
                 )
-                verified_prs_count += 1
             else:
                 pr_v_status = "unverified"
                 rationale = f"Pull Request #{pr_num} do @{pr_user_login} tạo."
-                unverified_prs_count += 1
 
             changed_files = []
-            if (
-                collect_score_files
-                and is_pr_author
-                and pr_user.get("type") != "Bot"
-                and base_data.get("ref") == target_branch
-            ):
-                eligible_pr_files += 1
-                if pr_file_rate_limited or requested_pr_files >= MAX_PR_FILE_REQUESTS:
+            if pr_num is not None and int(pr_num) in prs_to_fetch_files:
+                if pr_file_rate_limited:
                     scoring_files_partial = True
                 else:
-                    requested_pr_files += 1
                     try:
-                        files = await api_client.get_pull_request_files(
-                            owner, repo_name, int(pr_num)
-                        )
+                        async with sem_pr:
+                            files = await api_client.get_pull_request_files(
+                                owner, repo_name, int(pr_num)
+                            )
                         if isinstance(files, list) and len(files) <= 300:
                             changed_files = _scoring_files(files)
                             completed_pr_files += 1
@@ -588,30 +690,44 @@ async def verify_repository_contributions(
                         scoring_files_partial = True
                     except GitHubApiError:
                         scoring_files_partial = True
-            evidence_list.append(
-                VerificationEvidenceItem(
-                    evidence_type="pull_request",
-                    target_identifier=str(pr_num),
-                    verification_status=pr_v_status,
-                    actor_login=pr_user_login,
-                    actor_id=pr_user_id,
-                    actor_type=pr_user.get("type", "User"),
-                    html_url=pr.get("html_url"),
-                    title_or_message=pr.get("title", ""),
-                    pr_state=pr_state,
-                    pr_merged=pr_merged,
-                    source_repo=head_repo.get("full_name"),
-                    target_repo=base_repo.get("full_name"),
-                    recorded_at=created_at_str,
-                    rationale=rationale,
-                    metadata={
-                        "number": pr_num,
-                        "state": pr_state,
-                        "merged": pr_merged,
-                        "changed_files": changed_files,
-                    },
-                )
+
+            return VerificationEvidenceItem(
+                evidence_type="pull_request",
+                target_identifier=str(pr_num),
+                verification_status=pr_v_status,
+                actor_login=pr_user_login,
+                actor_id=pr_user_id,
+                actor_type=pr_user.get("type", "User"),
+                html_url=pr.get("html_url"),
+                title_or_message=pr.get("title", ""),
+                pr_state=pr_state,
+                pr_merged=pr_merged,
+                source_repo=head_repo.get("full_name"),
+                target_repo=base_repo.get("full_name"),
+                recorded_at=created_at_str,
+                rationale=rationale,
+                metadata={
+                    "number": pr_num,
+                    "state": pr_state,
+                    "merged": pr_merged,
+                    "changed_files": changed_files,
+                },
             )
+
+        if filtered_prs:
+            processed_prs = await asyncio.gather(
+                *[_inspect_pr(pr) for pr in filtered_prs]
+            )
+            for ev in processed_prs:
+                if ev is not None:
+                    evidence_list.append(ev)
+                    if ev.verification_status == "verified":
+                        verified_prs_count += 1
+                    else:
+                        unverified_prs_count += 1
+
+        if on_progress:
+            on_progress("verifying_fork_and_authorship", 29)
 
     except GitHubTokenRevokedError as exc:
         raise HTTPException(

@@ -132,12 +132,13 @@ export function login(live=false) {
 
 export function studioShell(page,content,user,mentorOpen,live=false) {
   const label = t('nav.' + page);
+  const isFocus = page === 'cv' && typeof document !== 'undefined' && document.body.classList.contains('cv-focus-mode');
   const links = items => items.map(([key,glyph]) => {
     const name = t('nav.' + key);
     return '<a class="nav-link" href="#studio/' + key + '"' + labelAttr(name)
       + (page === key ? ' aria-current="page"' : '') + '>' + icon(glyph) + '<span class="nav-label">' + escape(name) + '</span></a>';
   }).join('');
-  return '<div class="studio"><a class="skip-link" href="#main-view">' + escape(t('nav.skip')) + '</a><aside class="sidebar">' + brand(true)
+  return '<div class="studio' + (isFocus ? ' cv-focus-mode' : '') + '"><a class="skip-link" href="#main-view">' + escape(t('nav.skip')) + '</a><aside class="sidebar">' + brand(true)
     + '<nav id="studio-menu" class="studio-menu" aria-label="Studio">' + links(pages.slice(0,5)) + '<div class="nav-divider"></div>' + links(pages.slice(5)) + '</nav>'
     + '<div class="sidebar-foot"><div class="demo-profile"><span class="profile-avatar" aria-hidden="true">' + escape(user.name?.slice(0,1).toUpperCase() || '?') + '</span><div><strong>' + escape(user.name)
     + '</strong><small>' + escape((live ? '' : '@') + user.handle) + '</small></div></div>' + btn(icon('logout') + '<span class="nav-label">'
