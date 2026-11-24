@@ -14,7 +14,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
     dashboardRepos:null, dashboardRadar:[], dashboardPartial:false, dashboardLoadErrors:[],
-    road:null, tracking:null, pendingRoadmapFocus:null, history:[], historyLoaded:false, roadAction:null, reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
+    road:null, tracking:null, pendingRoadmapFocus:null, history:[], historyLoaded:false, roadAction:null, roadEvidenceDraft:null, roadNotice:null, reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
     errors:{}, messages:{}, analysisOutcome:null, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
@@ -73,7 +73,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   async function work(key,action,roadAction='load') {
     if (data.busy.has(key)) return false;
     data.busy.add(key);
-    if (key === 'road') data.roadAction = roadAction;
+    if (key === 'road') { data.roadAction = roadAction; data.roadNotice = null; }
     delete data.errors[key];
     delete data.messages[key];
     if (key === 'repos') data.analysisOutcome = null;
@@ -1594,6 +1594,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         urlInput?.focus();
         return;
       }
+      if (data.busy.has('road')) return;
+      data.roadEvidenceDraft = {roadId:data.road?.id,milestoneId,url,note};
       if (validationMessage) {
         validationMessage.textContent = '';
         validationMessage.hidden = true;
@@ -1608,11 +1610,15 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.tracking = await request(trackingPath());
         if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
         await roadHistory();
-        data.messages.road = res.duplicate
-          ? copy('Liên kết đã tồn tại; không tạo bản ghi trùng. Trạng thái xác minh đã được kiểm tra lại.', 'Link already exists; no duplicate was created. Verification was rechecked.')
-          : res.verification_status === 'verified'
-            ? copy('Minh chứng đáp ứng tiêu chí của mốc và đã được xác minh.', 'Evidence meets the milestone criteria and is verified.')
-            : copy('Đã lưu liên kết tự khai báo. Hãy phân tích GitHub và đánh giá lại để xác minh năng lực của mốc.', 'Self-reported link saved. Analyze GitHub and re-evaluate to verify milestone skills.');
+        data.roadEvidenceDraft = null;
+        const verified = res.verification_status === 'verified';
+        const title = res.duplicate
+          ? copy('Liên kết đã tồn tại; không tạo bản ghi trùng.', 'Link already exists; no duplicate created.')
+          : verified ? copy('Minh chứng đã được xác minh.', 'Evidence verified.')
+            : copy('Đã lưu minh chứng tự khai báo.', 'Self-reported evidence saved.');
+        data.roadNotice = {title,verified,detail:verified
+          ? copy('Đóng góp đáp ứng kỹ năng và điểm mục tiêu của mốc.', 'Contribution meets the milestone skill and target score.')
+          : copy('Chưa đủ bằng chứng xác minh năng lực của mốc. Hãy đồng bộ, phân tích GitHub và đánh giá lại.', 'Skill verification is not sufficient yet. Sync, analyze GitHub and re-evaluate.')};
       },'evidence');
     },
     'skill-form':form => work('skill',async () => {
