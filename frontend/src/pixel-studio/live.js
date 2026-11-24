@@ -387,8 +387,17 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         if (!report) return [];
         data.repoData[repo.id] ??= { errors: {} };
         data.repoData[repo.id].report = report;
-        const scores = await request('/scoring/repositories/' + repo.id + '/skills?report_id=' + report.id);
-        return scores.map(item => ({...item,repo}));
+        const [scores, collab, analysis] = await Promise.all([
+          request('/scoring/repositories/' + repo.id + '/skills?report_id=' + report.id).catch(() => []),
+          request(repository(repo) + '/collaboration').catch(() => null),
+          request(repository(repo) + '/analysis?report_id=' + report.id).catch(() => null)
+        ]);
+        if (collab) data.repoData[repo.id].collaboration = collab;
+        if (analysis) {
+          data.repoData[repo.id].analysis = analysis;
+          Object.assign(data.repoData[repo.id].report, analysis);
+        }
+        return (scores || []).map(item => ({...item,repo}));
       }))
     ]);
     if (token !== dashboardRequest) return;

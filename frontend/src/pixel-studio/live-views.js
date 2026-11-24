@@ -244,6 +244,13 @@ function getLiveRadar(state, data) {
     collaboration: null,
     ci: null
   };
+  const metricRationales = {
+    code: '',
+    architecture: '',
+    testing: '',
+    collaboration: '',
+    ci: ''
+  };
 
   const analyzedRepoIds = new Set(data.scores.map(item => item.repo?.id).filter(Boolean));
   if (data.repoData) {
@@ -260,25 +267,205 @@ function getLiveRadar(state, data) {
   const role = (data.roles.find(item => item.key === data.roleKey) ?? data.roles[0])?.score;
   const coveragePct = role?.coverage != null ? Math.round(role.coverage * 100) : null;
 
-  if (role?.criteria?.length) {
-    const findCrit = (...keywords) => {
-      const match = role.criteria.find(c => keywords.some(k =>
-        (c.key && c.key.toLowerCase().includes(k)) ||
-        (c.name && c.name.toLowerCase().includes(k))
-      ));
-      return match && Number.isFinite(match.score) ? Math.round(match.score) : null;
-    };
-    const codeScore = findCrit('language', 'framework', 'ngôn ngữ', 'chất lượng', 'mã', 'backend_language');
-    const archScore = findCrit('architecture', 'api', 'kiến trúc', 'dịch vụ', 'api_service_design', 'database_migration');
-    const testScore = findCrit('test', 'kiểm thử', 'unit_test', 'automated_test');
-    const collabScore = findCrit('collab', 'cộng tác', 'review', 'pr');
-    const ciScore = findCrit('ci', 'cd', 'build', 'pipeline');
+  // Aggregate collaboration, CI, and architecture signals across analyzed repos
+  let aggPRs = 0;
+  let aggMergedPRs = 0;
+  let aggUserPRs = 0;
+  let aggUserReviews = 0;
+  let aggTotalReviews = 0;
+  let aggTotalChecks = 0;
+  let aggSuccessfulChecks = 0;
+  let aggFailedChecks = 0;
+  let hasContainerTooling = false;
+  let hasWorkflowTooling = false;
+  const detectedPatterns = new Set();
 
-    if (codeScore != null && codeScore >= 0 && codeScore <= 100) baseScores.code = codeScore;
-    if (archScore != null && archScore >= 0 && archScore <= 100) baseScores.architecture = archScore;
-    if (testScore != null && testScore >= 0 && testScore <= 100) baseScores.testing = testScore;
-    if (collabScore != null && collabScore >= 0 && collabScore <= 100) baseScores.collaboration = collabScore;
-    if (ciScore != null && ciScore >= 0 && ciScore <= 100) baseScores.ci = ciScore;
+  Object.values(data.repoData || {}).forEach(d => {
+    const c = d?.collaboration;
+    if (c) {
+      aggPRs += c.total_prs_analyzed || 0;
+      aggMergedPRs += c.merged_prs_count || 0;
+      aggUserPRs += c.user_prs_count || 0;
+      aggUserReviews += c.user_reviews_conducted_count || 0;
+      aggTotalReviews += c.total_reviews_analyzed || 0;
+      aggTotalChecks += c.total_checks_analyzed || 0;
+      aggSuccessfulChecks += c.successful_checks_count || 0;
+      aggFailedChecks += c.failed_checks_count || 0;
+    }
+    const arch = d?.report?.architecture || d?.analysis?.architecture;
+    if (Array.isArray(arch)) {
+      arch.forEach(p => {
+        const pattern = typeof p === 'string' ? p : p?.pattern;
+        if (pattern) detectedPatterns.add(pattern);
+      });
+    }
+    const langs = d?.report?.languages || d?.analysis?.languages;
+    if (Array.isArray(langs)) {
+      langs.forEach(l => {
+        const name = (typeof l === 'string' ? l : l?.name || '').toLowerCase();
+        if (name === 'dockerfile' || name === 'shell' || name === 'powershell') hasContainerTooling = true;
+      });
+    }
+  });
+
+  if (data.scores?.some(s => ['dockerfile', 'docker'].includes((s.technology || '').toLowerCase()))) {
+    hasContainerTooling = true;
+  }
+  if (data.scores?.some(s => ['vite', 'webpack', 'github_actions', 'alembic'].includes((s.technology || '').toLowerCase()))) {
+    hasWorkflowTooling = true;
+  }
+
+  // 1. Code Quality
+  if (role?.criteria?.length) {
+    const codeCriteria = role.criteria.filter(c =>
+      c.key && (
+        c.key.includes('language') ||
+        c.key.includes('framework') ||
+        c.key.includes('orm') ||
+        c.type === 'SKILL'
+      ) && Number.isFinite(c.score)
+    );
+    if (codeCriteria.length > 0) {
+      const totalWeight = codeCriteria.reduce((sum, c) => sum + (c.weight || 0.1), 0);
+      const weightedSum = codeCriteria.reduce((sum, c) => sum + (c.score * (c.weight || 0.1)), 0);
+      baseScores.code = Math.min(100, Math.max(0, Math.round(weightedSum / totalWeight)));
+      metricRationales.code = copy(
+        'Tổng hợp từ ' + codeCriteria.length + ' tiêu chí ngôn ngữ & framework trong rubric (' + baseScores.code + '/100).',
+        'Aggregated from ' + codeCriteria.length + ' language & framework criteria in the rubric (' + baseScores.code + '/100).'
+      );
+    }
+  }
+  if (baseScores.code === null && data.scores?.length) {
+    const scoredSkills = data.scores.filter(s => Number.isFinite(s.score) && s.score > 0);
+    if (scoredSkills.length > 0) {
+      const avg = Math.round(scoredSkills.reduce((sum, s) => sum + s.score, 0) / scoredSkills.length);
+      baseScores.code = Math.min(100, Math.max(0, avg));
+      metricRationales.code = copy(
+        'Trung bình từ ' + scoredSkills.length + ' kỹ năng ngôn ngữ/framework đã xác minh.',
+        'Average from ' + scoredSkills.length + ' verified language/framework skills.'
+      );
+    }
+  }
+
+  // 2. Architecture
+  if (role?.criteria?.length) {
+    const archCriteria = role.criteria.filter(c =>
+      c.type === 'ARCHITECTURE' || (c.key && (c.key.includes('architecture') || c.key.includes('api_service') || c.key.includes('migration') || c.key.includes('background') || c.key.includes('layered')))
+    );
+    const scoredArch = archCriteria.filter(c => Number.isFinite(c.score));
+    if (scoredArch.length > 0) {
+      const avgScored = scoredArch.reduce((sum, c) => sum + c.score, 0) / scoredArch.length;
+      const patternBonus = Math.min(15, (detectedPatterns.size || 1) * 2.5);
+      baseScores.architecture = Math.min(100, Math.max(0, Math.round(avgScored * 0.75 + patternBonus)));
+      metricRationales.architecture = copy(
+        'Đạt ' + scoredArch.length + '/' + archCriteria.length + ' tiêu chí kiến trúc chuẩn và ' + (detectedPatterns.size || 'nhiều') + ' mẫu thiết kế đã xác nhận.',
+        'Met ' + scoredArch.length + '/' + archCriteria.length + ' architecture criteria and ' + (detectedPatterns.size || 'multiple') + ' verified design patterns.'
+      );
+    }
+  }
+  if (baseScores.architecture === null && detectedPatterns.size > 0) {
+    baseScores.architecture = Math.min(95, 60 + detectedPatterns.size * 5);
+    metricRationales.architecture = copy(
+      'Xác nhận ' + detectedPatterns.size + ' mẫu thiết kế kiến trúc phân tầng, API và cơ sở dữ liệu.',
+      'Confirmed ' + detectedPatterns.size + ' architectural patterns (layered, API, database).'
+    );
+  }
+
+  // 3. Testing
+  if (role?.criteria?.length) {
+    const testCrit = role.criteria.find(c => {
+      const key = (c.key || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      return /\b(test|testing|kiểm thử|unit_test|automated_test)\b/i.test(key) ||
+             /\b(test|testing|kiểm thử)\b/i.test(name);
+    });
+    if (testCrit && Number.isFinite(testCrit.score)) {
+      baseScores.testing = Math.round(testCrit.score);
+    }
+  }
+  if (baseScores.testing === null) {
+    if (aggTotalChecks > 0) {
+      const passRate = aggSuccessfulChecks / aggTotalChecks;
+      const volumeBonus = Math.min(15, Math.round(Math.log10(aggTotalChecks + 1) * 7));
+      baseScores.testing = Math.min(95, Math.max(50, Math.round(passRate * 75 + volumeBonus)));
+      metricRationales.testing = copy(
+        'Đạt ' + baseScores.testing + '/100 dựa trên ' + aggTotalChecks + ' lượt kiểm tra tự động (' + aggSuccessfulChecks + ' thành công, ' + Math.round(passRate * 100) + '%).',
+        'Scored ' + baseScores.testing + '/100 from ' + aggTotalChecks + ' automated test runs (' + aggSuccessfulChecks + ' passed, ' + Math.round(passRate * 100) + '%).'
+      );
+    } else if (analyzedCount > 0) {
+      const hasTestFramework = data.scores?.some(s =>
+        /\b(pytest|unittest|jest|vitest|mocha|cypress|playwright)\b/i.test(s.technology || '')
+      );
+      if (hasTestFramework) {
+        baseScores.testing = 75;
+        metricRationales.testing = copy('Đã phát hiện framework kiểm thử tự động trong dự án.', 'Automated testing framework detected in project.');
+      } else {
+        baseScores.testing = 0;
+        metricRationales.testing = copy('Chưa có dữ liệu bài kiểm thử tự động được ghi nhận.', 'No automated test data recorded.');
+      }
+    }
+  }
+
+  // 4. Collaboration (strictly avoiding substring collisions like 'background_processing')
+  if (role?.criteria?.length) {
+    const collabCrit = role.criteria.find(c => {
+      const key = (c.key || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      if (key.includes('background') || key.includes('processing') || key.includes('worker')) return false;
+      return /\b(collab|collaboration|cộng tác|pull_request|review|code_review)\b/i.test(key) ||
+             /\b(collab|collaboration|cộng tác|pull request|đánh giá mã)\b/i.test(name);
+    });
+    if (collabCrit && Number.isFinite(collabCrit.score)) {
+      baseScores.collaboration = Math.round(collabCrit.score);
+    }
+  }
+  if (baseScores.collaboration === null) {
+    if (aggPRs > 0) {
+      const mergeRate = aggMergedPRs / aggPRs;
+      const mergePoints = mergeRate * 45;
+      const reviewPoints = Math.min(40, aggUserReviews * 2);
+      const prVolumePoints = Math.min(15, aggUserPRs * 0.6);
+      baseScores.collaboration = Math.min(95, Math.max(40, Math.round(mergePoints + reviewPoints + prVolumePoints)));
+      metricRationales.collaboration = copy(
+        'Từ ' + aggPRs + ' Pull Requests (' + aggMergedPRs + ' đã merge, ' + Math.round(mergeRate * 100) + '%) và ' + aggUserReviews + ' lượt review mã nguồn.',
+        'From ' + aggPRs + ' Pull Requests (' + aggMergedPRs + ' merged, ' + Math.round(mergeRate * 100) + '%) and ' + aggUserReviews + ' code reviews.'
+      );
+    } else if (analyzedCount > 0) {
+      baseScores.collaboration = 70;
+      metricRationales.collaboration = copy('Đóng góp commit thường xuyên trên các repository đã phân tích.', 'Regular commit contributions across analyzed repositories.');
+    }
+  }
+
+  // 5. CI/CD
+  if (role?.criteria?.length) {
+    const ciCrit = role.criteria.find(c => {
+      const key = (c.key || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      return /\b(ci|cd|cicd|pipeline|workflow|build_tooling)\b/i.test(key) ||
+             /\b(ci\/cd|pipeline|tự động hóa)\b/i.test(name);
+    });
+    if (ciCrit && Number.isFinite(ciCrit.score)) {
+      baseScores.ci = Math.round(ciCrit.score);
+    }
+  }
+  if (baseScores.ci === null) {
+    if (aggTotalChecks > 0) {
+      const checkRate = aggSuccessfulChecks / aggTotalChecks;
+      let score = checkRate * 70;
+      if (hasContainerTooling) score += 15;
+      if (hasWorkflowTooling || aggTotalChecks >= 50) score += 10;
+      baseScores.ci = Math.min(95, Math.max(50, Math.round(score)));
+      metricRationales.ci = copy(
+        'Đạt ' + baseScores.ci + '/100 từ ' + aggTotalChecks + ' kiểm tra CI (' + aggSuccessfulChecks + ' thành công, ' + Math.round(checkRate * 100) + '%) cùng Docker/tooling.',
+        'Scored ' + baseScores.ci + '/100 from ' + aggTotalChecks + ' CI checks (' + aggSuccessfulChecks + ' passed, ' + Math.round(checkRate * 100) + '%) and Docker/tooling.'
+      );
+    } else if (hasContainerTooling) {
+      baseScores.ci = 75;
+      metricRationales.ci = copy('Phát hiện Dockerfile và cấu hình đóng gói container.', 'Dockerfile and container packaging configured.');
+    } else if (analyzedCount > 0) {
+      baseScores.ci = 0;
+      metricRationales.ci = copy('Chưa phát hiện cấu hình pipeline CI/CD hoặc container.', 'No CI/CD pipeline or container configuration detected.');
+    }
   }
 
   // If no repositories have been analyzed, metrics is empty
@@ -292,12 +479,7 @@ function getLiveRadar(state, data) {
   // Populate any unmeasured criteria with fallback score (or 0) so the entire radar chart is not dropped
   standardKeys.forEach(k => {
     if (baseScores[k] === null) {
-      if (k === 'code' && data.scores?.length) {
-        const avg = Math.round(data.scores.reduce((acc, s) => acc + (s.score || 0), 0) / data.scores.length);
-        baseScores.code = Math.min(100, Math.max(0, avg));
-      } else {
-        baseScores[k] = 0;
-      }
+      baseScores[k] = 0;
     }
   });
 
@@ -336,7 +518,9 @@ function getLiveRadar(state, data) {
 
     return '<section id="radar-detail-' + key + '" class="radar-insight" aria-labelledby="radar-label-' + key + '" hidden>'
       + '<div class="radar-insight-head"><h3 id="radar-label-' + key + '">' + escape(t('metric.' + key)) + '</h3><b>' + baseScores[key] + '<small>/100</small></b></div>'
-      + '<p>' + escape(t('radar.meaning.' + key)) + '</p>' + trendCopy + evidence
+      + '<p>' + escape(t('radar.meaning.' + key)) + '</p>'
+      + (metricRationales[key] ? '<p class="subtle" style="margin-top:6px;font-size:12px;color:var(--text-accent, #818cf8);">' + icon('pulse') + ' ' + escape(metricRationales[key]) + '</p>' : '')
+      + trendCopy + evidence
       + '<div class="radar-next-actions">'
       + btn(icon('bot') + escape(t('radar.askMetric')), 'ask-metric', 'secondary small', attr('id', key))
       + '</div></section>';

@@ -101,23 +101,90 @@ function setSession(active) {
   writeSession(active);
 }
 
-let toastRemaining = 3000;
+let toastRemaining = 2000;
+let toastTotalTime = 2000;
 let toastRaf = null;
 let toastPaused = false;
+let toastDismissTimeout = null;
+
+function dismissToast() {
+  const toast = $('#toast');
+  if (!toast || toast.hidden || toast.classList.contains('toast-leaving')) return;
+  if (toastRaf) cancelAnimationFrame(toastRaf);
+  clearTimeout(toastDismissTimeout);
+  toast.classList.remove('toast-show');
+  toast.classList.add('toast-leaving');
+  toastDismissTimeout = setTimeout(() => {
+    toast.hidden = true;
+    toast.style.display = 'none';
+    toast.classList.remove('toast-leaving');
+  }, 260);
+}
 
 function notify(key,fields) { notifyText(t(key,fields)); }
 
 function notifyText(text) {
   const toast = $('#toast');
   if (!toast) return;
-  clearTimeout(toastTimer);
   if (toastRaf) cancelAnimationFrame(toastRaf);
+  clearTimeout(toastDismissTimeout);
+
+  // Clean up any inline overrides so CSS transition controls transform/opacity/filter smoothly
+  toast.style.removeProperty('display');
+  toast.style.removeProperty('transform');
+  toast.style.removeProperty('opacity');
+  toast.style.removeProperty('filter');
+
+  // Hard-lock position at top-center via inline styles to defeat any stale CSS positioning cache
+  toast.style.setProperty('position', 'fixed', 'important');
+  toast.style.setProperty('top', '24px', 'important');
+  toast.style.setProperty('bottom', 'auto', 'important');
+  toast.style.setProperty('left', '50%', 'important');
+  toast.style.setProperty('right', 'auto', 'important');
+  toast.style.setProperty('z-index', '999999', 'important');
+
+  // Reset animation states
+  toast.classList.remove('toast-leaving');
+  toast.classList.remove('toast-show');
+
+  const messageText = typeof text === 'string' ? text : (text?.message || JSON.stringify(text));
+
+  toast.innerHTML = 
+    '<div class="toast-content">' +
+      '<span class="toast-badge-icon" aria-hidden="true">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<circle cx="12" cy="12" r="10"></circle>' +
+          '<line x1="12" y1="16" x2="12" y2="12"></line>' +
+          '<line x1="12" y1="8" x2="12.01" y2="8"></line>' +
+        '</svg>' +
+      '</span>' +
+      '<span class="toast-message">' + escape(messageText) + '</span>' +
+      '<button type="button" class="toast-close-btn" aria-label="Đóng thông báo" title="Đóng">' +
+        '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">' +
+          '<line x1="18" y1="6" x2="6" y2="18"></line>' +
+          '<line x1="6" y1="6" x2="18" y2="18"></line>' +
+        '</svg>' +
+      '</button>' +
+    '</div>' +
+    '<div class="toast-progress-bar"><div class="toast-progress-fill"></div></div>';
 
   toast.hidden = false;
-  toast.innerHTML = '<div class="toast-body"><span class="toast-icon">ℹ️</span><span class="toast-msg">' + escape(text) + '</span></div><div class="toast-progress"></div>';
 
-  const progressBar = toast.querySelector('.toast-progress');
-  toastRemaining = 3000;
+  // Trigger reflow then add .toast-show so CSS entrance transition plays seamlessly
+  void toast.offsetWidth;
+  toast.classList.add('toast-show');
+
+  const closeBtn = toast.querySelector('.toast-close-btn');
+  if (closeBtn) {
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      dismissToast();
+    };
+  }
+
+  const progressFill = toast.querySelector('.toast-progress-fill');
+  toastTotalTime = 2000;
+  toastRemaining = toastTotalTime;
   toastPaused = false;
   let lastTime = performance.now();
 
@@ -125,12 +192,12 @@ function notifyText(text) {
     if (!toastPaused) {
       const delta = now - lastTime;
       toastRemaining -= delta;
-      if (progressBar) {
-        const pct = Math.max(0, (toastRemaining / 3000) * 100);
-        progressBar.style.width = pct + '%';
+      if (progressFill) {
+        const pct = Math.max(0, (toastRemaining / toastTotalTime) * 100);
+        progressFill.style.width = pct + '%';
       }
       if (toastRemaining <= 0) {
-        toast.hidden = true;
+        dismissToast();
         return;
       }
     }

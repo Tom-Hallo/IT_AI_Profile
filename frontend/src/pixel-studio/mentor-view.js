@@ -373,8 +373,10 @@ export function mentor(runtime,context,animateLast,live) {
       + prompts.slice(1).map(item => quickPrompt(item,'secondary')).join('') + '</div>')
     + '</div>';
   const pending = runtime.chatPending ? '<div class="chat-row' + (animateLast ? ' pending' : '') + '">' + bot('pixel-small','thinking')
-    + '<div class="chat-bubble" role="status"><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span> '
-    + escape(t('mentor.thinking')) + '</div></div>' : '';
+    + '<div class="chat-bubble" role="status">'
+    + escape(t('mentor.thinking'))
+    + ' <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>'
+    + '</div></div>' : '';
   const log = messages.length ? messages.map((msg,i) => renderMessage(msg,animateLast && i === messages.length - 1)).join('') + pending : starters;
   const activeSources = [...runtime.chosen].map(sourceLabel).join(', ');
   const snippet = runtime.chatSnippet ? '<div class="composer-snippet"><div>' + icon('file') + '<span><small>'

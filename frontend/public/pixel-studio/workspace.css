@@ -3411,47 +3411,133 @@ body.print-cv .cv-paper {
   background: rgba(239, 68, 68, 0.1) !important;
 }
 
-/* 7. Toast Notification Modern Bottom-Right Position & 3s Countdown Bar (Ảnh 14) */
+/* 7. World-Class Toast Notification (Top-Center, Glassmorphism, Fluid Transitions) */
+#toast[hidden],
+.toast[hidden] {
+  display: none !important;
+}
+
+#toast,
 .toast {
   position: fixed !important;
-  bottom: 24px !important;
-  right: 24px !important;
-  left: auto !important;
-  z-index: 9999 !important;
-  max-width: min(420px, calc(100vw - 48px)) !important;
-  padding: 12px 18px 16px 18px !important;
-  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.4)) !important;
+  top: 24px !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 999999 !important;
+  max-width: min(540px, calc(100vw - 32px)) !important;
+  min-width: 290px !important;
+  padding: 0 !important;
+  border: 1px solid var(--accent-border, rgba(255, 255, 255, 0.16)) !important;
   border-radius: 10px !important;
-  background: var(--surface, #1e293b) !important;
-  color: var(--ink, #f8fafc) !important;
-  font-size: 13.5px !important;
-  font-weight: 500 !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.2) !important;
+  background: var(--surface, #1e222b) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  color: var(--surface-ink, #f8fafc) !important;
+  box-shadow: 
+    0 16px 36px -8px rgba(0, 0, 0, 0.65),
+    0 6px 14px -3px rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--accent-glow, rgba(255, 255, 255, 0.08)) inset !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 8px !important;
   overflow: hidden !important;
-  animation: toastSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -24px) scale(0.94);
+  filter: blur(4px);
+  transition: 
+    opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
   cursor: default;
 }
-@keyframes toastSlideIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+
+#toast.toast-show,
+.toast.toast-show {
+  opacity: 1 !important;
+  transform: translate(-50%, 0) scale(1) !important;
+  filter: blur(0px) !important;
+  pointer-events: auto !important;
 }
-.toast-body {
+
+#toast.toast-leaving,
+.toast.toast-leaving {
+  opacity: 0 !important;
+  transform: translate(-50%, -24px) scale(0.92) !important;
+  filter: blur(4px) !important;
+  pointer-events: none !important;
+  transition: 
+    opacity 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.26s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.toast-content {
   display: flex;
   align-items: center;
-  gap: 8px;
-  line-height: 1.4;
+  gap: 10px;
+  padding: 9px 12px 9px 13px;
+  min-height: 40px;
 }
-.toast-progress {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 3px;
-  background: var(--accent, #3b82f6);
+
+.toast-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--accent-panel, rgba(175, 196, 244, 0.16));
+  color: var(--accent, #afc4f4);
+  border: 1px solid var(--accent-border, rgba(175, 196, 244, 0.32));
+}
+
+.toast-message {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--surface-ink, #f1f5f9);
+  word-break: break-word;
+  letter-spacing: -0.01em;
+}
+
+.toast-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--surface-muted, #94a3b8);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toast-close-btn:hover {
+  background: var(--accent-wash, rgba(255, 255, 255, 0.12));
+  color: var(--surface-ink, #f8fafc);
+}
+
+.toast-progress-bar {
   width: 100%;
-  border-radius: 0 0 10px 10px;
+  height: 2px;
+  background: color-mix(in srgb, var(--surface, #1e222b) 60%, transparent);
+  overflow: hidden;
+  position: relative;
+}
+
+.toast-progress-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--accent, #afc4f4), var(--accent-strong, #c8b8f4));
+  border-radius: 0 2px 2px 0;
+  transition: width 0.03s linear;
 }
 
 /* 8. Crisp Vietnamese Typography on A4 Canvas (Ảnh 15) */
