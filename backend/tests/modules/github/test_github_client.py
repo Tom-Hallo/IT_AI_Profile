@@ -573,7 +573,9 @@ async def test_list_commit_statuses_for_ref_404_returns_empty():
 async def test_pull_request_files_collect_multiple_pages():
     def handler(request: httpx.Request) -> httpx.Response:
         page = request.url.params["page"]
-        next_link = '<https://api.github.com/repos/u/r/pulls/1/files?page=2>; rel="next"'
+        next_link = (
+            '<https://api.github.com/repos/u/r/pulls/1/files?page=2>; rel="next"'
+        )
         headers = {"link": next_link} if page == "1" else {}
         return httpx.Response(
             200, json=[{"filename": f"{page}.py", "changes": 2}], headers=headers

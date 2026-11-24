@@ -369,6 +369,7 @@ def save_skill_snapshots(
             )
         ).tuples()
     )
+    summary = getattr(result, "summary_data", None) or {}
     complete = result.coverage_status == "complete" and not report.budget.get(
         "limit_reached"
     )
@@ -435,7 +436,7 @@ def save_skill_snapshots(
                         metrics,
                         saturation=saturation,
                         scoring_files_partial=bool(
-                            result.summary_data.get("scoring_files_partial")
+                            summary.get("scoring_files_partial")
                         ),
                     ),
                     rubric_version=rubric_version,
@@ -457,7 +458,7 @@ def save_skill_snapshots(
                         "có import framework. Điểm phản ánh phạm vi thay đổi, "
                         "số sự kiện và độ đầy đủ của bằng chứng."
                     )
-                    if result.summary_data.get("scoring_files_partial"):
+                    if summary.get("scoring_files_partial"):
                         explanation += " Chi tiết tệp GitHub chưa đầy đủ."
                 else:
                     explanation = (
@@ -478,7 +479,7 @@ def save_skill_snapshots(
                 score=score,
                 framework_evidence=framework_evidence,
                 complete=complete,
-                summary=result.summary_data,
+                summary=summary,
             )
             # Use the existing snapshot JSON, not a new schema or a new score.
             # Insufficient snapshots have no scoring breakdown to attach to.
