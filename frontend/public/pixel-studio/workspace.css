@@ -2031,7 +2031,7 @@ body.print-cv .cv-paper {
 .node:focus-visible{z-index:1}
 .node[aria-pressed=true]{background:var(--accent-wash);box-shadow:0 0 0 3px var(--accent-glow)}
 .node[data-state=ready] .map-icon{background:var(--accent-wash);color:var(--accent-strong)}
-.node[data-state=done]{--ink:#f6eee1;--muted:#d0c7b8;color:var(--ink);border-color:#a39170;background:linear-gradient(145deg,#494336,#2c3834)}
+.node[data-state=done]{color:var(--ink);border-color:#a39170;background:linear-gradient(145deg,#494336,#2c3834)}
 .node[data-state=done][aria-pressed=true]{border-color:var(--gold);box-shadow:0 0 0 3px #edca9340}
 .node[data-state=done] .map-icon{background:#e5cc9b;color:#403326}
 .node[data-state=ready]:not([aria-pressed=true]) .map-icon{box-shadow:0 0 0 3px var(--accent-glow)}
@@ -3661,3 +3661,97 @@ body.print-cv .cv-paper {
 .radar-indicator.is-unscored .radar-dot{opacity:.32}
 .radar-indicator.is-unscored .radar-number{color:var(--muted)}
 .radar-indicator.is-unscored .radar-label{opacity:.75}
+
+
+/* Live Roadmap: theme tokens, distinct progress states and evidence layout. */
+.road-layout .node[data-state=done] {
+  --roadmap-complete: #26966f;
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--roadmap-complete) 55%, var(--line));
+  background: color-mix(in srgb, var(--roadmap-complete) 12%, var(--surface-2));
+}
+.road-layout .node[data-state=done] .map-icon {
+  color: var(--ink);
+  background: color-mix(in srgb, #26966f 24%, var(--surface-2));
+}
+.road-layout .node[data-state=done][aria-pressed=true] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.road-layout .node[data-state=ready] {
+  border-color: var(--line-strong);
+  background: var(--inset);
+}
+.road-layout .node[data-state=ready] .map-icon {
+  color: var(--muted);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.road-layout .node[data-state=in-progress] {
+  background: var(--accent-panel);
+  border-color: var(--accent);
+}
+.road-layout .node[data-state=in-progress] .map-icon {
+  color: var(--accent-strong);
+  background: var(--accent-wash);
+}
+.road-layout .node[aria-pressed=true] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.road-layout .node[data-state=done] small { color: inherit; }
+.road-layout .map-legend [data-state=done] i { background: #26966f; }
+.road-layout .map-legend [data-state=ready] i { background: var(--line-strong); }
+.road-layout .map-legend [data-state=in-progress] i { background: var(--accent); }
+.road-progress .milestone-pips i[data-state=in-progress] { background: var(--accent); }
+.road-progress .milestone-pips i[data-state=done] { background: #26966f; }
+.road-layout .milestone-proof {
+  background: var(--accent-panel);
+  border-color: var(--accent-border);
+}
+.road-layout .milestone-proof .feature-icon,
+.road-layout .milestone-proof .link-button {
+  color: var(--accent-strong);
+  background: var(--accent-wash);
+  border-color: var(--accent-border);
+}
+.road-layout .milestone-proof h3,
+.road-layout .milestone-proof-summary,
+.road-layout .milestone-proof-link a { color: var(--ink); }
+.road-layout .milestone-proof p,
+.road-layout .milestone-proof small,
+.road-layout .milestone-proof-summary span { color: var(--muted); }
+.road-layout .milestone-proof-evidence { border-color: var(--line); }
+.road-layout .milestone-proof-link {
+  background: var(--inset);
+  border-color: var(--line);
+}
+.road-layout .milestone-proof-link a:focus-visible { outline-color: var(--accent); }
+.road-layout .milestone-proof-tick { color: var(--muted); }
+.road-layout .milestone-proof-link.is-verified .milestone-proof-tick { color: #26966f; }
+.road-layout .milestone-proof-link.is-verified small { color: var(--ink); }
+.road-layout .milestone-proof-link .evidence-subnote {
+  grid-column: 2 / -1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.road-layout .road-detail { min-width: 0; }
+.road-layout .detail-top { flex-wrap: wrap; justify-content: flex-start; }
+.road-layout .road-evidence-form input { min-width: 0; max-width: 100%; }
+.road-layout .road-history .subtle { margin: 8px 0 0; }
+@media (max-width: 560px) {
+  .road-layout .road-evidence-form .field-row > * { flex: 1 1 100%; min-width: 0; }
+}
+
+.road-layout .award-icon {
+  color: var(--accent-strong);
+  background: var(--accent-wash);
+  border-color: var(--accent-border);
+}
+.road-layout .road-evidence-result {
+  margin-top: 10px;
+  background: var(--accent-panel);
+  border-color: var(--accent-border);
+  color: var(--ink);
+}
+.road-layout .road-evidence-result p { margin: 5px 0 9px; color: var(--muted); }

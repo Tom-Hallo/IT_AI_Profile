@@ -3,6 +3,7 @@ import {escape,field,formatSkillName,tags} from './ui.js';
 import {getLanguage, t} from './i18n.js';
 import {isGitHubCommitOrPrUrl} from './evidence-url.js';
 import {summarizeReevaluation} from './reevaluation.js';
+import {resolveRoadmapView} from './roadmap-selection.js';
 import {parseCVForReference, serializeCVFromSections} from './cv-renderer.js';
 import {verifiedCVSkills, cvSkillKey} from './score-presentation.js';
 import {updateCVFitScale} from './live-views.js';
@@ -13,7 +14,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   const data = {
     user:null, repos:[], page:1, total:0, search:'', repoData:{}, roles:[], scores:[], skills:[],
     dashboardRepos:null, dashboardRadar:[], dashboardPartial:false, dashboardLoadErrors:[],
-    road:null, tracking:null, pendingRoadmapFocus:null, history:[], reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
+    road:null, tracking:null, pendingRoadmapFocus:null, history:[], historyLoaded:false, roadAction:null, roadEvidenceDraft:null, roadNotice:null, reevaluation:null, goal:'backend', milestone:null, jobResults:null, jobMatch:null,
     cvList:[], documentList:[], versions:[], cv:null, cvPreview:null, document:null,
     shared:null, shares:[], audit:[], sync:null, health:null, busy:new Set(),
     errors:{}, messages:{}, analysisOutcome:null, reportTab:'code', mentorSources:{cvs:[],roadmaps:[]}
@@ -69,9 +70,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
     return error.message || copy('Thao tác thất bại.', 'Operation failed.');
   }
 
-  async function work(key,action) {
+  async function work(key,action,roadAction='load') {
     if (data.busy.has(key)) return false;
     data.busy.add(key);
+    if (key === 'road') { data.roadAction = roadAction; data.roadNotice = null; }
     delete data.errors[key];
     delete data.messages[key];
     if (key === 'repos') data.analysisOutcome = null;
@@ -80,11 +82,18 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       await action();
       return true;
     } catch (error) {
-      data.errors[key] = errorText(error);
-      notice(data.errors[key]);
+      data.errors[key] = key === 'road' && error.status === 409
+        ? copy('Dữ liệu lộ trình đã thay đổi. Hãy tải lại hoặc đánh giá lại trước khi thử tiếp.', 'Roadmap data changed. Reload or re-evaluate before trying again.')
+        : key === 'road' && error.status === 404
+          ? copy('Không tìm thấy lộ trình hoặc cột mốc. Hãy tải lại trang.', 'Roadmap or milestone not found. Reload the page.')
+          : key === 'road' && error.status === 422
+            ? copy('Dữ liệu không hợp lệ hoặc không còn phù hợp. Kiểm tra và thử lại.', 'Invalid or outdated data. Check and try again.')
+            : errorText(error);
+      if (key !== 'road') notice(data.errors[key]);
       return false;
     } finally {
       data.busy.delete(key);
+      if (key === 'road') data.roadAction = null;
       render();
     }
   }
@@ -491,67 +500,41 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
   }
 
   async function road(targetId) {
-    // A Skill Gap navigation is one-shot; normal roadmap opening keeps its old behavior.
-    const pendingFocus = !targetId ? data.pendingRoadmapFocus : null;
+    // A Skill Gap navigation is one-shot; stage the entire view before updating it.
+    const pendingFocus = targetId == null ? data.pendingRoadmapFocus : null;
     data.pendingRoadmapFocus = null;
     const items = await request('/career-roadmaps');
-    data.roadmaps = Array.isArray(items) ? items : [];
     let storedId = null;
     try {
       storedId = Number(sessionStorage.getItem('ita-studio-selected-roadmap')) || null;
     } catch {}
-    const preferredId = targetId ?? data.road?.id ?? storedId;
-    const preferred = data.roadmaps.find(item => item.id === preferredId
-      && (targetId || !goalWasChosen || item.goal === data.goal));
-    const matchingGoal = data.roadmaps.find(item => item.goal === data.goal
-      && Array.isArray(item.milestones) && item.milestones.length > 0)
-      ?? data.roadmaps.find(item => item.goal === data.goal);
-    data.road = targetId ? (preferred ?? null) : (preferred ?? matchingGoal
-      ?? (goalWasChosen ? null : data.roadmaps.find(item =>
-        Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? data.roadmaps[0] ?? null));
+    const view = await resolveRoadmapView(items, {
+      targetId, currentId:data.road?.id, storedId, goal:data.goal, goalWasChosen,
+      pendingFocus, previousMilestone:data.milestone
+    }, id => request('/roadmap-tracking/' + id), id => {
+      try { return Number(sessionStorage.getItem('ita-studio-selected-milestone:' + id)) || null; }
+      catch { return null; }
+    });
 
-    if (pendingFocus) {
-      const targetRoadmap = data.roadmaps.find(item => String(item?.id) === String(pendingFocus.roadmapId));
-      if (!targetRoadmap) {
-        data.messages.road = copy('Lộ trình được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected roadmap no longer exists. Please check again.');
-        return;
-      }
-      const tracking = await request('/roadmap-tracking/' + targetRoadmap.id);
-      const milestones = Array.isArray(tracking?.milestones) ? tracking.milestones : [];
-      const targetMilestone = milestones.find(item => String(item?.id) === String(pendingFocus.milestoneId));
-      if (!targetMilestone) {
-        data.messages.road = copy('Mốc kỹ năng được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected skill milestone no longer exists. Please check again.');
-        return;
-      }
-      data.road = targetRoadmap;
-      data.goal = targetRoadmap.goal;
-      data.tracking = tracking;
-      data.reevaluation = null;
-      data.milestone = targetMilestone.id;
-      data.history = [];
-      return;
-    }
-
-    if (targetId) {
-      data.road = data.roadmaps.find(item => item?.id === targetId) ?? null;
+    Object.assign(data, {
+      roadmaps:view.roads, road:view.road, tracking:view.tracking, milestone:view.milestone,
+      reevaluation:null, history:[], historyLoaded:false
+    });
+    if (view.road) {
+      data.goal = view.road.goal || data.goal;
+      try {
+        sessionStorage.setItem('ita-studio-selected-roadmap', String(view.road.id));
+        if (view.milestone != null) sessionStorage.setItem('ita-studio-selected-milestone:' + view.road.id, String(view.milestone));
+        else sessionStorage.removeItem('ita-studio-selected-milestone:' + view.road.id);
+      } catch {}
     } else {
-      const matchingGoal = data.roadmaps.find(item => item?.goal === data.goal && Array.isArray(item.milestones) && item.milestones.length > 0)
-        ?? data.roadmaps.find(item => item?.goal === data.goal);
-      data.road = matchingGoal
-        ?? (goalWasChosen ? null : data.roadmaps.find(item => Array.isArray(item?.milestones) && item.milestones.length > 0) ?? data.roadmaps[0] ?? null);
+      try { sessionStorage.removeItem('ita-studio-selected-roadmap'); } catch {}
     }
-    if (data.road) {
-      data.goal = data.road.goal || data.goal;
-      try { sessionStorage.setItem('ita-studio-selected-roadmap', String(data.road.id)); } catch {}
+    if (view.focusError === 'roadmap') {
+      data.messages.road = copy('Lộ trình được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected roadmap no longer exists. Please check again.');
+    } else if (view.focusError === 'milestone') {
+      data.messages.road = copy('Mốc kỹ năng được chọn không còn tồn tại. Vui lòng kiểm tra lại.', 'The selected skill milestone no longer exists. Please check again.');
     }
-    const previousMilestone = data.milestone;
-    data.tracking = data.road ? await request(trackingPath()) : null;
-    data.reevaluation = null;
-    data.milestone = data.tracking?.milestones?.some(m => m.id === previousMilestone)
-      ? previousMilestone : data.tracking?.milestones?.[0]?.id ?? null;
-    data.milestone = data.tracking?.milestones?.[0]?.id ?? null;
-    data.history = [];
   }
 
   async function roadCreate() {
@@ -562,8 +545,9 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.tracking = await request(trackingPath());
       data.reevaluation = null;
       data.milestone = data.tracking.milestones[0]?.id ?? null;
-      data.history = [];
-    });
+      data.history = []; data.historyLoaded = false;
+      data.messages.road = copy('Đã tạo lộ trình.', 'Roadmap created.');
+    },'create');
   }
 
   async function roadStatus(id,status) {
@@ -576,14 +560,15 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.tracking = await request(trackingPath());
       if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
       await roadHistory();
-    });
+      data.messages.road = copy('Đã cập nhật trạng thái cột mốc.', 'Milestone status updated.');
+    },'status:' + id + ':' + status);
   }
 
   async function roadHistory() {
     const id = data.milestone;
     if (!data.road || !id) return;
     const history = await request(trackingPath() + '/milestones/' + id + '/history');
-    if (data.milestone === id) data.history = history;
+    if (data.milestone === id) { data.history = Array.isArray(history) ? history : []; data.historyLoaded = true; }
   }
 
   async function cvLoad() {
@@ -1173,10 +1158,10 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       const result = await post(trackingPath() + '/re-evaluate');
       data.tracking = await request(trackingPath());
       data.reevaluation = summarizeReevaluation(result, data.tracking);
-    }),
-    milestone:button => { data.milestone = Number(button.dataset.id); data.history = []; render(); },
+    },'reevaluate'),
+    milestone:button => { data.milestone = Number(button.dataset.id); data.history = []; data.historyLoaded = false; try { sessionStorage.setItem('ita-studio-selected-milestone:' + data.road?.id, String(data.milestone)); } catch {} render(); },
     'focus-milestone':button => navigate('roadmap','#milestone-detail'),
-    'road-history':() => work('road',roadHistory),
+    'road-history':() => work('road',roadHistory,'history'),
     'road-status':button => roadStatus(Number(button.dataset.id),button.dataset.status),
     'road-suggestion':button => work('road', async () => {
       const decision = button.dataset.decision;
@@ -1187,7 +1172,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
       data.messages.road = decision === 'apply'
         ? copy('Đã áp dụng đề xuất vào cột mốc.', 'Suggestion applied to milestone.')
         : copy('Đã bỏ qua đề xuất.', 'Suggestion dismissed.');
-    }),
+    },'suggestion:' + button.dataset.id + ':' + button.dataset.decision),
     'ask-step':() => { openMentor(); void send(copy('Giúp tôi xây dựng bước tiếp theo từ roadmap đã chọn.', 'Help me plan the next step from the selected roadmap.')); },
     'ask-gap-skill': async button => {
       const rawSkill = button.dataset.skill || '';
@@ -1273,7 +1258,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.tracking = tracking;
         data.milestone = targetMilestone.id;
         data.reevaluation = null;
-        data.history = [];
+        data.history = []; data.historyLoaded = false;
         data.pendingRoadmapFocus = {roadmapId:targetRoadmap.id, milestoneId:targetMilestone.id};
         shouldNavigate = true;
       });
@@ -1590,7 +1575,6 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
           'Vui lòng nhập liên kết GitHub Commit hoặc Pull Request hợp lệ (HTTPS).',
           'Invalid link. Enter an official HTTPS GitHub Commit or Pull Request URL.'
         );
-        notice(message);
         if (validationMessage) {
           validationMessage.textContent = message;
           validationMessage.hidden = false;
@@ -1599,6 +1583,8 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         urlInput?.focus();
         return;
       }
+      if (data.busy.has('road')) return;
+      data.roadEvidenceDraft = {roadId:data.road?.id,milestoneId,url,note};
       if (validationMessage) {
         validationMessage.textContent = '';
         validationMessage.hidden = true;
@@ -1613,11 +1599,16 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
         data.tracking = await request(trackingPath());
         if (data.road?.id) data.road = await request('/career-roadmaps/' + data.road.id);
         await roadHistory();
-        notice(res.verification_status === 'verified'
-          ? copy('Đã xác minh thành công minh chứng từ repository GitHub của bạn! Cột mốc đã tự động hoàn thành.', 'Successfully verified evidence from your GitHub repository! Milestone completed.')
-          : copy('Đã lưu minh chứng (tự khai báo).', 'Evidence saved (self-reported).')
-        );
-      });
+        data.roadEvidenceDraft = null;
+        const verified = res.verification_status === 'verified';
+        const title = res.duplicate
+          ? copy('Liên kết đã tồn tại; không tạo bản ghi trùng.', 'Link already exists; no duplicate created.')
+          : verified ? copy('Minh chứng đã được xác minh.', 'Evidence verified.')
+            : copy('Đã lưu minh chứng tự khai báo.', 'Self-reported evidence saved.');
+        data.roadNotice = {title,verified,detail:verified
+          ? copy('Đóng góp đáp ứng kỹ năng và điểm mục tiêu của mốc.', 'Contribution meets the milestone skill and target score.')
+          : copy('Chưa đủ bằng chứng xác minh năng lực của mốc. Hãy đồng bộ, phân tích GitHub và đánh giá lại.', 'Skill verification is not sufficient yet. Sync, analyze GitHub and re-evaluate.')};
+      },'evidence');
     },
     'skill-form':form => work('skill',async () => {
       const name = String(form.get('skill')).trim();
@@ -1632,7 +1623,7 @@ export function createLiveStudio({state,runtime,render,drawMentor,showModal,open
 
   function change(control) {
     if (control.id === 'repo-switch') { void focusRepo(control.value); return true; }
-    if (control.id === 'road-goal') { data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
+    if (control.id === 'road-goal') { if (data.busy.has('road')) return true; data.goal = control.value; goalWasChosen = true; void loads.road(); return true; }
     if (control.id === 'road-select') { void work('road', () => road(Number(control.value))); return true; }
     if (control.dataset.act === 'repo-page-select') { void repos({page: Number(control.value)}); return true; }
     if (control.classList.contains('repo-select-check')) {

@@ -900,6 +900,18 @@ function roadmapLoadingSkeleton() {
 
 export function liveRoadmap(data) {
   const { milestones, done, next, goal } = progressOverview(data);
+  const busy = data.busy.has('road');
+  const loading = action => busy && data.roadAction === action;
+  const disabled = busy ? ' disabled' : '';
+  const busyAttr = action => disabled + (loading(action) ? ' aria-busy="true"' : '');
+  const busyStyle = (style, action) => style + (loading(action) ? ' is-loading' : '');
+  const roadButton = (label, act, style, action, attributes='') =>
+    btn(label, act, busyStyle(style, action), attributes + busyAttr(action));
+  const nodeState = m => m.status === 'completed' ? 'done' : m.status === 'in_progress' ? 'in-progress' : 'ready';
+  const nodeIcon = m => m.status === 'completed' ? 'check' : m.status === 'in_progress' ? 'play' : 'branch';
+  const suggestionText = suggestion => suggestion?.action === 'complete'
+    ? copy('Minh chứng đã xác minh đáp ứng yêu cầu của mốc.', 'Verified evidence meets the milestone requirements.')
+    : suggestion?.explanation || '';
   const selected = milestones.find(m => m.id === data.milestone) ?? milestones[0];
   const item = data.road?.milestones?.find(m =>
     String(m.skill || '').toLowerCase() === String(selected?.external_key || '').toLowerCase()
@@ -908,11 +920,11 @@ export function liveRoadmap(data) {
     metric: copy('Hoàn thành mục tiêu của cột mốc này và nộp minh chứng.', 'Complete the objective of this milestone and submit evidence.'),
     evidence: selected.evidence || []
   } : null);
-  const picker = field(t('road.goal'), '<select id="road-goal">' + [
+  const picker = field(t('road.goal'), '<select id="road-goal"' + disabled + '>' + [
     ['backend', 'Backend'], ['frontend', 'Frontend'], ['fullstack', 'Full-stack'], ['devops', 'DevOps']
   ].map(([key, label]) => option(key, label, data.goal)).join('') + '</select>');
   const roadPicker = (data.roadmaps && data.roadmaps.length > 1)
-    ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select">'
+    ? field(copy('Đổi lộ trình', 'Switch roadmap'), '<select id="road-select"' + disabled + '>'
       + data.roadmaps.map(r => option(r.id, `${displayRoadmapTitle(r.title, r.goal)} (#${r.id})`, data.road?.id)).join('')
       + '</select>')
     : '';
@@ -922,10 +934,15 @@ export function liveRoadmap(data) {
   }
 
   const map = milestones.map(milestone => '<button type="button" class="node" data-act="milestone"' + attr('id', milestone.id)
-    + attr('state', milestone.status === 'completed' ? 'done' : 'ready') + ' aria-pressed="' + (milestone === selected) + '">'
-    + '<span class="map-icon">' + icon(milestone.status === 'completed' ? 'check' : 'branch') + '</span><strong>'
+    + attr('state', nodeState(milestone)) + ' aria-pressed="' + (milestone === selected) + '">'
+    + '<span class="map-icon">' + icon(nodeIcon(milestone)) + '</span><strong>'
     + escape(displayMilestoneTitle(milestone.title, milestone.external_key)) + '</strong><small>' + escape(statusLabel(milestone.status)) + '</small></button>').join('');
 
+  const historyNote = record => {
+    const note = String(record.note || '');
+    if (record.source === 'suggestion' && /^Applied suggestion/.test(note)) return note.replace('Applied suggestion',copy('Đã áp dụng đề xuất','Applied suggestion')).replace(' from snapshot ',copy(' từ snapshot ',' from snapshot '));
+    return note.replace(/^\[SELF_REPORTED\]/,copy('[Tự khai báo]','[Self-reported]')).replace(/^\[VERIFIED\]/,copy('[Đã xác minh lúc nộp]','[Verified at submission]'));
+  };
   const sourceLabel = src => ({
     manual: copy('Thủ công', 'Manual'),
     mentor: copy('Đề xuất AI Mentor', 'AI Mentor proposal'),
@@ -934,13 +951,13 @@ export function liveRoadmap(data) {
     verified: copy('Xác minh Git', 'Git verified')
   })[src] ?? src;
 
-  const history = '<details class="panel road-history"' + (data.history.length ? ' open' : '') + '><summary>' + escape(t('road.history')) + '</summary>'
-    + btn(escape(copy('Tải lịch sử', 'Load history')), 'road-history', 'quiet small' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '<ul class="audit-list">'
+  const history = '<details class="panel road-history"' + (data.historyLoaded || loading('history') ? ' open' : '') + '><summary>' + escape(t('road.history')) + '</summary>'
+    + roadButton(escape(copy('Tải lịch sử', 'Load history')), 'road-history', 'quiet small', 'history') + '<ul class="audit-list">'
     + data.history.map(record => '<li><time>' + escape(formattedDate(record.created_at)) + '</time>'
       + '<span>' + escape(statusLabel(record.old_status) + ' → ' + statusLabel(record.new_status)) + '</span>'
       + (record.source ? ' ' + badge(sourceLabel(record.source), record.source === 'verified' ? 'green' : record.source === 'mentor' ? 'blue' : '') : '')
-      + (record.note ? '<div class="history-note-text"><small>' + escape(record.note) + '</small></div>' : '')
-      + '</li>').join('') + '</ul></details>';
+      + (record.note ? '<div class="history-note-text"><small>' + escape(historyNote(record)) + '</small></div>' : '')
+      + '</li>').join('') + '</ul>' + (data.historyLoaded && !data.history.length ? muted(copy('Chưa có hoạt động nào được ghi nhận cho mốc này.', 'No activity has been recorded for this milestone.')) : '') + '</details>';
 
   const evaluation = data.reevaluation;
   const evaluationSuggestions = currentEvaluationSuggestions(evaluation, data.tracking);
@@ -948,14 +965,16 @@ export function liveRoadmap(data) {
     suggestion => suggestion.state === 'pending' && suggestion.milestone_id === selected?.id
   ) ?? []);
 
-  const evaluationTitle = evaluation?.kind === 'suggestions'
+  const staleEvaluation = evaluation && data.tracking?.suggestions?.some(s => s.snapshot_id === evaluation.snapshotId && s.state === 'stale');
+  const resolvedEvaluation = evaluation?.kind === 'suggestions' && !evaluationSuggestions.length && !staleEvaluation;
+  const evaluationTitle = staleEvaluation ? copy('Kết quả đánh giá đã cũ', 'Evaluation is outdated') : resolvedEvaluation ? copy('Đã xử lý tất cả đề xuất', 'All suggestions resolved') : evaluation?.kind === 'suggestions'
     ? copy('Đã tìm thấy bằng chứng GitHub xác minh hợp lệ', 'Verified GitHub evidence found')
     : evaluation?.kind === 'no-verified-evidence'
       ? copy('Chưa có bằng chứng GitHub được xác minh', 'No verified GitHub evidence yet')
       : evaluation?.kind === 'all-completed'
         ? copy('Các mốc hiện tại đều đã hoàn thành', 'All milestones are already completed')
         : copy('Chưa có mốc mới đáp ứng đủ điều kiện', 'No additional milestones meet the criteria');
-  const evaluationDescription = !evaluation ? '' : evaluation.kind === 'suggestions'
+  const evaluationDescription = !evaluation ? '' : staleEvaluation ? copy('Dữ liệu phân tích đã thay đổi. Hãy đánh giá lại trước khi áp dụng đề xuất.', 'Analysis data changed. Re-evaluate before applying suggestions.') : resolvedEvaluation ? copy('Không còn đề xuất đang chờ. Bạn có thể đánh giá lại khi có dữ liệu phân tích mới.', 'No pending suggestions remain. Re-evaluate when new analysis is available.') : evaluation.kind === 'suggestions'
     ? copy('Có ' + evaluationSuggestions.length + ' đề xuất từ dữ liệu đã xác minh. Chọn Áp dụng hoặc Bỏ qua cho từng mốc.',
       evaluationSuggestions.length + ' verified suggestions. Apply or dismiss each one.')
     : evaluation?.kind === 'no-verified-evidence'
@@ -973,12 +992,10 @@ export function liveRoadmap(data) {
     return '<article class="road-review-suggestion"><h4>' + icon('check') + ' ' + escape(name) + '</h4>'
       + '<p>' + escape(copy('Đã tìm thấy ' + evidenceCount + ' tham chiếu bằng chứng đã xác minh.',
         evidenceCount + ' verified evidence references found.')) + '</p>'
-      + '<p class="subtle">' + escape(suggestion.explanation || '') + '</p>'
+      + '<p class="subtle">' + escape(suggestionText(suggestion)) + '</p>'
       + '<div class="action-row">'
-      + btn(escape(copy('Áp dụng', 'Apply')), 'road-suggestion', 'primary small' + (data.busy.has('road') ? ' is-loading' : ''),
-        attr('id', suggestion.id) + attr('decision', 'apply') + (data.busy.has('road') ? ' disabled' : ''))
-      + btn(escape(copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small' + (data.busy.has('road') ? ' is-loading' : ''),
-        attr('id', suggestion.id) + attr('decision', 'reject') + (data.busy.has('road') ? ' disabled' : ''))
+      + roadButton(escape(copy('Áp dụng', 'Apply')), 'road-suggestion', 'primary small', 'suggestion:' + suggestion.id + ':apply', attr('id', suggestion.id) + attr('decision', 'apply'))
+      + roadButton(escape(copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small', 'suggestion:' + suggestion.id + ':reject', attr('id', suggestion.id) + attr('decision', 'reject'))
       + '</div></article>';
   }).join('');
   const evaluationHtml = evaluation ? '<section class="panel road-review-result" role="status" aria-live="polite">'
@@ -1006,39 +1023,34 @@ export function liveRoadmap(data) {
         const parsed = new URL(ev.url);
         const label = parsed.hostname + parsed.pathname + parsed.search;
         return '<li class="milestone-proof-link ' + (ev.verified ? 'is-verified' : 'is-self-reported') + '">'
-          + '<span class="milestone-proof-tick" aria-hidden="true">' + icon('check') + '</span>'
+          + '<span class="milestone-proof-tick" aria-hidden="true">' + icon(ev.verified ? 'check' : 'file') + '</span>'
           + '<a href="' + escape(ev.url) + '" title="' + escape(ev.url)
           + '" target="_blank" rel="noopener noreferrer">' + escape(label) + '</a>'
           + '<small>' + escape(ev.verified
             ? copy('Đã xác minh', 'Verified')
-            : copy('Tự khai báo', 'Self-reported')) + '</small></li>';
+            : copy('Tự khai báo', 'Self-reported')) + '</small>' + (ev.note ? '<p class="evidence-subnote">' + escape(ev.note) + '</p>' : '') + '</li>';
       }).join('') + '</ul>'
       : '<p class="milestone-proof-empty">'
         + escape(copy('Chưa có liên kết bằng chứng được nộp.', 'No evidence links submitted yet.'))
         + '</p>')
     + '<small class="milestone-proof-help">'
-    + escape(copy('✓ = liên kết đã nộp; chỉ liên kết xác minh mới có trạng thái Đã xác minh.',
-      '✓ = submitted link; only verified links are marked Verified.'))
+    + escape(copy('Chỉ minh chứng đáp ứng tiêu chí năng lực mới được xác minh.', 'Only evidence meeting skill criteria is verified.'))
     + '</small></div>';
-  const evidenceListHtml = evidenceItems.length ? '<div class="milestone-evidence-block"><h4>'
-    + icon('award') + ' ' + copy('Bằng chứng đã nộp & xác minh', 'Submitted & Verified Evidence') + '</h4>'
-    + '<ul class="milestone-evidence-list">' + evidenceItems.map(ev => {
-      return '<li><div class="evidence-link-row">'
-        + '<a href="' + escape(ev.url) + '" target="_blank" rel="noopener noreferrer" class="evidence-anchor">'
-        + icon('branch') + ' ' + escape(ev.url) + '</a>'
-        + badge(ev.verified ? copy('Đã xác minh (Verified)', 'Verified') : copy('Tự khai báo', 'Self-reported'), ev.verified ? 'green' : 'amber')
-        + '</div>' + (ev.note ? '<p class="evidence-subnote">' + escape(ev.note) + '</p>' : '') + '</li>';
-    }).join('') + '</ul></div>' : '';
-  // Existing skill-assessment references remain accessible but are not
-  // counted as user-submitted URLs or interpreted as verified submissions.
-  const assessmentRefsHtml = Array.isArray(item?.evidence) && item.evidence.length
+  const assessmentRefs = Array.isArray(item?.evidence)
+    ? item.evidence.filter(ref => ref && typeof ref === 'object' && ref.source !== 'submission' && !ref.url && !ref.evidence_url)
+    : [];
+  const assessmentRefsHtml = assessmentRefs.length
     ? '<details class="milestone-analysis-refs"><summary>'
-      + escape(copy('Tham chiếu phân tích năng lực (không tính là link đã nộp)',
-        'Assessment references (not submitted links)'))
-      + '</summary>' + refs(item.evidence) + '</details>'
+      + escape(copy('Tham chiếu phân tích năng lực', 'Skill assessment references'))
+      + '</summary>' + refs(assessmentRefs, data) + '</details>'
     : '';
 
   const isCompleted = selected?.status === 'completed';
+  const evidenceDraft = data.roadEvidenceDraft?.roadId === data.road?.id
+    && data.roadEvidenceDraft?.milestoneId === selected?.id ? data.roadEvidenceDraft : null;
+  const evidenceNotice = data.roadNotice ? '<div class="notice road-evidence-result' + (data.roadNotice.verified ? ' green' : '') + '" role="status"><strong>'
+    + escape(data.roadNotice.title) + '</strong><p>' + escape(data.roadNotice.detail) + '</p>'
+    + (data.roadNotice.verified ? '' : '<a class="button secondary small" href="#studio/repos">' + escape(copy('Đến phân tích GitHub','Go to GitHub analysis')) + '</a>') + '</div>' : '';
   const evidenceFormHtml = selected ? '<form class="stack road-evidence-form" id="milestone-evidence-form" data-milestone="' + selected.id + '" novalidate>'
     + '<input type="hidden" name="milestone_id" value="' + selected.id + '">'
     + '<h4>' + icon('pulse') + ' ' + (isCompleted ? copy('Bổ sung thêm minh chứng', 'Submit additional evidence') : copy('Nộp minh chứng hoàn thành mốc', 'Submit milestone evidence')) + '</h4>'
@@ -1046,26 +1058,22 @@ export function liveRoadmap(data) {
       ? copy('Cột mốc này đã hoàn thành. Bạn có thể nộp thêm liên kết Commit/PR để làm phong phú bằng chứng cho portfolio và CV.', 'This milestone is completed. You can submit more Commit/PR links to enrich your evidence.')
       : copy('Chỉ nộp URL HTTPS trực tiếp đến Commit hoặc Pull Request trên github.com. Link Issue hoặc trang repository sẽ bị từ chối.', 'Submit only direct HTTPS GitHub Commit or Pull Request URLs. Issue and repository page links are rejected.')) + '</p>'
     + '<div class="field-row">'
-    + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" required>'
-    + '<input name="evidence_note" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '">'
-    + '<button type="submit" class="button primary small' + (data.busy.has('road') ? ' is-loading' : '') + '"' + (data.busy.has('road') ? ' disabled aria-busy="true"' : '') + '>' + copy('Nộp minh chứng', 'Submit') + '</button>'
+    + '<input name="evidence_url" type="url" aria-describedby="road-evidence-validation" placeholder="https://github.com/owner/repo/pull/123" maxlength="2000" value="' + escape(evidenceDraft?.url || '') + '"' + disabled + ' required>'
+    + '<input name="evidence_note" maxlength="2000" placeholder="' + copy('Ghi chú (tùy chọn)', 'Short note (optional)') + '" value="' + escape(evidenceDraft?.note || '') + '"' + disabled + '>'
+    + '<button type="submit" class="button primary small' + (loading('evidence') ? ' is-loading' : '') + '"' + busyAttr('evidence') + '>' + copy('Nộp minh chứng', 'Submit') + '</button>'
     + '</div><p id="road-evidence-validation" class="road-evidence-validation" role="alert" hidden></p></form>' : '';
 
+  const statusButton = (label, style, status) => roadButton(label, 'road-status', style, 'status:' + selected.id + ':' + status, attr('id', selected.id) + attr('status', status));
   let actionButtonsHtml = '';
   if (selected) {
     if (selected.status === 'completed') {
-      actionButtonsHtml = btn(icon('arrow') + ' ' + copy('Mở lại mốc này (Chuyển về Đang thực hiện)', 'Reopen milestone (In progress)'),
-        'road-status', 'secondary small', attr('id', selected.id) + attr('status', 'in_progress'));
+      actionButtonsHtml = statusButton(icon('arrow') + ' ' + copy('Mở lại mốc này (Chuyển về Đang thực hiện)', 'Reopen milestone (In progress)'), 'secondary small', 'in_progress');
     } else if (selected.status === 'in_progress') {
-      actionButtonsHtml = btn(icon('check') + ' ' + copy('Xác nhận đã hoàn thành', 'Mark as completed'),
-        'road-status', 'primary small', attr('id', selected.id) + attr('status', 'completed'))
-        + btn(copy('Quay lại: Chưa bắt đầu', 'Revert to Pending'),
-          'road-status', 'quiet small', attr('id', selected.id) + attr('status', 'pending'));
+      actionButtonsHtml = statusButton(icon('check') + ' ' + copy('Xác nhận đã hoàn thành', 'Mark as completed'), 'primary small', 'completed')
+        + statusButton(copy('Quay lại: Chưa bắt đầu', 'Revert to Pending'), 'quiet small', 'pending');
     } else {
-      actionButtonsHtml = btn(icon('play') + ' ' + copy('Bắt đầu thực hiện mốc này', 'Start this milestone'),
-        'road-status', 'primary small', attr('id', selected.id) + attr('status', 'in_progress'))
-        + btn(icon('check') + ' ' + copy('Đánh dấu đã hoàn thành', 'Mark as completed'),
-          'road-status', 'secondary small', attr('id', selected.id) + attr('status', 'completed'));
+      actionButtonsHtml = statusButton(icon('play') + ' ' + copy('Bắt đầu thực hiện mốc này', 'Start this milestone'), 'primary small', 'in_progress')
+        + statusButton(icon('check') + ' ' + copy('Đánh dấu đã hoàn thành', 'Mark as completed'), 'secondary small', 'completed');
     }
   }
 
@@ -1074,38 +1082,36 @@ export function liveRoadmap(data) {
   const detailMetric = item ? displayMetric(item.metric, selected?.external_key) : '';
 
   const detail = selected && item ? '<article class="panel road-detail" id="milestone-detail"><div class="detail-top">'
-    + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : 'blue') + '</div>'
+    + badge(statusLabel(selected.status), selected.status === 'completed' ? 'green' : selected.status === 'in_progress' ? 'blue' : '') + (isCompleted ? badge(selected.verification_status === 'verified' ? copy('Đã xác minh năng lực', 'Skill verified') : copy('Chưa xác minh năng lực', 'Skill not verified'), selected.verification_status === 'verified' ? 'green' : 'amber') : '') + '</div>'
     + '<h2>' + escape(detailTitle) + '</h2>' + paragraph(detailObjective)
     + '<div class="milestone-proof"><span class="feature-icon">' + icon('award') + '</span><div><h3>'
     + escape(t('road.proof')) + '</h3>' + paragraph(detailMetric) + proofLinksHtml + '</div></div>'
-    + evidenceListHtml
     + assessmentRefsHtml
-    + evidenceFormHtml
+    + evidenceFormHtml + evidenceNotice
     + '<div class="action-row" style="margin-top:14px">'
     + actionButtonsHtml
     + btn(icon('bot') + ' ' + copy('Hỏi AI Mentor về mốc này', 'Ask AI Mentor about this milestone'), 'ask-milestone', 'secondary small', attr('id', selected.id) + attr('title', detailTitle)) + '</div>'
-    + pending.map(suggestion => '<div class="notice">' + paragraph(suggestion.explanation)
-      + ['apply', 'reject'].map(decision => btn(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')),
-        'road-suggestion', 'secondary small', attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
-  return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + feedback(data, 'road')
+    + pending.map(suggestion => '<div class="notice">' + paragraph(suggestionText(suggestion))
+      + ['apply', 'reject'].map(decision => roadButton(escape(decision === 'apply' ? copy('Áp dụng', 'Apply') : copy('Bỏ qua', 'Dismiss')), 'road-suggestion', 'secondary small', 'suggestion:' + suggestion.id + ':' + decision, attr('id', suggestion.id) + attr('decision', decision))).join('') + '</div>').join('') + '</article>' : '';
+  return heading(t('road.heading'), t('road.intro'), '<div class="road-pickers-row" style="display:flex;gap:12px;flex-wrap:wrap">' + picker + roadPicker + '</div>') + (data.errors.road || data.messages.road || loading('load') ? feedback(data, 'road') : '')
     + '<div class="road-banner"><section class="panel road-next"><div><p class="eyebrow">' + escape(t('road.next')) + '</p><h2>'
     + escape(next ? displayMilestoneTitle(next.title, next.external_key) : (data.road ? t('road.finished') : copy('Chưa có lộ trình', 'No roadmap yet'))) + '</h2>'
-    + (goal ? paragraph(goal.objective) : '') + '</div>'
-    + btn(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '</section>'
+    + (goal ? paragraph(displayObjective(goal.objective, next?.external_key)) : '') + '</div>'
+    + roadButton(escape(copy('Tạo lộ trình', 'Generate roadmap')), 'road-create', 'primary', 'create') + '</section>'
     + '<section class="panel road-progress"><div><p class="eyebrow">' + escape(t('road.progress')) + '</p><strong>' + done.length + '<span> / ' + milestones.length
     + '</span></strong><p>' + escape(t('road.progressCount', { done: done.length, total: milestones.length })) + '</p></div>'
-    + '<div class="milestone-pips" aria-hidden="true">' + milestones.map(m => '<i' + attr('state', m.status === 'completed' ? 'done' : 'ready') + '></i>').join('') + '</div></section></div>'
+    + '<div class="milestone-pips" aria-hidden="true">' + milestones.map(m => '<i' + attr('state', nodeState(m)) + '></i>').join('') + '</div></section></div>'
     + (data.road ? '<section class="road-update"><div>' + icon('pulse') + escape(copy('Cập nhật từ kết quả phân tích GitHub', 'Recheck GitHub evidence')) + '</div>'
-      + btn(escape(copy('Đánh giá lại', 'Re-evaluate')), 'road-draft', 'secondary small' + (data.busy.has('road') ? ' is-loading' : ''), data.busy.has('road') ? 'disabled' : '') + '</section>' : '')
+      + roadButton(escape(copy('Đánh giá lại', 'Re-evaluate')), 'road-draft', 'secondary small', 'reevaluate') + '</section>' : '')
     + evaluationHtml
     + '<div class="road-layout"><section class="panel map-panel">' + panelHead(t('road.map'), copy('Chọn mốc để xem mục tiêu và bằng chứng.', 'Select a milestone to see its goal and evidence.'))
-    + '<div class="map-legend">' + ['done', 'ready'].map(mode => '<span data-state="' + mode + '"><i></i>' + escape(t('road.' + mode)) + '</span>').join('') + '</div>'
+    + '<div class="map-legend">' + [['done',copy('Hoàn thành','Completed')],['in-progress',copy('Đang thực hiện','In progress')],['ready',copy('Chưa bắt đầu','Pending')]].map(([mode,label]) => '<span data-state="' + mode + '"><i></i>' + escape(label) + '</span>').join('') + '</div>'
     + (map ? '<div class="road-map"><svg class="road-map-lines" aria-hidden="true" focusable="false"></svg><canvas aria-hidden="true"></canvas>' + map + '</div>' : muted(copy('Chưa có cột mốc để hiển thị.', 'No milestones to display.')))
     + '</section>' + detail + (selected ? '<div class="road-records stack">'
       + (done.length ? '<section class="panel achievements">' + panelHead(t('road.trophies')) + '<div class="award-list">'
         + done.map(m => '<button class="award-card" type="button" data-act="milestone"' + attr('id', m.id) + '><span class="award-icon">'
           + icon('award') + '</span><span><strong>' + escape(displayMilestoneTitle(m.title, m.external_key)) + '</strong><small>'
-          + escape(m.verification_status === 'verified' ? copy('Đã xác minh Git', 'Git Verified') : copy('Đã hoàn thành', 'Completed'))
+          + escape(m.verification_status === 'verified' ? copy('Đã xác minh Git', 'Git Verified') : copy('Hoàn thành / chưa xác minh', 'Completed / not verified'))
           + '</small></span>' + icon('arrow') + '</button>').join('')
         + '</div></section>' : '') + history + '</div>' : '') + '</div>';
 }
