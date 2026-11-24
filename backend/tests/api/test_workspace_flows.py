@@ -206,9 +206,7 @@ def test_roadmap_submission_relevance_dedup_and_revoked_visibility(
     tracking = client.get(base)
     assert tracking.status_code == 200, tracking.text
     assert url not in tracking.text
-    current = next(
-        m for m in tracking.json()["milestones"] if m["id"] == python["id"]
-    )
+    current = next(m for m in tracking.json()["milestones"] if m["id"] == python["id"])
     assert current["verification_status"] != "verified"
     career = client.get(f"{API}/career-roadmaps/{road['id']}")
     assert url not in career.text

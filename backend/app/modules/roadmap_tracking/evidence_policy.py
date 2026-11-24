@@ -113,14 +113,17 @@ def visible_milestone(
     ]
     if evaluation or item.get("verification_status") == "verified":
         item["evaluation_evidence"] = safe_evaluation
-        if not all(
-            any(
-                str(ref.get("skill", "")).strip().casefold()
-                == str(skill).strip().casefold()
-                for ref in safe_evaluation
+        if (
+            not all(
+                any(
+                    str(ref.get("skill", "")).strip().casefold()
+                    == str(skill).strip().casefold()
+                    for ref in safe_evaluation
+                )
+                for skill in required
             )
-            for skill in required
-        ) or not safe_evaluation:
+            or not safe_evaluation
+        ):
             item["verification_status"] = "pending"
     if len(visible) != len(entries) or (
         item.get("gap_type") == "skill_gap"

@@ -403,8 +403,7 @@ def submit_milestone_evidence(
         (
             entry
             for entry in entries
-            if isinstance(entry, dict)
-            and link_key(entry.get("url", "")) == key
+            if isinstance(entry, dict) and link_key(entry.get("url", "")) == key
         ),
         None,
     )

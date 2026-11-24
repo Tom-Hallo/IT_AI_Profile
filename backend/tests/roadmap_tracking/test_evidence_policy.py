@@ -40,15 +40,11 @@ def test_exact_contribution_and_target_required():
     assert not matching_evidence(link, 1, ["python"], 81, [assessment()])
     assert not matching_evidence(link, 2, ["python"], 75, [assessment()])
     assert not matching_evidence(link, 1, ["python"], None, [assessment()])
-    assert not matching_evidence(
-        link, 1, ["python", "docker"], 75, [assessment()]
-    )
+    assert not matching_evidence(link, 1, ["python", "docker"], 75, [assessment()])
 
 
 def test_commit_requires_contribution_reference_not_static_analysis():
-    link = parse_github_evidence_url(
-        f"https://github.com/Owner/Repo/commit/{SHA}"
-    )
+    link = parse_github_evidence_url(f"https://github.com/Owner/Repo/commit/{SHA}")
     row = assessment()
     assert matching_evidence(link, 1, ["python"], 75, [row])
     row["evidence"][1]["finding_type"] = "source_code"
