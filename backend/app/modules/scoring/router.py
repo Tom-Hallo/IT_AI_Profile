@@ -84,12 +84,22 @@ def get_scores(
                 "report_id": report.id,
                 "commit_sha": report.commit_sha,
                 **missing,
+                "diagnostics": {"snapshot_missing": True},
             },
         )
     return list(saved.values())[offset : offset + limit]
 
 
 def _serialize_score(score: SkillScore) -> dict:
+    stored = score.breakdown or []
+    diagnostics = next(
+        (part["diagnostics"] for part in stored if "diagnostics" in part), None
+    )
+    breakdown = [
+        {key: value for key, value in part.items() if key != "diagnostics"}
+        for part in stored
+        if part.get("criterion") != "_diagnostics"
+    ]
     return {
         "id": score.id,
         "technology": score.technology,
@@ -99,6 +109,7 @@ def _serialize_score(score: SkillScore) -> dict:
         "rubric_id": score.rubric_id,
         "report_id": score.report_id,
         "commit_sha": score.commit_sha,
-        "breakdown": score.breakdown,
+        "breakdown": breakdown,
+        "diagnostics": diagnostics,
         "explanation": score.explanation,
     }

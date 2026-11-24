@@ -112,6 +112,21 @@ def language_metrics(
     return metrics
 
 
+def framework_source_paths(
+    framework: str, evidence: list[AnalysisEvidence]
+) -> set[str]:
+    return {
+        item.file_path
+        for item in evidence
+        if item.finding_type == "framework"
+        and item.classification == framework
+        and item.evidence_source == "source_code"
+        and item.confidence in {"high", "medium"}
+        and is_safe_path(item.file_path)
+        and not is_ignored_path(item.file_path)
+    }
+
+
 def framework_metrics(
     rows: list[VerificationEvidence],
     framework: str,
@@ -124,16 +139,7 @@ def framework_metrics(
     A dependency declaration or config file establishes repository technology,
     not individual framework usage. Never infer usage from a file extension.
     """
-    source_paths = {
-        item.file_path
-        for item in evidence
-        if item.finding_type == "framework"
-        and item.classification == framework
-        and item.evidence_source == "source_code"
-        and item.confidence in {"high", "medium"}
-        and is_safe_path(item.file_path)
-        and not is_ignored_path(item.file_path)
-    }
+    source_paths = framework_source_paths(framework, evidence)
     if not source_paths:
         return {}
     # Reuse the verified, non-merge, non-bot event policy from language scoring.
@@ -257,6 +263,70 @@ def framework_v22_metrics(
         "complexity": scope,
         "verified_activity": Metric(activity, refs),
         "confidence": Metric(confidence, refs),
+    }
+
+
+def skill_evidence_diagnostics(
+    *,
+    rows: list[VerificationEvidence],
+    kind: str,
+    name: str,
+    raw_metrics: dict[str, Metric],
+    score: dict,
+    framework_evidence: list[AnalysisEvidence],
+    complete: bool,
+    summary: dict,
+) -> dict:
+    """Store observations separately from scored points; no fabricated metrics."""
+    observed_ids = {
+        ref for metric in raw_metrics.values() for ref in metric.evidence_ids
+    }
+    used_ids = {
+        ref for part in score["breakdown"] for ref in part["evidence_ids"]
+    }
+    paths = (
+        framework_source_paths(name, framework_evidence)
+        if kind == "framework"
+        else set()
+    )
+    matched_files: set[str] = set()
+    used_files: set[str] = set()
+    commits = prs = 0
+    for row in rows:
+        if row.id not in observed_ids:
+            continue
+        if row.evidence_type == "commit":
+            commits += 1
+        elif row.evidence_type == "pull_request":
+            prs += 1
+        if kind == "language":
+            files = _verified_changes(row, name)
+        else:
+            files = [
+                item
+                for item in (row.metadata_ or {}).get("changed_files", [])
+                if isinstance(item, dict)
+                and item.get("path") in paths
+                and type(item.get("changes")) is int
+                and item["changes"] > 0
+            ]
+        for item in files:
+            matched_files.add(item["path"])
+            if row.id in used_ids:
+                used_files.add(item["path"])
+    return {
+        "missing_metrics": score["missing_metrics"],
+        "matched_commits": commits,
+        "matched_prs": prs,
+        "matched_files": len(matched_files),
+        "used_events": len(used_ids),
+        "used_files": len(used_files),
+        "framework_source_files": len(paths) if kind == "framework" else None,
+        "collection_complete": complete,
+        "file_collection_partial": summary.get("scoring_files_partial"),
+        "eligible_pr_files": summary.get("eligible_pr_files"),
+        "completed_pr_files": summary.get("completed_pr_files"),
+        "rubric_version": score["rubric_version"],
     }
 
 
@@ -400,6 +470,33 @@ def save_skill_snapshots(
                     "Chưa có đủ verified commits/PRs trên tệp có bằng chứng "
                     "framework từ source code."
                 )
+            diagnostics = skill_evidence_diagnostics(
+                rows=rows,
+                kind=kind,
+                name=name,
+                raw_metrics=metrics,
+                score=score,
+                framework_evidence=framework_evidence,
+                complete=complete,
+                summary=result.summary_data,
+            )
+            # Use the existing snapshot JSON, not a new schema or a new score.
+            # Insufficient snapshots have no scoring breakdown to attach to.
+            breakdown = score["breakdown"]
+            if breakdown:
+                breakdown[0]["diagnostics"] = diagnostics
+            else:
+                breakdown = [
+                    {
+                        "criterion": "_diagnostics",
+                        "weight": 0,
+                        "normalized_value": None,
+                        "points": 0,
+                        "evidence_ids": [],
+                        "evidence_kind": "diagnostic",
+                        "diagnostics": diagnostics,
+                    }
+                ]
             db.add(
                 SkillScore(
                     user_id=result.user_id,
@@ -411,7 +508,7 @@ def save_skill_snapshots(
                     technology=name[:100],
                     status=score["status"],
                     score=round(score["score"]) if score["score"] is not None else None,
-                    breakdown=score["breakdown"],
+                    breakdown=breakdown,
                     explanation=explanation,
                 )
             )

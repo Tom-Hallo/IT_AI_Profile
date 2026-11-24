@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from app.modules.analysis.models import AnalysisReport
 from app.modules.scoring.models import SkillScore
+from app.modules.scoring.router import _serialize_score
 from app.modules.scoring.snapshots import save_skill_snapshots
 
 
@@ -58,3 +59,15 @@ def test_snapshot_uses_only_verified_changes_in_matching_language():
     assert breakdown["code_contribution"]["evidence_ids"] == [2]
     assert breakdown["commit_frequency"]["evidence_ids"] == [1]
     assert breakdown["pr_contribution"]["evidence_ids"] == [2]
+
+    diagnostics = _serialize_score(python)["diagnostics"]
+    assert diagnostics["matched_commits"] == 1
+    assert diagnostics["matched_prs"] == 1
+    assert diagnostics["matched_files"] == 1
+    assert diagnostics["used_events"] == 2
+    insufficient = _serialize_score(go)
+    assert insufficient["score"] is None
+    assert insufficient["breakdown"] == []
+    assert "pr_contribution" in insufficient["diagnostics"]["missing_metrics"]
+    assert insufficient["diagnostics"]["matched_commits"] == 1
+    assert insufficient["diagnostics"]["used_events"] == 0
