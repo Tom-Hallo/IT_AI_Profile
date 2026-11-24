@@ -292,27 +292,29 @@ function renderMessage(msg,animate) {
       const act = msg.action;
       const targetTitle = act.proposal?.add_milestone?.title || act.proposal?.title || act.proposal?.add_milestone?.skill || '';
       const actionLabel = act.tool === 'update_roadmap'
-        ? (targetTitle ? (isEn ? `Thêm "${targetTitle}" vào Lộ trình` : `Thêm "${targetTitle}" vào Lộ trình`) : (isEn ? 'Áp dụng vào Lộ trình' : 'Áp dụng vào Lộ trình'))
-        : act.tool === 'create_roadmap' ? (isEn ? 'Tạo Lộ trình này' : 'Tạo Lộ trình này')
-        : act.tool === 'create_cv' ? (isEn ? 'Lưu vào CV Studio' : 'Lưu vào CV Studio')
-        : escape(t('mentor.preview'));
+        ? (isEn ? 'Preview roadmap update' : 'Xem đề xuất lộ trình')
+        : act.tool === 'create_roadmap' ? (isEn ? 'Preview roadmap' : 'Xem lộ trình đề xuất')
+        : act.tool === 'create_cv' ? (isEn ? 'Preview CV' : 'Xem CV đề xuất')
+        : t('mentor.preview');
       const headerTitle = isEn ? '⚡ AI Update Proposal:' : '⚡ Đề xuất cập nhật từ AI:';
-      const milestoneLabel = isEn ? 'Cột mốc đề xuất:' : 'Cột mốc đề xuất:';
-      const declineLabel = isEn ? 'Từ chối' : 'Từ chối';
+      const milestoneLabel = isEn ? 'Proposed item:' : 'Nội dung đề xuất:';
+      const declineLabel = isEn ? 'Decline' : 'Từ chối';
       const hintText = isEn
-        ? 'Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần'
-        : 'Bấm để thêm vào Lộ trình, hoặc từ chối nếu không cần';
+        ? 'Review the proposal before confirming, or decline if not needed.'
+        : 'Xem đề xuất trước khi xác nhận, hoặc từ chối nếu không cần.';
       actionHtml = '<div class="chat-action-card">'
-        + '<div class="chat-action-card-header">'
+        + '<div class="chat-action-toolbar">'
+        + '<div class="chat-action-header chat-action-card-header">'
         + '<span class="chat-action-kicker">' + escape(headerTitle) + '</span>'
         + '</div>'
-        + '<div class="chat-action-card-body">'
-        + (act.impact ? '<p class="chat-action-impact">' + escape(act.impact) + '</p>' : '')
-        + (targetTitle ? '<div class="chat-action-target"><span class="target-label">' + escape(milestoneLabel) + '</span> <strong class="target-pill">🎯 ' + escape(targetTitle) + '</strong></div>' : '')
+        + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','primary small chat-action-trigger',attr('id',msg.id))
         + '</div>'
-        + '<div class="chat-action-buttons-group">'
-        + btn(icon('check') + ' ' + escape(actionLabel),'agent-preview','button primary small chat-action-trigger',attr('id',msg.id))
-        + btn(icon('close') + ' ' + escape(declineLabel),'agent-decline','button secondary small chat-action-decline-btn',attr('id',msg.id))
+        + '<div class="chat-action-card-body">'
+        + '<p class="chat-action-impact">' + escape(act.impact || '') + '</p>'
+        + (targetTitle ? '<div class="chat-action-target"><span class="target-label">' + escape(milestoneLabel) + '</span> <strong class="target-pill chat-action-target-pill">' + escape(targetTitle) + '</strong></div>' : '')
+        + '</div>'
+        + '<div class="chat-action-buttons-group action-row chat-action-secondary">'
+        + btn(icon('close') + ' ' + escape(declineLabel),'agent-decline','secondary small chat-action-decline-btn',attr('id',msg.id))
         + '</div>'
         + '<p class="chat-action-hint">💡 ' + escape(hintText) + '</p>'
         + '</div>';
