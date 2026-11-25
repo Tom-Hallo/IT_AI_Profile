@@ -6,7 +6,7 @@
 
 > Cấu hình Docker Compose dưới đây dùng cho **môi trường phát triển**, không phải cấu hình triển khai production.
 
-> Cấu hình Docker Compose dưới đây dùng cho **môi trường phát triển**, không phải cấu hình triển khai production.
+> Hướng dẫn cấu hình production riêng (Docker Compose, Nginx, HTTPS, backup): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Chỉ triển khai công khai sau khi hoàn tất kiểm thử trên server.
 
 ## 1. Công nghệ và kiến trúc
 
