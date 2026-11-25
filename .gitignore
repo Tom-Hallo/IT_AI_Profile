@@ -96,3 +96,6 @@ test-results/
 playwright-report/
 blob-report/
 .local-tests/
+
+# Safe production template only; populated .env.production remains ignored
+!/.env.production.example
