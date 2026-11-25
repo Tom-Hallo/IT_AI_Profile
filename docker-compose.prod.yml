@@ -1,0 +1,182 @@
+# Standalone production stack. Do not combine with docker-compose.yml.
+name: it-talent-ai-profile-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app-env: &app-env
+  APP_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
+  REDIS_URL: redis://redis:6379/0
+  FRONTEND_URL: ${FRONTEND_URL:?required}
+  CORS_ORIGINS: ${CORS_ORIGINS:?required}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:?required}
+  GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?required}
+  WORKER_QUEUES: ${WORKER_QUEUES:-default}
+  CV_SCANNER_HOST: clamav
+  CV_SCANNER_PORT: "3310"
+  AI_PROVIDER: ${AI_PROVIDER:-ollama}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-qwen2.5:3b}
+  AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:11434}
+  AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+  AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-50000}
+  AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2000}
+  AI_MAX_REQUESTS_PER_DAY: ${AI_MAX_REQUESTS_PER_DAY:-50}
+
+x-app: &app
+  image: ita-profile-backend:${ITA_IMAGE_TAG:-local-prod}
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.prod
+  environment: *app-env
+  logging: *logging
+  init: true
+
+x-ready: &ready
+  migrate:
+    condition: service_completed_successfully
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *logging
+
+  clamav:
+    image: clamav/clamav:stable
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks: [scanner]
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping=1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    <<: *app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${BACKEND_WORKERS:-1}", "--no-access-log"]
+    # Explicit proxy headers are not needed for auth: public URLs are configured.
+    # Disable trust of unsolicited forwarded client information.
+    environment:
+      <<: *app-env
+      FORWARDED_ALLOW_IPS: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [data, scanner, web, outbound]
+    depends_on: *ready
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5)"]
+      interval: 10s
+      timeout: 7s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 45s
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.workers.worker"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [data, outbound]
+    volumes:
+      - analysis_temp:/tmp/ita-private-code
+    depends_on: *ready
+    restart: unless-stopped
+    stop_grace_period: 330s
+
+  maintenance:
+    <<: *app
+    command: ["python", "-m", "app.workers.maintenance"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [data, outbound]
+    volumes:
+      - analysis_temp:/tmp/ita-private-code
+    depends_on: *ready
+    restart: unless-stopped
+
+  frontend:
+    image: ita-profile-frontend:${ITA_IMAGE_TAG:-local-prod}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "127.0.0.1:${PROD_HTTP_PORT:-8080}:8080"
+    networks: [web]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres_data:
+  redis_data:
+  clamav_signatures:
+  analysis_temp:
+
+networks:
+  data:
+    internal: true
+  scanner:
+    driver: bridge
+  web:
+    driver: bridge
+  outbound:
+    driver: bridge
