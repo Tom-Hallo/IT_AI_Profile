@@ -1,0 +1,11 @@
+# Install Caddy on the Linux host; replace the domain and port as needed.
+# Caddy obtains and renews certificates and redirects HTTP to HTTPS.
+profile.example.com {
+    reverse_proxy 127.0.0.1:8080
+    header {
+        Strict-Transport-Security "max-age=86400"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+    # Access logging intentionally disabled: OAuth callback contains code/state.
+}
