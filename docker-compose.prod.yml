@@ -1,0 +1,136 @@
+name: ita-prod
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+x-app: &app
+  image: ita-backend-prod:local
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.prod
+  restart: unless-stopped
+  logging: *logging
+  environment:
+    APP_ENV: production
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    REDIS_URL: redis://redis:6379/0
+    CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN}
+    FRONTEND_URL: https://${DOMAIN:?Set DOMAIN}
+    GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GITHUB_CLIENT_ID}
+    GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set GITHUB_CLIENT_SECRET}
+    GITHUB_REDIRECT_URI: https://${DOMAIN:?Set DOMAIN}/api/v1/auth/github/callback
+    GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?Set encryption key}
+    WORKER_QUEUES: ${WORKER_QUEUES:-default}
+    CV_SCANNER_HOST: clamav
+    CV_SCANNER_PORT: '3310'
+    AI_PROVIDER: ${AI_PROVIDER:?Set AI_PROVIDER}
+    AI_API_KEY: ${AI_API_KEY:-}
+    AI_MODEL: ${AI_MODEL:?Set AI_MODEL}
+    AI_BASE_URL: ${AI_BASE_URL:-http://ollama:11434}
+    AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+    AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-50000}
+    AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2000}
+    AI_MAX_REQUESTS_PER_DAY: ${AI_MAX_REQUESTS_PER_DAY:-50}
+  networks: [data, outbound]
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    migrate: {condition: service_completed_successfully}
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    restart: unless-stopped
+    logging: *logging
+    volumes: [redis_data:/data]
+    networks: [data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    logging: *logging
+    volumes: [clamav_signatures:/var/lib/clamav]
+    networks: [scanner, outbound_scanner]
+  migrate:
+    <<: *app
+    command: [alembic, upgrade, head]
+    restart: 'no'
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    networks: [data]
+    depends_on:
+      postgres: {condition: service_healthy}
+  backend:
+    <<: *app
+    networks: [data, outbound, edge, scanner]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5)"]
+      interval: 10s
+      timeout: 7s
+      retries: 10
+      start_period: 20s
+  worker:
+    <<: *app
+    command: [python, -m, app.workers.worker]
+    volumes: [analysis_temp:/tmp/ita-private-code]
+  maintenance:
+    <<: *app
+    command: [python, -m, app.workers.maintenance]
+    volumes: [analysis_temp:/tmp/ita-private-code]
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+volumes:
+  postgres_data:
+  redis_data:
+  clamav_signatures:
+  analysis_temp:
+  caddy_data:
+  caddy_config:
+networks:
+  data: {internal: true}
+  scanner: {internal: true}
+  outbound: {}
+  outbound_scanner: {}
+  edge: {}
