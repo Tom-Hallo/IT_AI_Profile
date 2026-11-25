@@ -724,3 +724,77 @@ def test_mentor_wrong_or_removed_roadmap_never_uses_latest(pg):
     assert actions.decide_action(pg, owner, action.id, CONFIRM).status == "denied"
     pg.expire_all()
     assert pg.get(Roadmap, newer_roadmap.id).data == {"milestones": [], "total": 0}
+
+
+def test_mentor_update_desynced_roadmap_auto_syncs_and_succeeds(pg):
+    owner = World(pg).user("desync-owner@example.test")
+    legacy_roadmap = Roadmap(
+        user_id=owner.id,
+        title="Desynced Roadmap",
+        data={
+            "goal": "backend",
+            "steps": ["Step 1: Python Basics", "Step 2: Docker Containers"],
+        },
+    )
+    pg.add(legacy_roadmap)
+    pg.commit()
+
+    # Seed milestones in database directly (simulating desync state like Roadmap 6)
+    m1 = Milestone(
+        roadmap_id=legacy_roadmap.id,
+        external_key="step_1",
+        title="Step 1: Python Basics",
+        required_skills=["step_1"],
+        status="pending",
+    )
+    m2 = Milestone(
+        roadmap_id=legacy_roadmap.id,
+        external_key="step_2",
+        title="Step 2: Docker Containers",
+        required_skills=["step_2"],
+        status="pending",
+    )
+    pg.add_all([m1, m2])
+    pg.commit()
+
+    draft = {
+        "tool": "update_roadmap",
+        "roadmap_id": legacy_roadmap.id,
+        "title": "Desynced Roadmap",
+        "add_milestones": [
+            {
+                "skill": "kubernetes",
+                "title": "Master Kubernetes",
+                "objective": "Deploy microservices on Kubernetes",
+                "metric": "Kubernetes cluster operational",
+            }
+        ],
+    }
+    proposal = propose(pg, owner, draft)
+    assert proposal is not None
+
+    result = actions.decide_action(pg, owner, proposal.id, CONFIRM)
+    assert result.status == "succeeded"
+    assert result.result_id == str(legacy_roadmap.id)
+
+    pg.expire_all()
+    stored = pg.get(Roadmap, legacy_roadmap.id)
+    assert stored is not None
+    assert "milestones" in stored.data
+    assert len(stored.data["milestones"]) == 3
+    # Check migrated steps
+    assert stored.data["milestones"][0]["skill"] == "step_1"
+    assert stored.data["milestones"][0]["title"] == "Step 1: Python Basics"
+    assert stored.data["milestones"][1]["skill"] == "step_2"
+    assert stored.data["milestones"][1]["title"] == "Step 2: Docker Containers"
+    # Check newly added mentor milestone
+    assert stored.data["milestones"][2]["skill"] == "kubernetes"
+    assert stored.data["milestones"][2]["title"] == "Master Kubernetes"
+
+    # Verify db Milestone records
+    db_milestones = pg.scalars(
+        select(Milestone).where(Milestone.roadmap_id == legacy_roadmap.id)
+    ).all()
+    assert len(db_milestones) == 3
+    keys = {m.external_key for m in db_milestones}
+    assert keys == {"step_1", "step_2", "kubernetes"}

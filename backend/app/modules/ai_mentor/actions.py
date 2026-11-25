@@ -308,10 +308,38 @@ def decide_action(
                     raise HTTPException(409, "Roadmap data is not a valid object")
                 data = deepcopy(roadmap.data)
                 # Do not overwrite an unmigrated legacy steps-only roadmap.
+                # If DB milestones already exist (desync case),
+                # auto-populate data["milestones"].
+                # If neither DB nor data has milestones, raise 409.
                 if data.get("steps") and not data.get("milestones"):
-                    raise HTTPException(
-                        409, "Load roadmap tracking before extending legacy steps"
-                    )
+                    db_ms = db.scalars(
+                        select(Milestone)
+                        .where(Milestone.roadmap_id == roadmap.id)
+                        .order_by(Milestone.id)
+                    ).all()
+                    if db_ms:
+                        data["milestones"] = [
+                            {
+                                "skill": m.external_key,
+                                "title": m.title,
+                                "target_score": 75,
+                                "current_score": None,
+                                "gap": None,
+                                "gap_type": "missing_evidence",
+                                "priority": idx,
+                                "objective": m.title,
+                                "metric": f"Complete: {m.title}",
+                                "evidence": [],
+                                "confidence": "unknown",
+                                "status": m.status or "todo",
+                                "order": idx,
+                            }
+                            for idx, m in enumerate(db_ms, 1)
+                        ]
+                    else:
+                        raise HTTPException(
+                            409, "Load roadmap tracking before extending legacy steps"
+                        )
                 milestones_data = data.get("milestones", [])
                 if not isinstance(milestones_data, list) or any(
                     not isinstance(item, dict) for item in milestones_data
